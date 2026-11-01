@@ -4,7 +4,7 @@ Stand 2026-10-27 · Anweisung Gerhard 08:18 · Entwurf: `docs/entwurf-1.1-oberfl
 
 ## Entscheidungen (Gerhard 2026-10-27)
 - **Umfang:** neuer Chat wie bei Claude **und** die ganze Oberfläche aufgeräumt (Empfehlung übernommen).
-- **Limits:** Knopf „Jetzt aktualisieren“ im Limits-Fenster. Bei Claude kostenloser Nutzungs-Abruf (wie `/usage` in Claude Code, keine offizielle Schnittstelle). Bricht der Abruf nach einem Update, steht das sichtbar dran und der Knopf macht ersatzweise eine Mini-Anfrage. Kein automatisches Abfragen im Takt.
+- **Limits:** Knopf „Jetzt aktualisieren“ im Limits-Fenster. Bei Claude ~~kostenloser Nutzungs-Abruf (wie `/usage`)~~ – seit 0.10.1 (Befund S6, 01.11.2026) Werte der offiziellen Statuszeile von Claude Code, sind sie älter als 2 Minuten, eine Mini-Anfrage. Hinweis steht sichtbar dran. Kein automatisches Abfragen im Takt.
 - **KI-Anbieter (zwingend verwenden, 3 beim Programmieren):** zurückgestellt („warte noch“). Bis zur Entscheidung gilt weiter: Bauen Claude, ChatGPT nur Ersatz; Prüfung unter Windows nur Claude.
 - **Abgleich Claude-Chat ↔ Codeschmiede:** besteht bereits (AGENTS.md, Kanal `claude-chat`) – nichts ändern.
 
@@ -40,5 +40,5 @@ Stand 2026-10-27 · Anweisung Gerhard 08:18 · Entwurf: `docs/entwurf-1.1-oberfl
    legt sie die Aufträge an – gebaut wird nach deiner Freigabe in der Zentrale.
 6. **Bezüge** (Knopf oben rechts, nur auf großen Bildschirmen) zeigt alle Features, Gruppen, Aufträge und Wissens-Einträge dieses Chats.
 7. **Limits**: Klick auf die Limits-Anzeige oben → **Jetzt aktualisieren**. Die Werkstatt muss dafür laufen. Steht dort ein Hinweis
-   („kostenloser Abruf ging nicht …“), hat sie ersatzweise eine kleine Anfrage gemacht oder den Grund angegeben.
+   („Statuszeile … hat keinen frischen Stand“), hat sie ersatzweise eine kleine Anfrage gemacht oder den Grund angegeben.
 8. **Strg K** öffnet „Suchen & Springen“ für Seiten, Features, Aufträge und Unterhaltungen.

@@ -108,7 +108,8 @@ unten aufklappbar **Verwaltung**), auf dem Handy als ausfahrbares Menü. **Kopfz
 **Zentrale** mit Kennzahlen oben. **Chat** (`web/src/Chat.jsx`): eigene Unterhaltungen je Projekt (`ws_unterhaltungen`, persönlich; Konzept-Chat =
 ohne Unterhaltung, immer angeheftet), @Feature/#Gruppe, Anhänge (Speicher `ws-chat`), Bezüge rechts; die Werkstatt liest den Verlauf nur aus derselben
 Unterhaltung und arbeitet wie im Konzept-Chat (Rückfragen, Aufträge erst nach Klärung). **Limits:** Knopf „Jetzt aktualisieren“ (`ws_abo_abruf`) – die
-eigene Werkstatt fragt kostenlos bei Anthropic ab (`desktop/dienst/lib/nutzung.mjs`), sonst Mini-Anfrage; Hinweis bei Fehlern.
+eigene Werkstatt nimmt die Werte der offiziellen Statuszeile von Claude Code (höchstens 2 Minuten alt), sonst Mini-Anfrage; Hinweis bei Fehlern.
+Seit 0.10.1 (Befund S6) liest die Werkstatt **keine** Anmeldung von Claude Code mehr und ruft keine inoffizielle Schnittstelle auf.
 
 ## Rollen und Rechte
 | Rolle | Aufträge | Freigeben / Erlauben | Löschen | Claude | GitHub |
@@ -120,17 +121,19 @@ eigene Werkstatt fragt kostenlos bei Anthropic ab (`desktop/dienst/lib/nutzung.m
 Neue Projekte, Gruppen, Mitglieder, Abo-Schwellen: nur Admin.
 
 ## Weg eines Auftrags (seit 0.3.0, Entwurf 0.7 freigegeben 2026-10-22 20:41)
-Auftrag → In Arbeit (Werkstatt-PC, eigener Zweig, danach Bauen & Tests auf dem PC) → **Freigabe** (Klick; Admin oder Recht) →
+Auftrag → In Arbeit (Werkstatt-PC, eigener Zweig; seit 0.10.1 **keine** Bauen & Tests auf dem PC, Befund S1) → **Freigabe** (Klick; Admin oder Recht) →
 **Sicherheitsprüfung** (automatisch auf dem Admin-PC: Bauen & Tests + unabhängige Claude-Prüfung der Änderung) → **Zusammenführen** (Klick) →
 **Feature-Prüfung** (automatisch: Testfassung = Zweig + neuester main, Bauen & Tests, unabhängige Prüfung des ganzen Features) →
 bei Grün Pull Request in main = **live** → **Live & Wissen**. Rot an einer Prüfung → **Nacharbeit** (Werkstatt behebt, dann wieder Freigabe);
 live geht dabei nichts. Reine Fragen → beantwortet, „erledigt“. Stationen oben in der Zentrale anklickbar (Übersicht nach Feature, einzeln oder alle).
-Solange GitHub-Prüfungen nicht laufen (Gratis-Minuten), gelten Bauen & Tests auf dem PC als Prüfung (Entscheidung 20:36).
+Bauen & Tests laufen nur in GitHub („Prüfung“) und Cloudflare – auf keinem PC der Codeschmiede läuft Projekt-Code (seit 0.10.1, Befund S1;
+die frühere Ausnahme „Bauen & Tests auf dem PC“ vom 22.10. 20:36 ist aufgehoben).
 
 ## Feature-Arbeitsplatz (seit 0.3.0)
 Klick auf ein Feature = Kurzinfo; Doppelklick = Chat links, Live-Vorschau rechts (Trennlinie verschiebbar). Vorschau = Testseite des Zweigs
 (`<zweig>.<vorschau_domain>`), sonst die App; „Neuer Stand da“ über `version.json`; „Zeigen & kommentieren“ über den Vorschau-Helfer der App
-(nur Testseiten). Nachrichten aus Gruppen-Chat und Claude-Chat erscheinen beim Feature mit Herkunft.
+(nur Testseiten; seit 0.10.1 nur Name, Seite und Pfad des Elements – nie sein sichtbarer Text, Befund S4). Zweig-Testseiten laden erst nach
+dem Klick „Verstanden, Vorschau anzeigen“ und zeigen dauerhaft „hier nicht anmelden“ (Befund S5), im Rahmen mit Sandbox (S7). Nachrichten aus Gruppen-Chat und Claude-Chat erscheinen beim Feature mit Herkunft.
 
 ## Werkstatt (Schritt 2)
 - Läuft im Programm, wenn „Werkstatt an“; holt den nächsten wartenden Auftrag aus Gruppen, in denen der Benutzer Auftragsrecht hat.

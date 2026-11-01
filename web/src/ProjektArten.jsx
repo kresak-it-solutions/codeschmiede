@@ -35,7 +35,7 @@ export function NeuesProjektAssistent({ toast, onClose, onFertig }) {
   const [schritt, setSchritt] = useState(1);
   const [technik, setTechnik] = useState("web");
   const [name, setName] = useState(""); const [kennung, setKennung] = useState(""); const [besch, setBesch] = useState("");
-  const [repo, setRepo] = useState(""); const [anlegen, setAnlegen] = useState(true); const [privat, setPrivat] = useState(false);
+  const [repo, setRepo] = useState(""); const [anlegen, setAnlegen] = useState(true); const [privat, setPrivat] = useState(true);   // Befund S2 (01.11.2026): neue Repos standardmäßig privat
   const [symbol, setSymbol] = useState("layers"); const [art, setArt] = useState("verwaltung");
   const [db, setDb] = useState("keine"); const [busy, setBusy] = useState(false);
   useEffect(() => { const k = (e) => e.key === "Escape" && onClose(); window.addEventListener("keydown", k); return () => window.removeEventListener("keydown", k); }, [onClose]);
@@ -101,7 +101,7 @@ export function NeuesProjektAssistent({ toast, onClose, onFertig }) {
               <legend className="px-1 text-slate-500">GitHub</legend>
               <label className="flex items-start gap-2"><input id="cs-prepo-neu" type="checkbox" className="mt-1 accent-emerald-700" checked={anlegen && !repo.trim()} disabled={!!repo.trim()} onChange={(e) => setAnlegen(e.target.checked)} />
                 <span>Repository mit Grundgerüst „{TECHNIK[technik].name}“ anlegen: <span className="font-mono text-xs">kresak-it-solutions/{id || "…"}</span><span className="block text-xs text-slate-500">Macht deine Werkstatt mit deiner GitHub-Anmeldung – Code, Prüfungen und Regelwerk, lauffähig ab dem ersten Tag.</span></span></label>
-              {anlegen && !repo.trim() && <label className="flex items-center gap-2 pl-6"><input id="cs-prepo-privat" type="checkbox" className="accent-emerald-700" checked={privat} onChange={(e) => setPrivat(e.target.checked)} />Privat <span className="text-xs text-slate-500">(sonst öffentlich; privat verbraucht GitHub-Minuten für Prüfungen und Builds)</span></label>}
+              {anlegen && !repo.trim() && <label className="flex items-center gap-2 pl-6"><input id="cs-prepo-privat" type="checkbox" className="accent-emerald-700" checked={privat} onChange={(e) => setPrivat(e.target.checked)} />Privat <span className="text-xs text-slate-500">(empfohlen; öffentlich nur, wenn der Code für alle sichtbar sein darf – privat verbraucht GitHub-Minuten für Prüfungen und Builds)</span></label>}
               <label className="flex flex-col gap-1 text-slate-500">Oder vorhandenes Repository eintragen (Besitzer/Name)<input id="cs-prepo" className={input} value={repo} onChange={(e) => setRepo(e.target.value)} placeholder="kresak-it-solutions/neue-app" /></label>
             </fieldset>
           </div>)}

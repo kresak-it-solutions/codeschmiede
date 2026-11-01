@@ -4,8 +4,24 @@
 // nur für die Testfassungen von Trainer to go (trainer-to-go.pages.dev und deren Zweige), nur im Programm; was signiert werden darf,
 // prüft zusätzlich das Programm selbst (Rust, design.rs). Ein Design-Schlüssel öffnet nie die Plattform-Verwaltung.
 import { isDesktop, tauri } from "./desktop";
+import { supabase } from "./supabase";
 
 export const TTG_TESTFASSUNG = /^https:\/\/([a-z0-9-]+\.)?trainer-to-go\.pages\.dev$/i;
+
+// Befund S8 (01.11.2026): Die Design-Freigabe gilt nicht mehr für jede Subdomain (also auch Zweige mit ungeprüftem Code), sondern nur für
+// GENAU die eingetragenen Adressen der Projekte (Testfassung „test_url“ bzw. App „live_url“). Liste 60 s zwischengespeichert.
+let herkunftListe = null; let herkunftZeit = 0;
+export async function designHerkuenfte() {
+  if (herkunftListe && Date.now() - herkunftZeit < 60 * 1000) return herkunftListe;
+  const { data, error } = await supabase.from("ws_projekte").select("test_url, live_url");
+  if (error) throw new Error("Projekt-Adressen nicht lesbar");
+  const s = new Set();
+  for (const p of data || []) for (const u of [p.test_url, p.live_url]) {
+    try { const o = new URL(String(u || "")).origin; if (TTG_TESTFASSUNG.test(o)) s.add(o); } catch { /* keine Adresse */ }
+  }
+  herkunftListe = s; herkunftZeit = Date.now();
+  return s;
+}
 
 /** Beantwortet eine Nachricht { cs: "design-frage", id, art, nachricht } – Herkunft und Absender hat der Aufrufer schon geprüft. */
 export function designFrageBeantworten(daten, ziel, antworten) {
@@ -15,9 +31,12 @@ export function designFrageBeantworten(daten, ziel, antworten) {
   if (!TTG_TESTFASSUNG.test(ziel || "")) { antwort({ fehler: "Design-Freigabe gibt es nur für die Testfassungen von Trainer to go." }); return; }
   if (!isDesktop()) { antwort({ fehler: "Die Design-Freigabe gibt es nur im Programm Codeschmiede (nicht im Browser)." }); return; }
   const n = typeof daten.nachricht === "string" ? daten.nachricht : "";
-  const auftrag = daten.art === "geraet" ? tauri("ws_design_geraet")
-    : daten.art === "signieren" && n.length <= 512 && /^ttg-design\|(register|verify|code)\|/.test(n) ? tauri("ws_design_signieren", { nachricht: n })
-    : Promise.reject(new Error("Diese Anfrage ist nicht erlaubt."));
+  const auftrag = designHerkuenfte().then((liste) => {
+    if (!liste.has(ziel)) throw new Error("Design-Freigabe nur für die eingetragene Testfassung bzw. App – nicht für Zweig-Vorschauen.");
+    return daten.art === "geraet" ? tauri("ws_design_geraet")
+      : daten.art === "signieren" && n.length <= 512 && /^ttg-design\|(register|verify|code)\|/.test(n) ? tauri("ws_design_signieren", { nachricht: n })
+      : Promise.reject(new Error("Diese Anfrage ist nicht erlaubt."));
+  });
   auftrag.then((ergebnis) => antwort({ ergebnis }), (f) => antwort({ fehler: String(f?.message || f || "Fehler").slice(0, 200) }));
 }
 
