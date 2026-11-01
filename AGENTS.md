@@ -44,6 +44,19 @@ Zusammengeführt wird nur auf Gerhards Wort (in der Codeschmiede: Knopf „Freig
   des Entwurfs 2.0 mit Leiste (Rolle · PC/Handy · Hell/Dunkel · Bausteine zeigen · Begründung), Seiten je Rolle, Inspektor und Token-Reglern;
   Quelle ist das Projekt selbst (Design-System-Paket, kein Abschreiben). Zweiter Reiter „Echte App (Testfassung)“. Die Codeschmiede bleibt
   smaragdgrün, gezeigt wird das Design der App. Rechte der App nie lockern. `docs/KONZEPT.md` › App-Designer 3.0.
+- **2026-11-01 22:18/22:38 – Befunde Sicherheit, Logik, Bedienung umsetzen (`docs/BEFUNDE-2026-11-01.md`, alles freigegeben, keine Rückfragen):**
+  Sicherheit (0.10.1): Auf **keinem** PC der Codeschmiede läuft mehr Projekt-Code (auch nicht auf Entwickler-PCs) – Bauen und Tests nur in GitHub/Cloudflare;
+  der Bau-Lauf liest nur im Arbeitsordner (Lese-Sperren auch hier), Websuche und Änderungen an Bau-/Test-Einstellungen fragen; `.npmrc`, Lock-Dateien
+  und `public/_headers` sind für die Werkstatt gesperrt; CSP im Programm und in Pages (`web/public/_headers`); Lock-Dateien und `npm ci`; das Programm
+  startet die Werkstatt nur mit der eigenen Supabase-Adresse; „Zeigen & kommentieren“ ohne sichtbaren Text; Zweig-Vorschauen erst nach Klick und mit
+  Warnung „nicht anmelden“; Vorschau-Rahmen mit Sandbox; Design-Freigabe nur für die eingetragene Testfassung/App; Werkstatt-Nachrichten nur über
+  `ws_werkstatt_nachricht`; „Immer erlauben“ prüft auch die Datenbank; Limits-Knopf **ohne** Auslesen der Claude-Anmeldung (Statuszeile oder
+  Mini-Anfrage – ersetzt den „kostenlosen Abruf wie /usage“ vom 27.10.); neue Repositories standardmäßig privat. Datenbank 0051.
+  Logik (0.10.2): Stationen nach Fehlern mit Pause (1/5/30 Min.) und Obergrenze, dann „angehalten“ mit „Erneut versuchen“ (Datenbank 0052);
+  alle GitHub-Prüfläufe sind ein Tor vor Prüfung und Zusammenführen; Modellwahl nach Risikostufe statt Gruppenname. Push aufs Handy: Plan in
+  `docs/KONZEPT.md` (Web-Push, braucht Edge Function) – bis dahin bleibt die Regel offen.
+  Bedienung (0.10.3): keine Schrift unter 12 px; Dialoge nur über `Dialog`/`useFokusfalle`, Bestätigungen über `useBestaetigen` (nie `window.confirm`);
+  neue Seiten der Oberfläche in `web/src/seiten/`, Grundbausteine in `web/src/bausteine/grund.jsx`, Daten in `web/src/daten/` – `App.jsx` bleibt der Rahmen.
 - **2026-10-27 08:18/08:27 – Oberfläche 2.0 & Chat (Entwurf 1.1 frei, `docs/KONZEPT-OBERFLAECHE-2.md`):** Chat wie bei Claude mit eigenen Unterhaltungen,
   @Feature/#Gruppe und Anhängen; Oberfläche gruppiert und aufgeräumt; Limits per Knopf „Jetzt aktualisieren“ (kostenloser Abruf wie „/usage“, keine offizielle
   Schnittstelle – bricht er, Mini-Anfrage und sichtbarer Hinweis; Anmeldung nur im Speicher). Gebaut wird künftig nur noch über die Codeschmiede;

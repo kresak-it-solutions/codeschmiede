@@ -5,7 +5,7 @@ import { Markdown } from "./Markdown";
 import { useKiName } from "./kiName";
 import { kiFarbe } from "./kiFarbe";
 import { MitErwaehnung, erwaehnte, erwaehnteGruppen } from "./Bezuege";
-import { Vorschlag, ORT_NAME } from "./ClaudeSpalte";
+import { Vorschlag, ORT_NAME } from "./KonzeptChat";
 import CodeschmiedeZeichen from "./Zeichen";
 
 // Chat wie bei Claude (Entwurf 1.1 „Oberfläche 2.0 & Chat“, freigegeben von Gerhard 2026-10-27 08:27):
@@ -125,7 +125,7 @@ export default function Chat({ d, ich, toast, start, onFeature }) {
 }
 
 function Kopf({ children }) {
-  return <div className="px-2.5 pt-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-slate-500">{children}</div>;
+  return <div className="px-2.5 pt-3 pb-1 text-xs font-semibold uppercase tracking-wider text-slate-500">{children}</div>;
 }
 
 function Eintrag({ u, aktiv, onWahl, onAnheften, onUmbenennen, onLoeschen }) {
@@ -383,9 +383,9 @@ function Bezuege({ msgs, d, features, gruppen, onFeature }) {
     <aside aria-label="Bezüge" className="hidden xl:block border-l border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-y-auto">
       <div className="p-4 flex flex-col gap-5 text-sm">
         <Block titel="Features" leer="Mit @ ein Feature einbeziehen.">{f.map((x) => (
-          <button key={x.id} type="button" onClick={() => onFeature?.(x)} className="flex items-center gap-2 py-1.5 text-left hover:underline"><Link2 className="w-3.5 h-3.5 text-emerald-700 shrink-0" /><span className="truncate">{x.name}</span><span className="ml-auto font-mono text-[11px] text-slate-400">{x.id}</span></button>))}</Block>
-        <Block titel="Gruppen" leer="Mit # eine Gruppe einbeziehen.">{g.map((x) => <div key={x.id} className="flex items-center gap-2 py-1.5"><Hash className="w-3.5 h-3.5 text-amber-600 shrink-0" /><span className="truncate">{x.name}</span><span className="ml-auto text-[11px] text-slate-400 truncate">{x.bereich}</span></div>)}</Block>
-        <Block titel="Aufträge" leer="Noch keine Aufträge aus diesem Chat.">{auftraege.map((a) => <div key={a.id} className="flex items-center gap-2 py-1.5"><Hammer className="w-3.5 h-3.5 text-slate-500 shrink-0" /><span className="font-mono text-xs text-slate-500">#{a.id}</span><span className="truncate">{a.titel}</span>{a.stand && <span className="ml-auto text-[11px] rounded-full bg-slate-100 dark:bg-slate-800 px-1.5">{STAND[a.stand] || a.stand}</span>}</div>)}</Block>
+          <button key={x.id} type="button" onClick={() => onFeature?.(x)} className="flex items-center gap-2 py-1.5 text-left hover:underline"><Link2 className="w-3.5 h-3.5 text-emerald-700 shrink-0" /><span className="truncate">{x.name}</span><span className="ml-auto font-mono text-xs text-slate-400">{x.id}</span></button>))}</Block>
+        <Block titel="Gruppen" leer="Mit # eine Gruppe einbeziehen.">{g.map((x) => <div key={x.id} className="flex items-center gap-2 py-1.5"><Hash className="w-3.5 h-3.5 text-amber-600 shrink-0" /><span className="truncate">{x.name}</span><span className="ml-auto text-xs text-slate-400 truncate">{x.bereich}</span></div>)}</Block>
+        <Block titel="Aufträge" leer="Noch keine Aufträge aus diesem Chat.">{auftraege.map((a) => <div key={a.id} className="flex items-center gap-2 py-1.5"><Hammer className="w-3.5 h-3.5 text-slate-500 shrink-0" /><span className="font-mono text-xs text-slate-500">#{a.id}</span><span className="truncate">{a.titel}</span>{a.stand && <span className="ml-auto text-xs rounded-full bg-slate-100 dark:bg-slate-800 px-1.5">{STAND[a.stand] || a.stand}</span>}</div>)}</Block>
         <Block titel="Ins Wissen übernommen" leer="Noch nichts übernommen.">{wissen.map((t, i) => <div key={i} className="flex gap-2 py-1.5"><BookOpen className="w-3.5 h-3.5 text-emerald-700 shrink-0 mt-0.5" /><span className="line-clamp-3">{t}</span></div>)}</Block>
       </div>
     </aside>);

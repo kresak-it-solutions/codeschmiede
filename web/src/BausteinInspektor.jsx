@@ -15,7 +15,7 @@ import { Markdown } from "./Markdown";
 import { useVerzeichnis } from "./verzeichnis";
 import { GRUPPEN, GROESSEN, ZUSTAENDE, SEITE, KATALOG, bausteinVon, bausteinWerteBereinigen, bausteineBereinigen, mitStandard, nurAbweichung } from "./bausteinKatalog";
 import { pruefeBaustein, zusammenfassung, verhaeltnis, SOLL } from "./kontrast";
-import { useBestaetigen } from "./designer/dialog";
+import { useBestaetigen } from "./bausteine/grund";
 const SymbolWahl = lazy(() => import("./SymbolWahl"));
 const SymbolZeichen = lazy(() => import("./SymbolWahl").then((m) => ({ default: m.SymbolZeichen })));
 
@@ -46,7 +46,7 @@ function zusammen(geerbt, eigen) {
  * bruecke.current = (nachricht) => postMessage an die Galerie (setzt die Testseite).
  */
 export function useBausteinDesigner({ dunkel }) {
-  const bestaetigen = useBestaetigen();   // statt window.confirm (Review #58) – Rahmen liegt im Designer
+  const bestaetigen = useBestaetigen();   // statt window.confirm (Review #58) – Rahmen <BestaetigenRahmen> in App.jsx
   const bruecke = useRef(null);
   const [wahl, setWahl] = useState(null);
   const [zustand, setZustand] = useState("normal");

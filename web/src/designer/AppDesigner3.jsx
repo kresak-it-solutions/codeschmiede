@@ -13,7 +13,7 @@ import Begruendung from "./Begruendung";
 import { useTokenBruecke } from "./useTokenBruecke";
 import { tokenWerte, nurAbweichungen, begruendungSchluessel } from "../designSystem";
 import { pruefeDsTokens } from "../kontrast";
-import { useBestaetigen } from "./dialog";
+import { useBestaetigen } from "../bausteine/grund";
 
 const fehlerText = (e) => String(e?.message || "Fehler").slice(0, 300);
 const ebeneFertig = (e) => e.level === "all" || (e.level === "package" ? !!e.package_key : !!e.club_id && (e.level !== "role" || !!e.role_key));

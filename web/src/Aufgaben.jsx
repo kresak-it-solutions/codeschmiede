@@ -77,7 +77,7 @@ async function dateiPruefen(datei) {
 const oeffneExtern = (url) => { if (isDesktop()) tauri("plugin:opener|open_url", { url }).catch(() => {}); else window.open(url, "_blank", "noopener,noreferrer"); };
 
 // ---------- Kleine Bausteine ----------
-const Pille = ({ cls, children }) => <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap ${cls}`}>{children}</span>;
+const Pille = ({ cls, children }) => <span className={`text-xs font-semibold px-2 py-0.5 rounded-full whitespace-nowrap ${cls}`}>{children}</span>;
 
 // Link nur als Link: kein Vorschaubild, kein automatisches Laden; Öffnen im Browser des Systems ohne Verweis-Angabe
 export function SichererLink({ titel, url }) {
@@ -142,7 +142,7 @@ export function AnhangListe({ anhaenge, toast, onEntfernen, klein }) {
               {urls[a.pfad] ? <img src={urls[a.pfad]} alt={a.dateiname} className="w-full h-full object-cover" loading="lazy" referrerPolicy="no-referrer" />
                 : <span className="grid place-items-center w-full h-full text-slate-400"><ImageIcon className="w-5 h-5" /></span>}
             </button>
-            <figcaption className="absolute inset-x-0 bottom-0 bg-black/55 text-white text-[10px] px-1 truncate">{a.dateiname}</figcaption>
+            <figcaption className="absolute inset-x-0 bottom-0 bg-black/55 text-white text-xs px-1 truncate">{a.dateiname}</figcaption>
             {onEntfernen && <button type="button" title="Entfernen" aria-label={`${a.dateiname} entfernen`} onClick={() => onEntfernen(a)} className="absolute top-1 right-1 p-0.5 rounded bg-black/60 text-white opacity-0 group-hover:opacity-100 focus:opacity-100"><X className="w-3.5 h-3.5" /></button>}
           </figure>))}
       </div>}
@@ -465,7 +465,7 @@ function Detail({ a, d, ich, kann, toast, leute, gruppen, features, anhaenge, se
             </li>))}
         </ul>}
       </div>}
-      {a && <p className="text-[11px] text-slate-400">Angelegt {wann(a.erstellt)}{a.erstellt_von ? ` von ${name(a.erstellt_von)}` : ""} · zuletzt geändert {wann(a.geaendert)}{a.geaendert_von ? ` von ${name(a.geaendert_von)}` : ""}</p>}
+      {a && <p className="text-xs text-slate-400">Angelegt {wann(a.erstellt)}{a.erstellt_von ? ` von ${name(a.erstellt_von)}` : ""} · zuletzt geändert {wann(a.geaendert)}{a.geaendert_von ? ` von ${name(a.geaendert_von)}` : ""}</p>}
     </div>);
 }
 
@@ -499,7 +499,7 @@ export function AufgabenImChat({ g, f, d, ich, kannAuftrag, toast }) {
   const zurueck = async (s) => { const { error } = await supabase.rpc("ws_aufgabe_sendung_zurueckziehen", { p_sendung: s.id }); if (error) toast(fehler(error)); else holen(); };
   return liste.map((s) => (
     <div key={s.id} className="self-stretch rounded-xl border-2 border-orange-500/70 bg-orange-50/60 dark:bg-orange-950/20 p-3 text-sm flex flex-col gap-2" aria-label={`Aufgabe ${s.titel}`}>
-      <div className="text-[11px] font-semibold text-slate-500 flex items-center gap-1.5 flex-wrap"><ClipboardList className="w-3.5 h-3.5" />Aufgabe von {name(s.von)} · {wann(s.erstellt)}
+      <div className="text-xs font-semibold text-slate-500 flex items-center gap-1.5 flex-wrap"><ClipboardList className="w-3.5 h-3.5" />Aufgabe von {name(s.von)} · {wann(s.erstellt)}
         {!f && s.feature_id && <span className="px-1.5 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">für Feature {d.features.find((x) => x.id === s.feature_id)?.name || s.feature_id}</span>}</div>
       <div className="font-display font-semibold text-[15px]">{s.titel}</div>
       <p className="whitespace-pre-wrap break-words">{s.text}</p>
@@ -557,6 +557,6 @@ export function AufgabeBeilagen({ m, erste, toast }) {
     <div className="mt-2 flex flex-col gap-1.5">
       {links.map((l, i) => <SichererLink key={i} titel={l.titel} url={l.url} />)}
       <AnhangListe anhaenge={anh} toast={toast} klein />
-      {ids.length > anh.length && <span className="text-[11px] text-slate-500">{ids.length - anh.length} Anhang/Anhänge nicht mehr vorhanden</span>}
+      {ids.length > anh.length && <span className="text-xs text-slate-500">{ids.length - anh.length} Anhang/Anhänge nicht mehr vorhanden</span>}
     </div>);
 }

@@ -196,6 +196,8 @@ function eineKette(kette, cwd) {
   return frage("Unbekannter Befehl");
 }
 
+const BAU_DATEI = /(^|\/)((vite|vitest|playwright|jest)\.config\.[a-z]+|wrangler\.toml)$|(^|\/)(tools|scripts)\//i;
+
 export function einstufung(werkzeug, eingabe, { adminPc = false, cwd = process.env.CS_ORDNER || process.cwd() } = {}) {
   const roh = String(eingabe ?? "");
   const sp = gesperrt(roh, adminPc); if (sp) return sperre(sp);
@@ -206,7 +208,11 @@ export function einstufung(werkzeug, eingabe, { adminPc = false, cwd = process.e
     const offen = st.find((x) => x.stufe !== "erlaubt"); if (offen) return offen;
     return ok([...new Set(st.map((x) => x.grund))].join(", "));
   }
-  if (werkzeug === "WebSearch") return ok("Im Internet suchen");
+  // Befund S2 (01.11.2026): Die Suchanfrage ist ein Weg nach draußen (z. B. für zuvor gelesene Inhalte) – nie automatisch
+  if (werkzeug === "WebSearch") return frage("Websuche – die Suchanfrage geht ins Internet, bitte prüfen, dass nichts Vertrauliches darin steht");
+  if (werkzeug === "WebFetch") return frage("Internetseite abrufen – bitte prüfen");
+  // Bau-/Test-Einstellungen (vite/vitest/playwright/jest/wrangler, tools/, scripts/) laufen beim Bauen in der Cloud als Code (Befund S1)
+  if ((werkzeug === "Edit" || werkzeug === "Write") && BAU_DATEI.test(roh.replace(/\\/g, "/"))) return frage("Ändert eine Bau- oder Test-Einstellung (läuft beim Bauen als Code) – bitte prüfen");
   if (/^mcp__/.test(werkzeug)) return sperre("Fremde Werkzeuge");
   return frage("Werkzeug");
 }

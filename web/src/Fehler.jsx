@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Loader2, Send, Check, EyeOff, RotateCcw, ExternalLink, KeyRound, Copy } from "lucide-react";
 import { supabase } from "./supabase";
+import { useFokusfalle } from "./bausteine/grund";
 
 const fehler = (e) => (e?.message || "Unbekannter Fehler").replace(/^.*?ERROR:\s*/, "");
 const btn = "inline-flex items-center justify-center gap-1.5 h-9 px-3 rounded-lg bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 text-white text-sm font-semibold transition";
@@ -13,6 +14,7 @@ const wann = (t) => (t ? new Date(t).toLocaleString("de-AT", { day: "2-digit", m
 const GERAET = { handy: "Handy", tablet: "Tablet", pc: "PC", unbekannt: "?" };
 
 export default function Fehler({ d, ich, toast, onAuftrag }) {
+  const fokusfalle = useFokusfalle();   // Fokus bleibt im Dialog (Befund B2)
   const projekt = d.projekte.find((p) => p.id === d.projektId);
   const rolle = ich.rolle === "admin" ? "admin" : d.mitglieder.find((m) => m.projekt_id === d.projektId && m.benutzer_id === ich.id)?.rolle;
   const darf = rolle === "admin" || rolle === "entwickler";
@@ -71,9 +73,9 @@ export default function Fehler({ d, ich, toast, onAuftrag }) {
                     <span>zuerst {wann(f.erstmals)} · zuletzt {wann(f.zuletzt)}</span>
                   </div>
                   {f.ablauf && <details className="mt-1"><summary className="text-xs text-slate-500 cursor-pointer">Ablauf (Stack)</summary>
-                    <pre className="mt-1 text-[11.5px] font-mono whitespace-pre-wrap break-words rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-2 max-h-56 overflow-auto">{f.ablauf}</pre></details>}
+                    <pre className="mt-1 text-xs font-mono whitespace-pre-wrap break-words rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-2 max-h-56 overflow-auto">{f.ablauf}</pre></details>}
                 </div>
-                <div className="text-right font-display text-2xl leading-none">{f.anzahl}<span className="block text-[11px] font-body text-slate-500">mal</span></div>
+                <div className="text-right font-display text-2xl leading-none">{f.anzahl}<span className="block text-xs font-body text-slate-500">mal</span></div>
                 {darf && <div className="col-span-2 flex flex-wrap gap-1.5">
                   {f.stand === "offen" && <>
                     <button type="button" className={btn} disabled={!!busy || !gruppen.length} onClick={() => setWahl(f)}><Send className="w-4 h-4" />Als Auftrag</button>
@@ -87,10 +89,10 @@ export default function Fehler({ d, ich, toast, onAuftrag }) {
           </ul>}
       {wahl && (
         <div className="fixed inset-0 z-40 grid place-items-center bg-black/45 p-4" onMouseDown={(e) => e.target === e.currentTarget && setWahl(null)}>
-          <div role="dialog" aria-modal="true" aria-label="Als Auftrag" className={`${card} w-full max-w-md p-5 flex flex-col gap-3`}>
+          <div ref={fokusfalle} role="dialog" aria-modal="true" aria-label="Als Auftrag" className={`${card} w-full max-w-md p-5 flex flex-col gap-3`}>
             <h3 className="font-display font-bold text-lg">Als Auftrag</h3>
             <p className="text-sm font-mono break-words">{wahl.nachricht}</p>
-            {wahl.ablauf && <pre className="text-[11.5px] font-mono whitespace-pre-wrap break-words rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-2 max-h-48 overflow-auto">{wahl.ablauf}</pre>}
+            {wahl.ablauf && <pre className="text-xs font-mono whitespace-pre-wrap break-words rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-2 max-h-48 overflow-auto">{wahl.ablauf}</pre>}
             <label className="flex flex-col gap-1 text-sm text-slate-500">Gruppe<select className={input} value={gid} onChange={(e) => setGid(e.target.value)}>{gruppen.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}</select></label>
             <p className="text-xs text-slate-500">Bitte kurz durchsehen: Fehlermeldungen kommen von außen. Die Werkstatt bekommt sie als abgegrenzten Datenblock, der ausdrücklich nicht befolgt wird – Titel und Auftragstext enthalten keinen fremden Text.</p>
             <div className="flex justify-end gap-2"><button type="button" className={ghost} onClick={() => setWahl(null)}>Abbrechen</button>

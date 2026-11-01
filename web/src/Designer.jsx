@@ -14,7 +14,7 @@ const SeitenModus = lazy(() => import("./SeitenModus"));
 const Uebernehmen = lazy(() => import("./Uebernehmen"));   // App-Designer 2.0 · Etappe 4
 const AppDesigner3 = lazy(() => import("./designer/AppDesigner3"));   // App-Designer 3.0 (Design-Entwurf 2.0, 01.11.2026)
 import { useDesignSystem } from "./designer/useDesignSystem";
-import { BestaetigenRahmen, useBestaetigen, useFokusfalle, useEscape } from "./designer/dialog";
+import { useBestaetigen, useFokusfalle, useEscape } from "./bausteine/grund";
 import { useBausteinDesigner, BausteinInspektor } from "./BausteinInspektor";
 import { designFrageBeantworten } from "./designFrage";
 import { APP_ARTEN, ART_BASIS, ArtEinstellungen, ArtMuster, beispieleBereinigen, beispieleFuer, menueSymbol } from "./DesignerArten";
@@ -143,13 +143,8 @@ Marke mit eingelesenem Logo (marke.zeichen = "eigen", marke.vektor = feste Forme
 Alle Werte (JSON):
 ${JSON.stringify(werte, null, 1)}`;
 
-// Bestätigen-Dialog statt window.confirm (Review #58): der Rahmen liegt um den ganzen Designer
-export default function Designer(props) {
-  return <BestaetigenRahmen><DesignerInnen {...props} /></BestaetigenRahmen>;
-}
-
-function DesignerInnen({ d, ich, toast }) {
-  const bestaetigen = useBestaetigen();
+export default function Designer({ d, ich, toast }) {
+  const bestaetigen = useBestaetigen();   // statt window.confirm (Review #58) – Rahmen <BestaetigenRahmen> in App.jsx
   const projekt = d.projekte.find((p) => p.id === d.projektId);
   // App-Designer 3.0: Hat das Projekt ein Design-System-Paket (Trainer to go), zeigt der Designer den Entwurf 2.0 statt Grunddesign/Galerie
   const ds = useDesignSystem(d.projektId);

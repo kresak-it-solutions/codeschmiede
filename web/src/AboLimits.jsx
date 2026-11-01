@@ -5,6 +5,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { X, Gauge, Info, RefreshCw, Loader2, CircleAlert } from "lucide-react";
 import { supabase } from "./supabase";
 import { kiFarbe } from "./kiFarbe";
+import { useEscape, useFokusfalle } from "./bausteine/grund";
 
 const NAMEN = { claude: "Claude", chatgpt: "ChatGPT", gemini: "Gemini" };
 const FENSTER = { "5std": "5 Std.", woche: "Woche", tag: "Tag", fenster: "Zeitfenster" };
@@ -63,6 +64,7 @@ function Aktualisieren({ abo, toast, werkstattAn }) {
 }
 
 export default function AboLimits({ d, ich, toast, onSchliessen, onVerbrauch }) {
+  const fokusfalle = useFokusfalle();   // Fokus bleibt im Dialog (Befund B2)
   const [kopp, setKopp] = useState([]); const [eigene, setEigene] = useState({}); const [wahl, setWahl] = useState("claude");
   const warn = d.einstellungen?.abo_klein_ab_prozent ?? 75; const pause = d.einstellungen?.abo_pause_ab_prozent ?? 95;
   const laden = useCallback(async () => {
@@ -76,7 +78,7 @@ export default function AboLimits({ d, ich, toast, onSchliessen, onVerbrauch }) 
     const ch = supabase.channel(`abo-${Math.random()}`).on("postgres_changes", { event: "*", schema: "public", table: "ws_ki_kopplung" }, () => laden()).subscribe();
     return () => { supabase.removeChannel(ch); };
   }, [laden]);
-  useEffect(() => { const t = (e) => e.key === "Escape" && onSchliessen(); window.addEventListener("keydown", t); return () => window.removeEventListener("keydown", t); }, [onSchliessen]);
+  useEscape(onSchliessen);   // nur der oberste Dialog (Review N2)
 
   // aktiver PC zuerst; je Anbieter die neueste Zeile
   const pcs = (d.pcs || []).filter((p) => p.benutzer_id === ich.id).sort((a, b) => (b.an ? 1 : 0) - (a.an ? 1 : 0) || Date.parse(b.zuletzt || 0) - Date.parse(a.zuletzt || 0));
@@ -96,7 +98,7 @@ export default function AboLimits({ d, ich, toast, onSchliessen, onVerbrauch }) 
 
   return (
     <div className="fixed inset-0 z-50 grid place-items-start justify-items-end bg-slate-950/30 p-3 sm:p-6" onClick={onSchliessen}>
-      <section role="dialog" aria-modal="true" aria-label="Abo-Limits je KI" onClick={(e) => e.stopPropagation()}
+      <section ref={fokusfalle} role="dialog" aria-modal="true" aria-label="Abo-Limits je KI" onClick={(e) => e.stopPropagation()}
         className="mt-12 w-full max-w-[440px] rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xl flex flex-col max-h-[80vh]">
         <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-200 dark:border-slate-800">
           <Gauge className="w-4 h-4 text-emerald-700" /><h2 className="font-display font-bold text-lg flex-1">Abo-Limits</h2>

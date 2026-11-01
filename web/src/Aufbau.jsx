@@ -7,6 +7,7 @@
 import React, { useState } from "react";
 import { Shuffle, Send, Loader2, X, FolderPlus, Trash2 } from "lucide-react";
 import { supabase } from "./supabase";
+import { useFokusfalle } from "./bausteine/grund";
 
 const card = "rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900";
 const btn = "inline-flex items-center justify-center gap-1.5 h-9 px-3 rounded-lg bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 text-white text-sm font-semibold transition";
@@ -116,6 +117,7 @@ export function AufbauBanner({ d, ich, offen, toast, onFertig }) {
 
 /** Dialog: neue Obergruppe (App oder ERP). */
 export function NeueObergruppe({ d, toast, onClose, onFertig }) {
+  const fokusfalle = useFokusfalle();   // Fokus bleibt im Dialog (Befund B2)
   const [name, setName] = useState(""); const [teil, setTeil] = useState("app"); const [busy, setBusy] = useState(false);
   const anlegen = async () => {
     setBusy(true);
@@ -124,7 +126,7 @@ export function NeueObergruppe({ d, toast, onClose, onFertig }) {
     if (error) toast(fehler(error)); else { toast(`Obergruppe „${name.trim()}“ angelegt – jetzt Gruppen hineinziehen`); onFertig?.(data); onClose(); }
   };
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label="Neue Obergruppe">
+    <div className="fixed inset-0 z-50 bg-slate-950/50 flex items-center justify-center p-4" ref={fokusfalle} role="dialog" aria-modal="true" aria-label="Neue Obergruppe">
       <div className={`${card} w-full max-w-md p-5 grid gap-3`}>
         <div className="flex items-center justify-between"><h2 className="font-display font-bold text-xl flex items-center gap-2"><FolderPlus className="w-5 h-5 text-emerald-700" />Neue Obergruppe</h2><button type="button" onClick={onClose} aria-label="Schließen"><X className="w-5 h-5" /></button></div>
         <label className="grid gap-1 text-sm font-semibold">Name<input className={input} value={name} onChange={(e) => setName(e.target.value)} placeholder="z. B. Ausbildung" maxLength={40} autoFocus /></label>
@@ -140,9 +142,10 @@ export function NeueObergruppe({ d, toast, onClose, onFertig }) {
 
 /** Kleiner Dialog: umbenennen (Obergruppe oder Gruppe). */
 export function Umbenennen({ titel, alt, onClose, onSpeichern }) {
+  const fokusfalle = useFokusfalle();   // Fokus bleibt im Dialog (Befund B2)
   const [name, setName] = useState(alt || ""); const [busy, setBusy] = useState(false);
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label={titel}>
+    <div className="fixed inset-0 z-50 bg-slate-950/50 flex items-center justify-center p-4" ref={fokusfalle} role="dialog" aria-modal="true" aria-label={titel}>
       <div className={`${card} w-full max-w-md p-5 grid gap-3`}>
         <div className="flex items-center justify-between"><h2 className="font-display font-bold text-xl">{titel}</h2><button type="button" onClick={onClose} aria-label="Schließen"><X className="w-5 h-5" /></button></div>
         <input className={input} value={name} onChange={(e) => setName(e.target.value)} maxLength={60} autoFocus aria-label="Neuer Name" />
@@ -168,9 +171,10 @@ export function gruppeLoeschbar(g, b, d, konzeptId) {
 }
 
 export function GruppeLoeschen({ g, grund, onClose, onLoeschen }) {
+  const fokusfalle = useFokusfalle();   // Fokus bleibt im Dialog (Befund B2)
   const [busy, setBusy] = useState(false);
   if (grund) return (
-    <div className="fixed inset-0 z-50 bg-slate-950/50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label="Gruppe löschen">
+    <div className="fixed inset-0 z-50 bg-slate-950/50 flex items-center justify-center p-4" ref={fokusfalle} role="dialog" aria-modal="true" aria-label="Gruppe löschen">
       <div className={`${card} w-full max-w-md p-5 grid gap-3`}>
         <div className="flex items-center justify-between"><h2 className="font-display font-bold text-xl">Gruppe „{g.name}“</h2><button type="button" onClick={onClose} aria-label="Schließen"><X className="w-5 h-5" /></button></div>
         <p>Diese Gruppe kann nicht gelöscht werden: <b>{grund}</b>.</p>
@@ -179,7 +183,7 @@ export function GruppeLoeschen({ g, grund, onClose, onLoeschen }) {
       </div>
     </div>);
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label="Gruppe löschen">
+    <div className="fixed inset-0 z-50 bg-slate-950/50 flex items-center justify-center p-4" ref={fokusfalle} role="dialog" aria-modal="true" aria-label="Gruppe löschen">
       <div className={`${card} w-full max-w-md p-5 grid gap-3`}>
         <div className="flex items-center justify-between"><h2 className="font-display font-bold text-xl">Gruppe löschen</h2><button type="button" onClick={onClose} aria-label="Schließen"><X className="w-5 h-5" /></button></div>
         <p>Die Gruppe <b>„{g.name}“</b> ist leer und hat keinen Menüpunkt in der App. Sie wird endgültig entfernt.</p>

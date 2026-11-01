@@ -19,30 +19,54 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  deploy:
-    name: Cloudflare Pages
+  # Review H1 (02.11.2026): Bauen und Hochladen getrennt. Der Bau führt Code des Zweigs aus (npm-Pakete, vite.config) und bekommt deshalb
+  # KEIN Geheimnis. Das Hochladen bekommt das Token, führt aber keinen Code des Zweigs aus (nur die fertigen Dateien aus dem Bau).
+  # So bleiben die Vorschauen der Zweige (<zweig>.codeschmiede.pages.dev) erhalten.
+  bauen:
+    name: Bauen (ohne Geheimnisse)
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    permissions:
+      contents: read
     defaults:
       run:
         working-directory: web
     steps:
       - uses: actions/checkout@v4
+        with: { persist-credentials: false }
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
       - name: Bauen
-        run: npm install --no-audit --no-fund && npm run build
+        run: npm ci --no-audit --no-fund && npm run build   # Lock-Datei (Befund S3, 01.11.2026)
+      - uses: actions/upload-artifact@v4
+        with: { name: web-dist, path: web/dist/, retention-days: 1, if-no-files-found: error }
+  deploy:
+    name: Cloudflare Pages
+    needs: bauen
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions: {}
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { name: web-dist, path: dist }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
       - name: Zu Cloudflare Pages hochladen
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: a20e5ea4c61fb0156e241c29f99fac93
           NACHRICHT: ${{ github.event.head_commit.message }}
+          ZWEIG: ${{ github.ref_name }}
         run: |
           [ -n "$CLOUDFLARE_API_TOKEN" ] || { echo "::error::Geheimnis CLOUDFLARE_API_TOKEN fehlt"; exit 1; }
           tok=$(printf '%s\n' "$CLOUDFLARE_API_TOKEN" | tr -d '\r' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | awk 'length($0)>=38 && $0 !~ /[[:space:]]/ {print; exit}')
           [ -n "$tok" ] || { echo "::error::CLOUDFLARE_API_TOKEN enthält keinen gültigen Schlüssel – bitte neu einfügen"; exit 1; }
+          echo "::add-mask::$tok"
           export CLOUDFLARE_API_TOKEN="$tok"
           msg=$(printf '%s' "${NACHRICHT:-Bau aus GitHub}" | head -n1 | cut -c1-300)
-          npx --yes wrangler@4 pages deploy dist --project-name codeschmiede --branch "$GITHUB_REF_NAME" \
+          # in einem leeren Ordner: keine package.json/.npmrc des Zweigs beeinflusst npx
+          cd "$RUNNER_TEMP" && cp -r "$GITHUB_WORKSPACE/dist" ./dist
+          npx --yes wrangler@4 pages deploy dist --project-name codeschmiede --branch "$ZWEIG" \
             --commit-hash "$GITHUB_SHA" --commit-message "$msg" --commit-dirty=true

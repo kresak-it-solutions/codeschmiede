@@ -10,7 +10,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { LayoutGrid, Send, Loader2, RefreshCw, ExternalLink, Hammer, X } from "lucide-react";
 import { supabase } from "./supabase";
 import GeraeteRahmen from "./GeraeteRahmen";
-import { useFokusfalle } from "./designer/dialog";
+import { useFokusfalle } from "./bausteine/grund";
 import { designFrageBeantworten, designFreigabeMerken } from "./designFrage";
 import { isDesktop } from "./desktop";
 import { kiAnzeigename } from "./kiName";

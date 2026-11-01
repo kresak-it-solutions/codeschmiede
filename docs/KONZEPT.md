@@ -1,6 +1,6 @@
 # Codeschmiede – Konzept
 
-**Stand:** 2026-10-22 · Wer: Gerhard Kresak (Anweisungen und Freigaben 2026-10-22 12:06–13:39), Claude (Konzept, Umsetzung)
+**Stand:** 2026-11-01 (zuletzt: Befunde Sicherheit/Logik/Bedienung, `docs/BEFUNDE-2026-11-01.md`) · angelegt 2026-10-22 · Wer: Gerhard Kresak (Anweisungen und Freigaben 2026-10-22 12:06–13:39), Claude (Konzept, Umsetzung)
 **Herkunft:** entstanden als „Trainer-to-go Programmierumgebung“ im Repo `trainer-to-go` (Zweig `feature/auftrags-zentrale`, Entwurf 0.4 freigegeben 12:37);
 seit 13:16 eigenes Programm für alle Projekte. Entwurf: `docs/entwurf-0.4.html`.
 
@@ -74,7 +74,7 @@ Lesen: Projektmitglieder; Stand ändern und „Als Auftrag“: Admin und Entwick
 Für Projekte mit **Design-System-Paket** (Trainer to go: `docs/design-2/DESIGN-SYSTEM.md`, erzeugt von `tools/design-system.mjs` aus Entwurf 2.0,
 Konzept §4/§5/§8, `src/index.css`, Routen) sieht der App-Designer aus wie der Design-Entwurf 2.0: Leiste Rolle · PC/Handy · Hell/Dunkel ·
 Bausteine zeigen · Begründung; links Seiten je Rolle, Mitte Vorschau, rechts Inspektor (Baustein · Tokens · Prüfungen). Reiter **Entwurf**
-(Masken des Entwurfs, abgeschotteter Rahmen) und **Echte App (Testfassung)** (Vorschau-Protokoll der App). Das Paket ist die einzige Quelle –
+(Masken des Entwurfs in der Rahmen-Seite `/entwurf-rahmen/` mit Sandbox und eigener CSP – ein `srcdoc` würde die strenge CSP der Oberfläche erben) und **Echte App (Testfassung)** (Vorschau-Protokoll der App). Das Paket ist die einzige Quelle –
 die Codeschmiede hat keine Kopie von Tokens, Bausteinen, Seiten oder Begründungen (`web/src/designSystem.js` prüft es streng). Token-Änderungen
 gehen als Entwurf ins Design-Paket der App (`tokens.ds`) über deren Rechteprüfung; Kontrast-Wächter mit Paaren und Regeln aus dem Paket
 („Blau nie Status“, „Terminart ≠ Status“). Projekte ohne Paket behalten Grunddesign/Bausteine (Ausgangswerte jetzt Design 2.0, Blau).
@@ -117,7 +117,8 @@ unten aufklappbar **Verwaltung**), auf dem Handy als ausfahrbares Menü. **Kopfz
 **Zentrale** mit Kennzahlen oben. **Chat** (`web/src/Chat.jsx`): eigene Unterhaltungen je Projekt (`ws_unterhaltungen`, persönlich; Konzept-Chat =
 ohne Unterhaltung, immer angeheftet), @Feature/#Gruppe, Anhänge (Speicher `ws-chat`), Bezüge rechts; die Werkstatt liest den Verlauf nur aus derselben
 Unterhaltung und arbeitet wie im Konzept-Chat (Rückfragen, Aufträge erst nach Klärung). **Limits:** Knopf „Jetzt aktualisieren“ (`ws_abo_abruf`) – die
-eigene Werkstatt fragt kostenlos bei Anthropic ab (`desktop/dienst/lib/nutzung.mjs`), sonst Mini-Anfrage; Hinweis bei Fehlern.
+eigene Werkstatt nimmt die Werte der offiziellen Statuszeile von Claude Code (höchstens 2 Minuten alt), sonst Mini-Anfrage; Hinweis bei Fehlern.
+Seit 0.10.1 (Befund S6) liest die Werkstatt **keine** Anmeldung von Claude Code mehr und ruft keine inoffizielle Schnittstelle auf.
 
 ## Rollen und Rechte
 | Rolle | Aufträge | Freigeben / Erlauben | Löschen | Claude | GitHub |
@@ -129,17 +130,23 @@ eigene Werkstatt fragt kostenlos bei Anthropic ab (`desktop/dienst/lib/nutzung.m
 Neue Projekte, Gruppen, Mitglieder, Abo-Schwellen: nur Admin.
 
 ## Weg eines Auftrags (seit 0.3.0, Entwurf 0.7 freigegeben 2026-10-22 20:41)
-Auftrag → In Arbeit (Werkstatt-PC, eigener Zweig, danach Bauen & Tests auf dem PC) → **Freigabe** (Klick; Admin oder Recht) →
+Auftrag → In Arbeit (Werkstatt-PC, eigener Zweig; seit 0.10.1 **keine** Bauen & Tests auf dem PC, Befund S1) → **Freigabe** (Klick; Admin oder Recht) →
 **Sicherheitsprüfung** (automatisch auf dem Admin-PC: Bauen & Tests + unabhängige Claude-Prüfung der Änderung) → **Zusammenführen** (Klick) →
 **Feature-Prüfung** (automatisch: Testfassung = Zweig + neuester main, Bauen & Tests, unabhängige Prüfung des ganzen Features) →
-bei Grün Pull Request in main = **live** → **Live & Wissen**. Rot an einer Prüfung → **Nacharbeit** (Werkstatt behebt, dann wieder Freigabe);
+bei Grün Pull Request in main = **live** → **Live & Wissen**. Seit 0.10.2 (Befund L2) sind **alle Prüfläufe auf GitHub** (z. B. „Prüfung“) ein Tor:
+die Stationen warten darauf (höchstens 45 Min.), rot = Nacharbeit, und prüfen sie unmittelbar vor dem Zusammenführen noch einmal. Scheitert eine Station
+an etwas anderem (z. B. GitHub nicht angemeldet), startet sie nach 1, 5 und 30 Minuten neu und ist danach **angehalten** – „Erneut versuchen“ in der
+Stationen-Übersicht (Datenbank 0052, Recht „freigeben“). Ein grün geprüfter Stand wird nicht noch einmal geprüft (Befund L1). Ab Abo-Schwelle
+„klein“ prüft Sonnet das ganze Feature, die Sicherheitsprüfung bleibt Opus (L6). Rot an einer Prüfung → **Nacharbeit** (Werkstatt behebt, dann wieder Freigabe);
 live geht dabei nichts. Reine Fragen → beantwortet, „erledigt“. Stationen oben in der Zentrale anklickbar (Übersicht nach Feature, einzeln oder alle).
-Solange GitHub-Prüfungen nicht laufen (Gratis-Minuten), gelten Bauen & Tests auf dem PC als Prüfung (Entscheidung 20:36).
+Bauen & Tests laufen nur in GitHub („Prüfung“) und Cloudflare – auf keinem PC der Codeschmiede läuft Projekt-Code (seit 0.10.1, Befund S1;
+die frühere Ausnahme „Bauen & Tests auf dem PC“ vom 22.10. 20:36 ist aufgehoben).
 
 ## Feature-Arbeitsplatz (seit 0.3.0)
 Klick auf ein Feature = Kurzinfo; Doppelklick = Chat links, Live-Vorschau rechts (Trennlinie verschiebbar). Vorschau = Testseite des Zweigs
 (`<zweig>.<vorschau_domain>`), sonst die App; „Neuer Stand da“ über `version.json`; „Zeigen & kommentieren“ über den Vorschau-Helfer der App
-(nur Testseiten). Nachrichten aus Gruppen-Chat und Claude-Chat erscheinen beim Feature mit Herkunft.
+(nur Testseiten; seit 0.10.1 nur Name, Seite und Pfad des Elements – nie sein sichtbarer Text, Befund S4). Zweig-Testseiten laden erst nach
+dem Klick „Verstanden, Vorschau anzeigen“ und zeigen dauerhaft „hier nicht anmelden“ (Befund S5), im Rahmen mit Sandbox (S7). Nachrichten aus Gruppen-Chat und Claude-Chat erscheinen beim Feature mit Herkunft.
 
 ## Werkstatt (Schritt 2)
 - Läuft im Programm, wenn „Werkstatt an“; holt den nächsten wartenden Auftrag aus Gruppen, in denen der Benutzer Auftragsrecht hat.
@@ -163,3 +170,30 @@ Klick auf ein Feature = Kurzinfo; Doppelklick = Chat links, Live-Vorschau rechts
 | 2 | Programm (Tauri) + Werkstatt-Dienst | in Arbeit |
 | 3 | Live-Vorschau mit „Zeigen & kommentieren“ | erledigt 2026-10-23 (Feature-Arbeitsplatz und eigener Menüpunkt) |
 | 4 | Zusammenführen / Sicherheitsprüfung / Wissen auf dem Admin-PC; Zweige & Versionen, Prüfstand, Wissensdatenbank, Änderungsprotokoll, Dokumentation | erledigt 2026-10-23 (0.6.0, Projekt-Abgleich) |
+
+## Aufbau der Oberfläche im Code (seit 0.10.3, Befund B1)
+`web/src/App.jsx` = Rahmen, Kopfzeile, Navigation, Ansichten-Weiche · `web/src/seiten/*.jsx` = Seiten (Zentrale, Zu erledigen & Live, Live-Vorschau,
+Verwaltung, Verbrauch, Werkstatt, Anmelden, Kopfzeile) · `web/src/bausteine/grund.jsx` = Knopf-Klassen, Hilfen, `Badge`, `Toast`, `Dialog` (mit
+Fokusfalle), `BestaetigenRahmen`/`useBestaetigen`, `useFokusfalle` · `web/src/daten/werkstattDaten.js` = Live-Daten und Rechte. Übrige Bereiche
+(Chat, Aufgaben, Designer …) haben wie bisher eigene Dateien.
+
+## Offene Punkte aus den Befunden vom 01.11.2026 (`docs/BEFUNDE-2026-11-01.md`)
+- **L3 Push-Nachricht aufs Handy (Pflichtregel AGENTS.md, noch nicht gebaut).** Ohne neue Infrastruktur nicht sinnvoll machbar: Jede Push-Nachricht
+  aufs Handy läuft über den Push-Dienst des Handy-Browsers (Google bzw. Apple) oder einen eigenen Server. **Plan (Empfehlung):** Web-Push für die
+  Codeschmiede als PWA (`codeschmiede.pages.dev` auf dem Handy „Zum Home-Bildschirm“, iPhone ab iOS 16.4): Service Worker, Tabelle `ws_push_abos`
+  (Endpunkt und Schlüssel je Gerät, nur eigene Person), Supabase Edge Function `push-senden` mit VAPID-Schlüssel (Geheimnis nur in Supabase),
+  Auslöser per Datenbank-Trigger bei neuer Erlaubnis-Anfrage, Rückfrage, Freigabe-bereit und angehaltener/roter Station. Inhalt nur kurz und ohne
+  Personendaten („Auftrag #12 wartet auf deine Erlaubnis“), Ende-zu-Ende verschlüsselt (RFC 8291) – der Push-Dienst sieht den Text nicht; trotzdem
+  Eintrag in `docs/DATENSCHUTZ.md` (Empfänger: Push-Dienst von Google/Apple/Mozilla, nur Gerätekennung). Aufwand etwa 1–2 Tage, Risiko NORMAL;
+  braucht Gerhard: VAPID-Schlüssel anlegen lassen und die Edge Function freigeben. Alternative ohne Google/Apple: eigener ntfy-Server (eigener
+  Rechner/Server nötig).
+- **L4 Warteschlange fürs Zusammenführen:** Seit 0.10.2 höchstens 3 Neustarts wegen eines bewegten main, dann „angehalten“. Eine echte
+  Warteschlange (oder die Merge-Queue von GitHub) folgt mit L7.
+- **L7 Vorhaben mit Stufen** (ein Auftrag, mehrere PRs) und Übernahme der Nacharbeit durch einen anderen PC derselben Person (heute: Nacharbeit
+  nimmt jeder PC der Person, die den Auftrag gestellt hat): eigenes Konzept mit Entwurf.
+- **L2 Schutzregel auf GitHub:** Die Codeschmiede wartet jetzt selbst auf alle Prüfläufe. Zusätzlich empfohlen: Schutzregel für `main` mit
+  Pflicht-Prüflauf „Prüfung“ (Einstellung in GitHub, macht Gerhard bzw. der zusammenführende Chat).
+- **B4 ein Chat-Baustein** für alle Orte (Chat, Konzept, Feature, Design, Baustein, Kachel) mit Bezug als Chip, Begriffe „Besprechen“/„Als Auftrag“ –
+  zusammen mit dem Umbau des App-Designers (eigener Chat). **B9** Leer-/Lade-/Fehlerzustand als Bausteine mit „Erneut versuchen“.
+- **L9 geprüft:** Der Kopplungs-Abgleich macht keine Mini-Anfragen (nur `--version`, `auth status`/`login status`, Limits von Codex ohne Anfrage).
+

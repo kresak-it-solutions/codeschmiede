@@ -98,14 +98,14 @@ fn rechnername() -> String {
         if let Ok(out) = std::process::Command::new("/usr/sbin/scutil").args(["--get", "ComputerName"]).output() {
             let name = String::from_utf8_lossy(&out.stdout).trim().to_string();
             if out.status.success() && !name.is_empty() {
-                return name;
+                return super::name_bereinigen(&name, "Mac");
             }
         }
         return "Mac".into();
     }
     #[cfg(not(target_os = "macos"))]
     {
-        std::env::var("COMPUTERNAME").or_else(|_| std::env::var("HOSTNAME")).unwrap_or_else(|_| "Windows-PC".into())
+        super::name_bereinigen(&std::env::var("COMPUTERNAME").or_else(|_| std::env::var("HOSTNAME")).unwrap_or_default(), "Windows-PC")
     }
 }
 

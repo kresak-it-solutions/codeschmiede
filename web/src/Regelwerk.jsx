@@ -66,7 +66,7 @@ export default function Regelwerk({ d, ich, toast }) {
             : gefiltert.map((x) => (
               <button key={x.pfad} type="button" aria-current={pfad === x.pfad} onClick={() => setPfad(x.pfad)} className={`text-left px-2.5 py-1.5 rounded-lg ${pfad === x.pfad ? "bg-emerald-50 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300" : "hover:bg-slate-50 dark:hover:bg-slate-800"}`}>
                 <div className="text-sm font-semibold break-all flex items-center gap-1.5"><FileText className="w-3.5 h-3.5 shrink-0" />{x.pfad}</div>
-                <div className="text-[11px] text-slate-500">{art(x.pfad)} · {fmt(x.aktualisiert)}</div></button>))}
+                <div className="text-xs text-slate-500">{art(x.pfad)} · {fmt(x.aktualisiert)}</div></button>))}
         </div>
         <div className="flex flex-col gap-3 min-w-0">
           {kapitel.length > 2 && <div className={`${card} p-3`}><div className="text-xs font-semibold text-slate-500 mb-1">Inhalt</div><div className="flex flex-wrap gap-1.5">{kapitel.map((k, i) => <span key={i} className="text-xs rounded-full bg-slate-100 dark:bg-slate-800 px-2 py-0.5">{k}</span>)}</div></div>}

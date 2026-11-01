@@ -1,6 +1,8 @@
 // App-Designer 3.0 · Ansicht „Entwurf“: die Masken des Design-Entwurfs 2.0 aus dem Design-System-Paket der App.
-// Der Entwurf läuft in einem abgeschotteten Rahmen: srcdoc + sandbox="allow-scripts" (ohne allow-same-origin → eigene, leere Herkunft,
-// kein Zugriff auf die Codeschmiede, ihre Anmeldung oder das Programm). Gesteuert wird nur per postMessage (Steuer-Skript der App,
+// Der Entwurf läuft in einem abgeschotteten Rahmen: eigene Rahmen-Seite /entwurf-rahmen/ + sandbox="allow-scripts" (ohne allow-same-origin →
+// eigene, leere Herkunft, kein Zugriff auf die Codeschmiede, ihre Anmeldung oder das Programm). Kein srcdoc mehr: das erbt die strenge CSP
+// der Oberfläche (script-src 'self', web/public/_headers) und dürfte die eingebetteten Skripte des Entwurfs nicht ausführen. Die Rahmen-Seite
+// hat eine eigene enge CSP (nur eingebettete Skripte/Stile, nichts nachladen) und nimmt genau ein Dokument per postMessage an. Gesteuert wird nur per postMessage (Steuer-Skript der App,
 // tools/design-system/steuerung.js); angenommen werden nur Nachrichten genau aus diesem Rahmen, und nur Namen von Seiten und Bausteinen.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
@@ -35,7 +37,7 @@ async function eigeneSchriften() {
   return schriftenCache;
 }
 
-// Eigene CSP der Codeschmiede, als erstes Element in <head> – gilt auch dann, wenn das Paket selbst keine mitbringt (Review #58 M2)
+// Eigene CSP der Codeschmiede, als erstes Element in <head> – gilt zusätzlich zur CSP der Rahmen-Seite, auch wenn das Paket keine mitbringt (Review #58 M2)
 const CSP = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; font-src data: blob:; img-src data:">`;
 export const mitCsp = (html) => (/<head[^>]*>/i.test(html) ? html.replace(/<head[^>]*>/i, (k) => `${k}${CSP}`) : null);
 
@@ -50,6 +52,7 @@ export default function EntwurfVorschau({ html: roh, leiste, seite, tokens, mark
     const h = (e) => {
       if (!rahmen.current || e.source !== rahmen.current.contentWindow || !e.data || typeof e.data !== "object") return;
       const n = e.data;
+      if (n.cs === "rahmen-bereit") { if (html) sende({ cs: "entwurf-html", html }); return; }
       if (n.cs === "entwurf-bereit") {
         setBereit(true);
         eigeneSchriften().then((dateien) => { if (dateien.length) sende({ cs: "schriften", dateien: dateien.map((d) => ({ ...d, daten: d.daten.slice(0) })) }); });
@@ -61,7 +64,7 @@ export default function EntwurfVorschau({ html: roh, leiste, seite, tokens, mark
     };
     window.addEventListener("message", h);
     return () => window.removeEventListener("message", h);
-  }, [onSeite, onBaustein, sende]);
+  }, [onSeite, onBaustein, sende, html]);
 
   // Leiste und Seite → Entwurf
   useEffect(() => {
@@ -75,7 +78,7 @@ export default function EntwurfVorschau({ html: roh, leiste, seite, tokens, mark
   // ohne <head> keine Vorschau (die CSP muss sicher drinstehen)
   // Wechsel PC ↔ Handy baut den Rahmen neu – bis der Entwurf sich wieder meldet, nichts senden
   useEffect(() => { setBereit(false); }, [handy]);
-  const iframe = <iframe key={handy ? "handy" : "pc"} ref={rahmen} title="Design-Entwurf 2.0" srcDoc={html} sandbox="allow-scripts" referrerPolicy="no-referrer"
+  const iframe = <iframe key={`${handy ? "handy" : "pc"}-${html?.length || 0}`} ref={rahmen} title="Design-Entwurf 2.0" src="/entwurf-rahmen/" sandbox="allow-scripts" referrerPolicy="no-referrer"
     className="block w-full h-full border-0" style={{ background: leiste.thema === "dark" ? "#0a0f1c" : "#eef2f8" }} />;
   if (!html) return <p className="p-4 text-sm text-slate-500">Der eingebettete Entwurf ist unvollständig (kein &lt;head&gt;) – nicht angezeigt.</p>;
   return (
