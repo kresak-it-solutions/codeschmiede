@@ -5,7 +5,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { X, Gauge, Info, RefreshCw, Loader2, CircleAlert } from "lucide-react";
 import { supabase } from "./supabase";
 import { kiFarbe } from "./kiFarbe";
-import { useFokusfalle } from "./bausteine/grund";
+import { useEscape, useFokusfalle } from "./bausteine/grund";
 
 const NAMEN = { claude: "Claude", chatgpt: "ChatGPT", gemini: "Gemini" };
 const FENSTER = { "5std": "5 Std.", woche: "Woche", tag: "Tag", fenster: "Zeitfenster" };
@@ -78,7 +78,7 @@ export default function AboLimits({ d, ich, toast, onSchliessen, onVerbrauch }) 
     const ch = supabase.channel(`abo-${Math.random()}`).on("postgres_changes", { event: "*", schema: "public", table: "ws_ki_kopplung" }, () => laden()).subscribe();
     return () => { supabase.removeChannel(ch); };
   }, [laden]);
-  useEffect(() => { const t = (e) => e.key === "Escape" && onSchliessen(); window.addEventListener("keydown", t); return () => window.removeEventListener("keydown", t); }, [onSchliessen]);
+  useEscape(onSchliessen);   // nur der oberste Dialog (Review N2)
 
   // aktiver PC zuerst; je Anbieter die neueste Zeile
   const pcs = (d.pcs || []).filter((p) => p.benutzer_id === ich.id).sort((a, b) => (b.an ? 1 : 0) - (a.an ? 1 : 0) || Date.parse(b.zuletzt || 0) - Date.parse(a.zuletzt || 0));

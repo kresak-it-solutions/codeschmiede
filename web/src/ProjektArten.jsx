@@ -7,7 +7,7 @@ import { supabase } from "./supabase";
 import { WS_ICON } from "./config";
 import { APP_ARTEN } from "./DesignerArten";
 import { FehlerSchluessel } from "./Fehler";
-import { useFokusfalle } from "./bausteine/grund";
+import { useEscape, useFokusfalle } from "./bausteine/grund";
 
 const fehler = (e) => (e?.message || "Unbekannter Fehler").replace(/^.*?ERROR:\s*/, "");
 const btn = "inline-flex items-center justify-center gap-2 h-10 px-4 rounded-xl bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 text-white font-display font-bold tracking-wide transition";
@@ -40,7 +40,7 @@ export function NeuesProjektAssistent({ toast, onClose, onFertig }) {
   const [repo, setRepo] = useState(""); const [anlegen, setAnlegen] = useState(true); const [privat, setPrivat] = useState(true);   // Befund S2 (01.11.2026): neue Repos standardmäßig privat
   const [symbol, setSymbol] = useState("layers"); const [art, setArt] = useState("verwaltung");
   const [db, setDb] = useState("keine"); const [busy, setBusy] = useState(false);
-  useEffect(() => { const k = (e) => e.key === "Escape" && onClose(); window.addEventListener("keydown", k); return () => window.removeEventListener("keydown", k); }, [onClose]);
+  useEscape(onClose);   // nur der oberste Dialog (Review N2)
   const autoKennung = name.trim().toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40);
   const id = kennung || autoKennung;
   const datenOk = /^[a-z0-9][a-z0-9-]{1,39}$/.test(id) && !!name.trim() && (!repo || /^[A-Za-z0-9-]+\/[A-Za-z0-9._-]+$/.test(repo.trim()));

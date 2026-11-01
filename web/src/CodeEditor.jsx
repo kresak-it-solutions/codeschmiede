@@ -5,7 +5,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Code2, FileText, Lock, Loader2, Search, GitPullRequest, X, RefreshCw, Info, Check, FolderOpen } from "lucide-react";
 import { supabase } from "./supabase";
-import { useFokusfalle } from "./bausteine/grund";
+import { useEscape, useFokusfalle } from "./bausteine/grund";
 
 const fehler = (e) => (e?.message || "Unbekannter Fehler").replace(/^.*?ERROR:\s*/, "");
 const btn = "inline-flex items-center justify-center gap-2 h-10 px-4 rounded-xl bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 text-white font-display font-bold tracking-wide transition";
@@ -202,7 +202,7 @@ function Aenderungen({ entwurf, dateien, darf, onSpeichern, onVerwerfen, onOeffn
 function Speichern({ gruppen, d, entwurf, toast, onClose, onFertig }) {
   const fokusfalle = useFokusfalle();   // Fokus bleibt im Dialog (Befund B2)
   const [titel, setTitel] = useState(""); const [text, setText] = useState(""); const [gid, setGid] = useState(gruppen[0]?.id || ""); const [busy, setBusy] = useState(false);
-  useEffect(() => { const k = (e) => e.key === "Escape" && onClose(); window.addEventListener("keydown", k); return () => window.removeEventListener("keydown", k); }, [onClose]);
+  useEscape(onClose);   // nur der oberste Dialog (Review N2)
   const pfade = Object.keys(entwurf);
   const basis = [...new Set(pfade.map((p) => entwurf[p].basis_sha))];
   const bereich = (id) => d.bereiche.find((b) => b.id === id)?.name || "";

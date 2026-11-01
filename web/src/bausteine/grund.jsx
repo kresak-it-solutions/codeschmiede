@@ -67,12 +67,26 @@ export function useFokusfalle() {
   }, []);
 }
 
+// Review N2 (02.11.2026): Escape schließt nur den obersten offenen Dialog. Jeder Dialog meldet sich auf einem gemeinsamen Stapel an.
+const escStapel = [];
+export function useEscape(onClose, aktiv = true) {
+  const zu = useRef(onClose); zu.current = onClose;
+  useEffect(() => {
+    if (!aktiv) return undefined;
+    const ich = {};
+    escStapel.push(ich);
+    const k = (e) => { if (e.key === "Escape" && escStapel[escStapel.length - 1] === ich) { e.stopPropagation(); zu.current?.(); } };
+    window.addEventListener("keydown", k);
+    return () => { window.removeEventListener("keydown", k); const i = escStapel.indexOf(ich); if (i >= 0) escStapel.splice(i, 1); };
+  }, [aktiv]);
+}
+
 // Ein Dialog-Baustein für die ganze Oberfläche (Befund B2): Titel als Beschriftung, Fokusfalle, Escape und „Schließen“.
 // Ein Klick neben den Dialog schließt ihn nicht mehr (sonst gingen Eingaben verloren).
 export function Dialog({ title, onClose, children, breit = false }) {
   const fokus = useFokusfalle();
   const id = useId();
-  useEffect(() => { const k = (e) => e.key === "Escape" && onClose(); window.addEventListener("keydown", k); return () => window.removeEventListener("keydown", k); }, [onClose]);
+  useEscape(onClose);
   return (
     <div className="fixed inset-0 z-40 grid place-items-center bg-black/45 p-4">
       <div ref={fokus} role="dialog" aria-modal="true" aria-labelledby={id} className={`${card} w-full ${breit ? "max-w-2xl" : "max-w-lg"} p-5 flex flex-col gap-4 max-h-[90vh] overflow-y-auto`}>

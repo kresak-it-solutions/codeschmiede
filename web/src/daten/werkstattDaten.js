@@ -58,11 +58,14 @@ export function useWerkstattDaten(me, projektId) {
     const ch = supabase.channel("cs-zentrale-" + (projektId || "start"));
     ["ws_projekte", "ws_projekt_mitglieder", "ws_bereiche", "ws_gruppen", "ws_features", "ws_auftraege", "ws_nachrichten", "ws_benutzer", "ws_rechte", "ws_werkstatt_pcs", "ws_verbrauch", "ws_einstellungen", "ws_abo_limits", "ws_erlaubnisse"].forEach((t) =>
       ch.on("postgres_changes", { event: "*", schema: "public", table: t }, () => { clearTimeout(timer.current); timer.current = setTimeout(holen, 300); }));
+    // Review N1 (02.11.2026): „CLOSED“ beim eigenen Aufräumen ignorieren; neu laden außerhalb des State-Updaters
+    let aufgeraeumt = false; let warGetrennt = false;
     ch.subscribe((status) => {
-      if (status === "SUBSCRIBED") { setLive((alt) => { if (alt === "getrennt") holen(); return "an"; }); }   // nach Wiederverbindung frisch laden
-      else if (["CHANNEL_ERROR", "TIMED_OUT", "CLOSED"].includes(status)) setLive("getrennt");
+      if (aufgeraeumt) return;
+      if (status === "SUBSCRIBED") { if (warGetrennt) { warGetrennt = false; holen(); } setLive("an"); }   // nach Wiederverbindung frisch laden
+      else if (["CHANNEL_ERROR", "TIMED_OUT", "CLOSED"].includes(status)) { warGetrennt = true; setLive("getrennt"); }
     });
-    return () => { supabase.removeChannel(ch); clearTimeout(timer.current); };
+    return () => { aufgeraeumt = true; supabase.removeChannel(ch); clearTimeout(timer.current); };
   }, [me, holen, projektId]);
   return { ...d, laden, holen, live };
 }
