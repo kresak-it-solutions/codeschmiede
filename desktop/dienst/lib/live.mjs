@@ -62,6 +62,20 @@ export async function cloudBauLaeufe(sh, repo, sha) {
   return zeilen;
 }
 
+// Befund L2 (01.11.2026): ALLE Prüfläufe eines Stands – Checks aller Apps (GitHub Actions wie „Prüfung“, Cloudflare …) und alte
+// Commit-Status. Ergebnis: [{ name, status: "completed"|…, ergebnis }]. Ein Status „pending“ gilt als noch laufend.
+export async function pruefLaeufe(sh, repo, sha) {
+  repoPruefen(repo); if (!SHA.test(sha)) throw new Error("Ungültiger Stand");
+  const { stdout } = await sh("gh", ["api", "--paginate", `repos/${repo}/commits/${sha}/check-runs?per_page=100`, "--jq", ".check_runs[] | [.name, .status, (.conclusion // \"\")] | @tsv"]);
+  const l = stdout.split("\n").filter((z) => z.trim()).map((z) => { const [name, status, ergebnis] = z.split("\t"); return { name, status, ergebnis: ergebnis || "" }; });
+  const { stdout: st } = await sh("gh", ["api", `repos/${repo}/commits/${sha}/status`, "--jq", ".statuses[] | [.context, .state] | @tsv"]);
+  for (const z of st.split("\n").filter((x) => x.trim())) {
+    const [name, state] = z.split("\t");
+    l.push({ name, status: state === "pending" ? "in_progress" : "completed", ergebnis: state === "success" ? "success" : state });
+  }
+  return l;
+}
+
 // Ist die Testfassung in der Cloud fertig gebaut? Alle Cloud-Bauläufe müssen grün sein (Prüfung O4).
 // Baut das Projekt in der Cloud (mussLaufen), gilt „noch kein Lauf“ als „wird noch gebaut“.
 export async function testGebaut(sh, repo, sha, { mussLaufen = false } = {}) {
