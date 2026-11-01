@@ -94,3 +94,70 @@ export function pruefeBaustein(w, seite = { hell: "#ffffff", dunkel: "#0a0a0a" }
 export function zusammenfassung(befunde) {
   return { pflicht: befunde.filter((b) => !b.ok && b.stufe === "pflicht").length, hinweise: befunde.filter((b) => !b.ok && b.stufe !== "pflicht").length };
 }
+
+// ---------------------------------------------------------------------------------------------------------------
+// App-Designer 3.0 (01.11.2026): Prüfungen auf den DS-Token-Paaren aus dem Design-System-Paket des Projekts
+// (Trainer to go: src/design/design-system.json › pruefungen). Paare, Mindestwerte und Regeln kommen aus dem Projekt –
+// die Codeschmiede hat keine eigene Liste mehr.
+
+/** Farbton (0–360) und Sättigung (0–1) einer Farbe; Grau → farbton null. */
+export function farbton(hex) {
+  if (!istHex(hex)) return { h: null, s: 0 };
+  const [h, s] = zuHsl(hex);
+  return { h: s < 0.06 ? null : h, s };
+}
+const linear = (hex) => { const n = parseInt(hex.slice(1), 16); return [16, 8, 0].map((s) => kanal(((n >> s) & 255) / 255)); };
+function lab(hex) {
+  const [r, g, b] = linear(hex);
+  const f = (t) => (t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116);
+  const [x, y, z] = [(r * 0.4124 + g * 0.3576 + b * 0.1805) / 0.95047, r * 0.2126 + g * 0.7152 + b * 0.0722, (r * 0.0193 + g * 0.1192 + b * 0.9505) / 1.08883].map(f);
+  return [116 * y - 16, 500 * (x - y), 200 * (y - z)];
+}
+/** Farbabstand ΔE (CIE76). */
+export function deltaE(a, b) {
+  if (!istHex(a) || !istHex(b)) return 0;
+  const [p, q] = [lab(a), lab(b)];
+  return Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]);
+}
+const tonAbstand = (a, b) => (a == null || b == null ? 180 : Math.min(Math.abs(a - b), 360 - Math.abs(a - b)));
+
+/**
+ * Prüft DS-Tokens hell UND dunkel.
+ * werte  = { hell: {token: "#rrggbb"}, dunkel: {…} }   regeln = pruefungen aus dem Design-System-Paket
+ * Ergebnis: Liste { modus, gruppe, was, wert, soll, ok, stufe ("pflicht"|"hinweis"), a, b, vorschlag }
+ */
+export function pruefeDsTokens(werte, regeln) {
+  const out = [];
+  if (!regeln) return out;
+  for (const modus of ["hell", "dunkel"]) {
+    const f = werte?.[modus] || {};
+    for (const p of regeln.paare || []) {
+      if (!istHex(f[p.a]) || !istHex(f[p.b])) continue;
+      const k = kontrast(f[p.a], f[p.b]);
+      out.push({ modus, gruppe: "Kontrast", was: p.was || `${p.a} auf ${p.b}`, wert: k, soll: p.soll, ok: k >= p.soll, stufe: "pflicht", a: p.a, b: p.b,
+        vorschlag: k >= p.soll ? null : lesbarMachen(f[p.a], f[p.b], p.soll) });
+    }
+    // Blau nie Status (Konzept §4): Statusfarben mit Farbton nah an der Hauptfarbe sähen wie Knöpfe aus. Grau (info) ist erlaubt.
+    const b = regeln.blauNieStatus;
+    if (b && istHex(f[b.hauptfarbe])) {
+      const haupt = farbton(f[b.hauptfarbe]).h;
+      for (const s of b.status) {
+        if (!istHex(f[s])) continue;
+        const t = farbton(f[s]);
+        const grau = t.h == null || t.s <= b.maxSaettigungInfo;
+        const abstand = tonAbstand(haupt, t.h);
+        const ok = grau || abstand >= b.minFarbton;
+        out.push({ modus, gruppe: "Blau nie Status", was: `Status „${s}“ unterscheidet sich von der Hauptfarbe`, wert: grau ? null : abstand, soll: b.minFarbton,
+          ok, stufe: "pflicht", a: s, b: b.hauptfarbe, einheit: "°", vorschlag: null });
+      }
+    }
+    // Terminart ≠ Status (§4/§14): Terminarten dürfen nicht wie ein Status aussehen – als Hinweis
+    const t = regeln.terminartNichtStatus;
+    if (t) for (const c of t.terminarten) for (const s of t.status) {
+      if (!istHex(f[c]) || !istHex(f[s])) continue;
+      const d = deltaE(f[c], f[s]);
+      if (d < t.minDeltaE) out.push({ modus, gruppe: "Terminart ≠ Status", was: `${c} ähnelt ${s}`, wert: d, soll: t.minDeltaE, ok: false, stufe: "hinweis", a: c, b: s, einheit: "ΔE", vorschlag: null });
+    }
+  }
+  return out;
+}

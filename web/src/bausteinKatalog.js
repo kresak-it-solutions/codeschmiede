@@ -1,3 +1,8 @@
+// ALTBESTAND seit App-Designer 3.0 (01.11.2026): Für Trainer to go ist dieser Katalog NICHT mehr die Quelle – Bausteine, Tokens und
+// Regler kommen aus dem Design-System-Paket der App (web/src/designSystem.js, docs/design-2/DESIGN-SYSTEM.md). Die App bildet die
+// Kennungen unten auf die neuen ab (knopf-neben → knopf-zweit, knopf-leise → knopf-text, knopf-symbol → symbolknopf,
+// status-zugesagt → status-pill-ok, status-offen → status-pill-warn). Bleibt für Projekte ohne Paket, den Design-Chat (Datenbank 0037)
+// und den Werkstatt-Test, bis 0037/lib/design.mjs auf die DS-Kennungen umgestellt sind.
 // Baustein-Katalog des App-Designers 2.0 (Etappe 1 „Bausteine“, Entwurf freigegeben von Gerhard 2026-10-24 22:08).
 // Jedes Muster der Galerie (Testseite /bausteine von Trainer to go) trägt data-cs-baustein="<id>" mit einer dieser Kennungen.
 // Die Werte landen als tokens.bausteine.<id> im Design-Paket der App (DesignPackage) und wirken dort SOFORT nach der Freigabe.
@@ -15,7 +20,7 @@ export const ZUSTAENDE = [["normal", "Normal"], ["darueber", "Darüber"], ["gedr
 export const SEITE = Object.freeze({ hell: "#ffffff", dunkel: "#0a0a0a" });
 
 const f = (bg, text, rand) => ({ bg, text, rand });
-const HAUPT = { hell: f("#059669", "#ffffff", "#059669"), dunkel: f("#34d399", "#022c22", "#34d399") };
+const HAUPT = { hell: f("#1d4ed8", "#ffffff", "#1d4ed8"), dunkel: f("#6d9bff", "#0a0f1c", "#6d9bff") };   // Design 2.0 (Blau)
 const NEBEN = { hell: f("#f5f5f5", "#171717", "#f5f5f5"), dunkel: f("#262626", "#fafafa", "#262626") };
 const UMRISS = { hell: f("#ffffff", "#0a0a0a", "#e5e5e5"), dunkel: f("#0a0a0a", "#fafafa", "#262626") };
 const LEISE = { hell: f("#ffffff", "#0a0a0a", "#ffffff"), dunkel: f("#0a0a0a", "#fafafa", "#0a0a0a") };
@@ -34,7 +39,7 @@ export const KATALOG = [
   { id: "knopf-symbol", name: "Knopf · nur Symbol", gruppe: "knoepfe", quelle: "ui-button", wirkt: "app", interaktiv: true, felder: MIT_GROESSE, std: { ...UMRISS, ecken: 6, groesse: "mittel" } },
   { id: "eingabe", name: "Eingabefeld", gruppe: "eingaben", quelle: "ui-input", wirkt: "app", interaktiv: true, rahmen: true, felder: MIT_GROESSE, std: { ...UMRISS, ecken: 6, groesse: "mittel" } },
   { id: "schalter", name: "Schalter", gruppe: "eingaben", quelle: "ui-switch", wirkt: "app", interaktiv: true, rahmen: true, felder: ["farben"],
-    std: { hell: f("#059669", "#ffffff", "#e5e5e5"), dunkel: f("#34d399", "#0a0a0a", "#262626") }, farbNamen: { bg: "Eingeschaltet", text: "Knopf", rand: "Ausgeschaltet" } },
+    std: { hell: f("#1d4ed8", "#ffffff", "#8390a5"), dunkel: f("#6d9bff", "#0a0a0a", "#546b96") }, farbNamen: { bg: "Eingeschaltet", text: "Knopf", rand: "Ausgeschaltet" } },
   { id: "abzeichen-haupt", name: "Abzeichen · Haupt", gruppe: "abzeichen", quelle: "ui-badge", wirkt: "app", felder: MIT_GROESSE, std: { ...HAUPT, ecken: 6, groesse: "mittel" } },
   { id: "abzeichen-neben", name: "Abzeichen · Neben", gruppe: "abzeichen", quelle: "ui-badge", wirkt: "app", felder: MIT_GROESSE, std: { ...NEBEN, ecken: 6, groesse: "mittel" } },
   { id: "abzeichen-umriss", name: "Abzeichen · Umriss", gruppe: "abzeichen", quelle: "ui-badge", wirkt: "app", felder: MIT_GROESSE, std: { ...UMRISS, ecken: 6, groesse: "mittel" } },

@@ -70,6 +70,15 @@ App → `ws_fehler_melden(schluessel, daten)` (auch ohne Anmeldung, nur mit Meld
 aus Text ohne Zahlen, Stelle ohne Zeile, Umgebung). Grenze 300/Stunde je App (`ws_fehler_grenze`), Löschung 30 Tage nach der letzten Meldung.
 Lesen: Projektmitglieder; Stand ändern und „Als Auftrag“: Admin und Entwickler (Auftrag nur mit Auftrags-Recht in der Gruppe).
 
+### App-Designer 3.0 (seit 0.11.0, Anweisung Gerhard 2026-11-01 22:18/22:38)
+Für Projekte mit **Design-System-Paket** (Trainer to go: `docs/design-2/DESIGN-SYSTEM.md`, erzeugt von `tools/design-system.mjs` aus Entwurf 2.0,
+Konzept §4/§5/§8, `src/index.css`, Routen) sieht der App-Designer aus wie der Design-Entwurf 2.0: Leiste Rolle · PC/Handy · Hell/Dunkel ·
+Bausteine zeigen · Begründung; links Seiten je Rolle, Mitte Vorschau, rechts Inspektor (Baustein · Tokens · Prüfungen). Reiter **Entwurf**
+(Masken des Entwurfs, abgeschotteter Rahmen) und **Echte App (Testfassung)** (Vorschau-Protokoll der App). Das Paket ist die einzige Quelle –
+die Codeschmiede hat keine Kopie von Tokens, Bausteinen, Seiten oder Begründungen (`web/src/designSystem.js` prüft es streng). Token-Änderungen
+gehen als Entwurf ins Design-Paket der App (`tokens.ds`) über deren Rechteprüfung; Kontrast-Wächter mit Paaren und Regeln aus dem Paket
+(„Blau nie Status“, „Terminart ≠ Status“). Projekte ohne Paket behalten Grunddesign/Bausteine (Ausgangswerte jetzt Design 2.0, Blau).
+
 ### App-Designer 2.0 (seit 0.9.7, Entwurf frei 2026-10-24 22:08)
 Ein Designer, der sofort wirkt: Aussehen geht über die Design-Pakete der App (Trainer to go: `DesignPackage`), nur neue Bausteine laufen als
 Auftrag, Farben frei mit Kontrast-Wächter (`web/src/kontrast.js`). Etappe 1 „Bausteine“: Galerie in der Mitte, Linksklick wählt,

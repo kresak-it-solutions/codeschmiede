@@ -15,7 +15,8 @@ export const ART_BASIS = {
   shop: { karten: "bild", korb: "rechts" },
 };
 
-// Allgemeine Muster je Art (erfunden, keine echten Personen); Trainer to go behält seine bisherigen Muster
+// Allgemeine Muster je Art (erfunden, keine echten Personen). Das frühere Trainer-to-go-Muster ist entfernt (App-Designer 3.0, 01.11.2026):
+// Trainer to go zeigt im App-Designer die Masken des Design-Entwurfs 2.0 aus seinem eigenen Design-System-Paket.
 const STANDARD = {
   verwaltung: { titel: "Übersicht", menue: ["Start", "Einträge", "Kalender", "Auswertung", "Einstellungen"], liste: "Neueste Einträge", knopf: "Neuer Eintrag",
     kacheln: [["Einträge", "128"], ["Offen", "7"], ["Diese Woche", "+12"], ["Erledigt", "94 %"]],
@@ -24,10 +25,6 @@ const STANDARD = {
   webseite: { webseite: { name: "Meine Seite", held: "Willkommen", text: "Ein kurzer Satz, worum es auf dieser Seite geht.", cta: "Mehr erfahren", teile: ["Angebot", "Über uns", "Kontakt"] } },
   shop: { shop: { produkte: [["Artikel 1", "€ 12,90"], ["Artikel 2", "€ 24,00"], ["Artikel 3", "€ 8,50"]], korb: [["Artikel 1", "€ 12,90"], ["Artikel 3", "€ 8,50"]], kasse: "Zur Kasse" } },
 };
-const TTG = { titel: "Übersicht", menue: ["Start", "Mannschaft", "Kalender", "Spiele", "Einstellungen"], liste: "Nächste Termine", knopf: "Neuer Termin",
-  kacheln: [["Spieler", "24"], ["Trainings", "3"], ["Anwesenheit", "92 %"], ["Nächstes Spiel", "Sa"]],
-  zeilen: [["Training U13", "Di 17:30", "Zugesagt 14"], ["Heimspiel gegen SV Muster", "Sa 10:00", "Offen 6"], ["Elternabend", "Mo 19:00", "Frist morgen"]] };
-
 // Gleiche Grenzen wie ws_beispiele_ok (Datenbank 0022) – unpassende Werte fallen weg, statt die Vorschau zu stören
 const text = (v, n) => (typeof v === "string" && v.trim() && [...v].length <= n && !/[<>{}\\`\n\r]/.test(v) ? v : null);
 const liste = (v, anz, n) => (Array.isArray(v) ? v.map((x) => text(x, n)).filter(Boolean).slice(0, anz) : null);
@@ -41,9 +38,9 @@ export function beispieleBereinigen(b) {
   if (b.shop && typeof b.shop === "object") { const s = nichtLeer({ produkte: zeilen(b.shop.produkte, 6, 2, 30), korb: zeilen(b.shop.korb, 6, 2, 30), kasse: text(b.shop.kasse, 24) }); if (Object.keys(s).length) r.shop = s; }
   return Object.keys(r).length ? r : undefined;
 }
-/** Muster-Inhalte für die Vorschau: Standard der Art (bzw. Trainer to go) + angepasste Beispiele aus dem Entwurf. */
+/** Muster-Inhalte für die Vorschau: Standard der Art + angepasste Beispiele aus dem Entwurf. */
 export function beispieleFuer(projekt, art, w) {
-  const basis = art === "verwaltung" && projekt?.id === "trainer-to-go" ? TTG : STANDARD[art] || STANDARD.verwaltung;
+  const basis = STANDARD[art] || STANDARD.verwaltung;
   const b = w?.beispiele || {};
   const r = { ...STANDARD.verwaltung, ...basis, ...Object.fromEntries(Object.entries(b).filter(([k]) => !["spiel", "webseite", "shop"].includes(k))) };
   for (const k of ["spiel", "webseite", "shop"]) r[k] = { ...(STANDARD[k]?.[k] || {}), ...(b[k] || {}) };

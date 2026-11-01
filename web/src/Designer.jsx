@@ -12,6 +12,8 @@ import GeraeteRahmen, { geraetVonBreite } from "./GeraeteRahmen";
 import { Markdown } from "./Markdown";
 const SeitenModus = lazy(() => import("./SeitenModus"));
 const Uebernehmen = lazy(() => import("./Uebernehmen"));   // App-Designer 2.0 · Etappe 4
+const AppDesigner3 = lazy(() => import("./designer/AppDesigner3"));   // App-Designer 3.0 (Design-Entwurf 2.0, 01.11.2026)
+import { useDesignSystem } from "./designer/useDesignSystem";
 import { useBausteinDesigner, BausteinInspektor } from "./BausteinInspektor";
 import { designFrageBeantworten } from "./designFrage";
 import { APP_ARTEN, ART_BASIS, ArtEinstellungen, ArtMuster, beispieleBereinigen, beispieleFuer, menueSymbol } from "./DesignerArten";
@@ -28,16 +30,17 @@ const input = "w-full rounded-lg border border-slate-300 dark:border-slate-700 b
 const fehler = (e) => (e?.message || "Unbekannter Fehler").replace(/^.*?ERROR:\s*/, "");
 const fmt = (d) => new Date(d).toLocaleString("de-AT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
 
-// Ausgangswerte = heutiges Design von Trainer to go (src/index.css, tailwind.config.js – Stand 22.10.2026)
+// Ausgangswerte = Design 2.0 (Trainer to go docs/design-2/02-KONZEPT.md §4, seit 01.11.2026) – nicht mehr Smaragd.
+// Gilt für Projekte OHNE Design-System-Paket (Grunddesign-Editor). Projekte mit Paket (Trainer to go) nutzen den App-Designer 3.0.
 export const BASIS = {
   farben: {
-    hell: { primaer: "#059669", primaer_text: "#ffffff", hintergrund: "#ffffff", flaeche: "#ffffff", text: "#0a0a0a", text_leise: "#737373",
-      rand: "#e5e5e5", menue: "#fafafa", menue_text: "#3f3f46", erfolg: "#16a34a", warnung: "#d97706", fehler: "#ef4444" },
-    dunkel: { primaer: "#34d399", primaer_text: "#022c22", hintergrund: "#0a0a0a", flaeche: "#141414", text: "#fafafa", text_leise: "#a3a3a3",
-      rand: "#262626", menue: "#111111", menue_text: "#e4e4e7", erfolg: "#22c55e", warnung: "#f59e0b", fehler: "#f87171" },
+    hell: { primaer: "#1d4ed8", primaer_text: "#ffffff", hintergrund: "#eef2f8", flaeche: "#ffffff", text: "#0f172a", text_leise: "#5b6b82",
+      rand: "#e1e7ef", menue: "#ffffff", menue_text: "#46556b", erfolg: "#157a3a", warnung: "#b45309", fehler: "#b91c1c" },
+    dunkel: { primaer: "#6d9bff", primaer_text: "#0a0f1c", hintergrund: "#0a0f1c", flaeche: "#111a2c", text: "#e8edf6", text_leise: "#8a98b2",
+      rand: "#24324c", menue: "#111a2c", menue_text: "#aab6ca", erfolg: "#4ade80", warnung: "#fbbf24", fehler: "#f87171" },
   },
   schrift: { ueberschrift: "Barlow Semi Condensed", text: "Barlow", basis: 15, gewicht: 700 },
-  form: { radius: 8, radius_karte: 16, abstand: 16, schatten: "leicht" },
+  form: { radius: 10, radius_karte: 12, abstand: 16, schatten: "leicht" },
   menue: { position: "links", aufklappbar: true, breite: 248, tablet: "eingeklappt", handy: "unten" },
   logo: { platz: "menue-oben", groesse: 36 },
   // Etappe 4/5: Tabellen-Varianten, Icon-Stil, Marke (gleich wie src/lib/design/grunddesign.js in Trainer to go)
@@ -141,6 +144,9 @@ ${JSON.stringify(werte, null, 1)}`;
 
 export default function Designer({ d, ich, toast }) {
   const projekt = d.projekte.find((p) => p.id === d.projektId);
+  // App-Designer 3.0: Hat das Projekt ein Design-System-Paket (Trainer to go), zeigt der Designer den Entwurf 2.0 statt Grunddesign/Galerie
+  const ds = useDesignSystem(d.projektId);
+  const mitDs = !!ds?.daten;
   const [entwuerfe, setEntwuerfe] = useState([]);
   const [laden, setLaden] = useState(true);
   const [aktivId, setAktivId] = useState(null);
@@ -148,6 +154,11 @@ export default function Designer({ d, ich, toast }) {
   const [verlauf, setVerlauf] = useState({ zurueck: [], vor: [] });
   const [geaendert, setGeaendert] = useState(false);
   const [modus, setModus] = useState("grund");
+  useEffect(() => {
+    if (mitDs && ["grund", "bausteine"].includes(modus)) setModus("entwurf");
+    if (ds === null && ["entwurf", "echt"].includes(modus)) setModus("grund");
+  }, [mitDs, ds]); // eslint-disable-line react-hooks/exhaustive-deps
+  const neu3 = modus === "entwurf" || modus === "echt";
   const [mitte, setMitte] = useState("geruest");
   const [geraet, setGeraet] = useState("pc");
   const [dunkel, setDunkel] = useState(false);
@@ -273,13 +284,15 @@ export default function Designer({ d, ich, toast }) {
       {/* Kopfleiste: Entwurf wählen, rückgängig, speichern, vergleichen, senden */}
       <div className={`${card} p-2.5 flex flex-wrap items-center gap-2`}>
         <div role="tablist" aria-label="Bereich" className="flex rounded-xl bg-slate-100 dark:bg-slate-800 p-0.5">
-          {[["grund", "Grunddesign", Palette], ["bausteine", "Bausteine", Shapes], ["marke", "Marke", Stamp], ["seiten", "Seiten", LayoutGrid]].map(([id, t, I]) => (
+          {(mitDs ? [["entwurf", "Entwurf", LayoutTemplate], ["echt", "Echte App (Testfassung)", Smartphone], ["seiten", "Seiten", LayoutGrid], ["marke", "Marke", Stamp]]
+            : [["grund", "Grunddesign", Palette], ["bausteine", "Bausteine", Shapes], ["marke", "Marke", Stamp], ["seiten", "Seiten", LayoutGrid]]).map(([id, t, I]) => (
             <button key={id} type="button" role="tab" aria-selected={modus === id} onClick={() => setModus(id)}
               className={`inline-flex items-center gap-1.5 h-8 px-3 rounded-lg text-sm font-semibold ${modus === id ? "bg-white dark:bg-slate-900 shadow-sm text-emerald-800 dark:text-emerald-300" : "text-slate-600 dark:text-slate-300"}`}><I className="w-4 h-4" />{t}</button>))}
           <button type="button" role="tab" aria-selected={modus === "uebernehmen"} onClick={() => setModus("uebernehmen")} title="Alle offenen Design-Änderungen übernehmen und freigeben"
             className={`inline-flex items-center gap-1.5 h-8 px-3 rounded-lg text-sm font-semibold ${modus === "uebernehmen" ? "bg-white dark:bg-slate-900 shadow-sm text-emerald-800 dark:text-emerald-300" : "text-slate-600 dark:text-slate-300"}`}>
             <CheckCheck className="w-4 h-4" />Übernehmen{offenGesamt > 0 && <span className="text-[11px] font-bold bg-emerald-700 text-white rounded-full px-1.5">{offenGesamt}</span>}</button>
         </div>
+        {neu3 ? <span className="text-sm text-slate-500">Design-System {ds.daten.stand}{ds.aktualisiert ? ` · abgeglichen ${fmt(ds.aktualisiert)}` : ""} · {ds.daten.bausteine.length} Bausteine · {ds.daten.tokens.length} Tokens</span> : <>
         <label className="flex items-center gap-1.5 text-sm text-slate-500" title={APP_ARTEN.find(([k]) => k === art)?.[2]}>App-Art
           <select id="ds-app-art" value={art} disabled={!darf} onChange={(e) => artSetzen(e.target.value)} className={`${input} w-auto`}>
             {APP_ARTEN.map(([k, t]) => <option key={k} value={k}>{t}</option>)}</select></label>
@@ -303,13 +316,14 @@ export default function Designer({ d, ich, toast }) {
           {bearbeitbar && <button type="button" className={ghost} onClick={speichern} disabled={arbeit || (!!aktiv && !geaendert)}><Save className="w-4 h-4" />Speichern</button>}
           {aktiv && bearbeitbar && <button type="button" className={btn} disabled={arbeit || geaendert} title={geaendert ? "Erst speichern" : ""}
             onClick={() => setDialog({ art: "senden" })}><Send className="w-4 h-4" />Als Auftrag senden</button>}
-        </div>
+        </div></>}
       </div>
-      {!laden && !aktiv && !live && <p className="text-sm text-slate-600 dark:text-slate-300">Noch kein Grunddesign {entwuerfe.some((e) => e.stand === "gesendet") ? "umgesetzt (ein Entwurf ist als Auftrag unterwegs)" : "gesendet"} – der Editor zeigt die Ausgangswerte der Codeschmiede, nicht unbedingt das, was die App heute zeigt.</p>}
+      {!neu3 && !laden && !aktiv && !live && <p className="text-sm text-slate-600 dark:text-slate-300">Noch kein Grunddesign {entwuerfe.some((e) => e.stand === "gesendet") ? "umgesetzt (ein Entwurf ist als Auftrag unterwegs)" : "gesendet"} – der Editor zeigt die Ausgangswerte der Codeschmiede, nicht unbedingt das, was die App heute zeigt.</p>}
       {!darf && <p className="text-sm text-slate-500">Nur ansehen: Gestalten dürfen Entwickler mit dem Recht „Aufträge geben“ im Bereich der Design-Gruppe.</p>}
-      {fest && <p className="text-sm text-slate-600 dark:text-slate-300">Dieser Entwurf ist {STAND_TXT[aktiv.stand].toLowerCase()} und damit fest{aktiv.auftrag_id ? ` (Auftrag #${aktiv.auftrag_id})` : ""}. Für Änderungen eine Kopie anlegen.</p>}
+      {!neu3 && fest && <p className="text-sm text-slate-600 dark:text-slate-300">Dieser Entwurf ist {STAND_TXT[aktiv.stand].toLowerCase()} und damit fest{aktiv.auftrag_id ? ` (Auftrag #${aktiv.auftrag_id})` : ""}. Für Änderungen eine Kopie anlegen.</p>}
 
-      {modus === "uebernehmen" ? <Suspense fallback={<p className="text-sm text-slate-500 p-4">Lädt …</p>}><Uebernehmen projekt={projekt} d={d} ich={ich} werte={werte} dunkel={dunkel} darf={darf} toast={toast}
+      {neu3 ? <Suspense fallback={<p className="text-sm text-slate-500 p-4">Lädt …</p>}><AppDesigner3 projekt={projekt} ds={ds} ansicht={modus} darf={darf} toast={toast} onFreigabe={() => setModus("uebernehmen")} /></Suspense>
+      : modus === "uebernehmen" ? <Suspense fallback={<p className="text-sm text-slate-500 p-4">Lädt …</p>}><Uebernehmen projekt={projekt} d={d} ich={ich} werte={werte} dunkel={dunkel} darf={darf} toast={toast}
           entwuerfe={entwuerfe} sofortAnzahl={sofortAnzahl} onFreigabeOffen={setSofortAnzahl} onGrunddesign={(e) => { setModus("grund"); oeffne(e); }} /></Suspense>
       : modus === "seiten" ? <Suspense fallback={<p className="text-sm text-slate-500 p-4">Lädt …</p>}><SeitenModus key={seitenTab || "start"} tab={seitenTab} projekt={projekt} d={d} ich={ich} werte={werte} dunkel={dunkel} darf={darf} toast={toast} /></Suspense> : (
         <div className="grid gap-3 grid-cols-[minmax(0,1fr)] xl:grid-cols-[320px_minmax(0,1fr)_280px] lg:grid-cols-[300px_minmax(0,1fr)]">

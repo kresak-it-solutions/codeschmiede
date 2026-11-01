@@ -64,7 +64,7 @@ const bestText = (bg) => (kontrast("#ffffff", bg) >= kontrast("#111111", bg) ? "
 export function gestaltungVoll(g, werte, art) {
   const hell = werte?.farben?.hell || {}; const dunkel = werte?.farben?.dunkel || {};
   const seite = { hell: istHex(hell.hintergrund) ? hell.hintergrund : "#ffffff", dunkel: istHex(dunkel.hintergrund) ? dunkel.hintergrund : "#0a0a0a" };
-  const farbe = istHex(g.farbe) ? g.farbe : istHex(hell.primaer) ? hell.primaer : "#059669";
+  const farbe = istHex(g.farbe) ? g.farbe : istHex(hell.primaer) ? hell.primaer : "#1d4ed8";
   const farbe_dunkel = istHex(g.farbe_dunkel) ? g.farbe_dunkel : istHex(dunkel.primaer) && !istHex(g.farbe) ? dunkel.primaer : lesbarMachen(farbe, seite.dunkel, SOLL.bedien);
   const variante = VARIANTEN.some(([v]) => v === g.variante) ? g.variante : "voll";
   const text = istHex(g.text) ? g.text : bestText(farbe);

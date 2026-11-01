@@ -1302,7 +1302,7 @@ function LiveVorschau({ projekt, a, f, darfMerken, toast, onBaustein, baustein }
       }
       if (e.data.cs === "seite" && seiteOk(e.data.pfad)) setJetztSeite(e.data.pfad);
       if (e.data.cs === "baustein") {
-        const b = { name: String(e.data.name || "").slice(0, 200), seite: String(e.data.seite || "").slice(0, 200), pfad: String(e.data.pfad || "").slice(0, 300), text: String(e.data.text || "").slice(0, 200) };
+        const b = { name: String(e.data.name || "").slice(0, 200), seite: String(e.data.seite || "").slice(0, 200), pfad: String(e.data.pfad || "").slice(0, 300), text: "" };   // kein sichtbarer Text (Befund S4: Test und Live teilen eine Datenbank)
         onBaustein(b); setZeigen(false); toast(`Baustein gewählt: ${b.name} – schreib links, was sich ändern soll`);
       }
     };

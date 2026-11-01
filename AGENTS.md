@@ -40,6 +40,10 @@ Zusammengeführt wird nur auf Gerhards Wort (in der Codeschmiede: Knopf „Freig
 - Werkstatt arbeitet nur im Arbeitsordner des Auftrags (eigener Zweig), nie direkt auf `main`; heikle Befehle brauchen Erlaubnis im Programm.
 
 ## Neue Anweisungen
+- **2026-11-01 22:18/22:38 – App-Designer wie der Design-Entwurf 2.0 (alles freigegeben, keine Rückfragen):** Der App-Designer zeigt die Masken
+  des Entwurfs 2.0 mit Leiste (Rolle · PC/Handy · Hell/Dunkel · Bausteine zeigen · Begründung), Seiten je Rolle, Inspektor und Token-Reglern;
+  Quelle ist das Projekt selbst (Design-System-Paket, kein Abschreiben). Zweiter Reiter „Echte App (Testfassung)“. Die Codeschmiede bleibt
+  smaragdgrün, gezeigt wird das Design der App. Rechte der App nie lockern. `docs/KONZEPT.md` › App-Designer 3.0.
 - **2026-10-27 08:18/08:27 – Oberfläche 2.0 & Chat (Entwurf 1.1 frei, `docs/KONZEPT-OBERFLAECHE-2.md`):** Chat wie bei Claude mit eigenen Unterhaltungen,
   @Feature/#Gruppe und Anhängen; Oberfläche gruppiert und aufgeräumt; Limits per Knopf „Jetzt aktualisieren“ (kostenloser Abruf wie „/usage“, keine offizielle
   Schnittstelle – bricht er, Mini-Anfrage und sichtbarer Hinweis; Anmeldung nur im Speicher). Gebaut wird künftig nur noch über die Codeschmiede;
