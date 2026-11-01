@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { icons as LUCIDE, X, Save, Send, Loader2, Bot, Check, Search, Trash2, PenLine } from "lucide-react";
+import { icons as LUCIDE, X, Save, Send, Loader2, Bot, Check, Search, Trash2, PenLine, ArrowRight } from "lucide-react";
 import { supabase } from "./supabase";
 import { useKiName } from "./kiName";
 import { useAutoHoehe } from "./autoHoehe";
@@ -150,7 +150,7 @@ export default function Umdesign({ projekt, d, ich, toast, ziel, verz, icons, on
     <section className={`${card} p-3 flex flex-col gap-3`} aria-label={`${art === "symbol" ? "Symbol" : "Grundbaustein"} ${name} umdesignen`}>
       <div className="flex items-center gap-2 flex-wrap"><PenLine className="w-5 h-5 text-emerald-700" />
         <h3 className="font-display font-bold text-lg">{art === "symbol" ? `Symbol „${name}“` : `Grundbaustein „${eintrag?.name || name}“`}</h3>
-        <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 dark:bg-amber-950 dark:text-amber-300">{entwurf?.id ? "Entwurf gespeichert" : "neuer Entwurf"}</span>
+        <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 dark:bg-amber-950 dark:text-amber-300">{entwurf?.id ? "Entwurf gespeichert" : "neuer Entwurf"}</span>
         <button type="button" className={`${ghost} ml-auto h-8`} onClick={onSchliessen}><X className="w-4 h-4" />Schließen</button></div>
       {!eintrag && <p className="text-sm text-amber-700 dark:text-amber-300">„{name}“ steht noch nicht im Baustein-Verzeichnis des Projekts – die Zuweisungen kommen mit dem nächsten Abgleich (alle 10 Minuten).</p>}
 
@@ -159,7 +159,7 @@ export default function Umdesign({ projekt, d, ich, toast, ziel, verz, icons, on
           {art === "symbol" ? (<>
             <div className="flex items-center gap-4 flex-wrap">
               <div className="text-center"><div className="text-xs text-slate-500">Jetzt</div><div className="w-16 h-16 grid place-items-center rounded-xl border border-slate-200 dark:border-slate-800"><Symbol name={name} groesse={36} strich={strich} /></div></div>
-              <span className="text-slate-400">→</span>
+              <ArrowRight className="w-4 h-4 text-slate-400" aria-hidden="true" />
               <div className="text-center"><div className="text-xs text-slate-500">Neu</div><div className="w-16 h-16 grid place-items-center rounded-xl border border-emerald-600"><Symbol name={werte.neu || name} eigen={werte.eigen} groesse={36} strich={strich} /></div></div>
               {werte.eigen && <span className="text-xs text-slate-500">eigenes Symbol{werte.eigen.name ? ` „${werte.eigen.name}“` : ""} ({werte.eigen.pfade.length + werte.eigen.kreise.length} Striche)</span>}
             </div>
@@ -191,7 +191,7 @@ export default function Umdesign({ projekt, d, ich, toast, ziel, verz, icons, on
             {chat.map((m) => { const v = m.frage_id ? umdesignAusText(art, m.text) : null;
               return (
                 <div key={m.id} className={`rounded-lg px-2.5 py-1.5 max-w-[92%] ${m.frage_id ? "bg-slate-50 dark:bg-slate-950 self-start" : "bg-emerald-50 dark:bg-emerald-950/50 self-end"}`}>
-                  {m.frage_id && <div className="text-[11px] font-bold text-slate-500">{ki.von(m.ki)}</div>}
+                  {m.frage_id && <div className="text-xs font-bold text-slate-500">{ki.von(m.ki)}</div>}
                   <div className="whitespace-pre-line">{m.frage_id ? ohneVorschlag(m.text) : String(m.text).replace(/^\[Umdesign[^\]]*\] Stand des Entwurfs \(Daten\): [^\n]*\nWunsch: /, "")}</div>
                   {v && <button type="button" className={`${btn} h-8 mt-1.5`} onClick={() => setWerte({ ...werte, ...v, ...(v.neu ? { eigen: undefined } : {}), ...(v.eigen ? { neu: undefined } : {}) })}><Check className="w-3.5 h-3.5" />Vorschlag übernehmen</button>}
                 </div>); })}

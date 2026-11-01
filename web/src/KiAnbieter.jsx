@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { kiFarbe } from "./kiFarbe";
 import { Cpu, Loader2, Save, ArrowUp, ArrowDown, Plus, X, RefreshCw, Lock, CircleCheck, CircleAlert, Copy, History, PlugZap, Globe, SquareTerminal, Check } from "lucide-react";
 import { supabase } from "./supabase";
+import { useFokusfalle } from "./bausteine/grund";
 
 // KI-Anbieter (Entwurf 1.2, freigegeben von Gerhard 2026-10-23 15:00): Wer übernimmt was – Anbieter und Modell je Aufgabe.
 // Zuständigkeiten stellt nur der Admin ein (14:59). Bauen ist fest Claude (14:27). Jede Person koppelt ihre Anbieter auf dem eigenen PC.
@@ -86,7 +87,7 @@ function Eignung({ liste }) {
               <div className="font-semibold flex flex-wrap items-center gap-1.5"><span className={`w-2.5 h-2.5 rounded-full shrink-0 ${kiFarbe(id).punkt}`} aria-hidden="true" />{a.name}<span className="basis-full text-xs font-normal text-slate-500">{a.programm}</span></div>
               <div className="min-w-0 flex flex-col gap-1">
                 <span className="text-slate-700 dark:text-slate-200">{st?.gut || a.eigen?.hinweis || "Keine Beschreibung hinterlegt."}</span>
-                {st?.aufgaben?.length > 0 && <span className="flex flex-wrap gap-1">{st.aufgaben.map((t) => <span key={t} className="text-[11px] font-semibold rounded-full px-2 py-0.5 bg-emerald-50 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">{name(t)}</span>)}</span>}
+                {st?.aufgaben?.length > 0 && <span className="flex flex-wrap gap-1">{st.aufgaben.map((t) => <span key={t} className="text-xs font-semibold rounded-full px-2 py-0.5 bg-emerald-50 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">{name(t)}</span>)}</span>}
               </div>
             </div>);
         })}
@@ -117,7 +118,7 @@ function Zeile({ id, titel, hinweis, eintrag, admin, onSpeichern, anbieter = ANB
             <label className="inline-flex items-center gap-1">Ersatz bei vollem Limit:
               {admin ? <select className={sel} value={ersatz ? "chatgpt" : ""} onChange={(e) => setReihe(e.target.value ? [{ anbieter: "claude" }, { anbieter: "chatgpt" }] : [{ anbieter: "claude" }])}>
                 <option value="">keiner – warten</option><option value="chatgpt">ChatGPT (Codex)</option></select> : <b>{ersatz ? "ChatGPT (Codex)" : "keiner"}</b>}</label></span>
-          {ersatz && <span className="text-[11px] text-amber-700 dark:text-amber-300">ChatGPT programmiert nur, wenn Claudes Abo-Limit voll ist – auf Mac und Linux in der Betriebssystem-Sandbox (nur der Auftragsordner), unter Windows nicht. Commit und Pull Request macht die Werkstatt, die Prüfungen immer Claude.</span>}
+          {ersatz && <span className="text-xs text-amber-700 dark:text-amber-300">ChatGPT programmiert nur, wenn Claudes Abo-Limit voll ist – auf Mac und Linux in der Betriebssystem-Sandbox (nur der Auftragsordner), unter Windows nicht. Commit und Pull Request macht die Werkstatt, die Prüfungen immer Claude.</span>}
         </div>
         <div className="flex items-center gap-2 text-xs">{admin && <button type="button" className={ghost} disabled={busy || !geaendert} onClick={speichern}>{busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}Speichern</button>}</div>
       </div>);
@@ -148,7 +149,7 @@ function Zeile({ id, titel, hinweis, eintrag, admin, onSpeichern, anbieter = ANB
         {admin && eigen != null && <span className="inline-flex items-center gap-1"><input id={`ki-modell-${id}`} className={`${sel} w-36`} placeholder="Modellname, z. B. gpt-5" value={eigenText} onChange={(ev) => setEigenText(ev.target.value)} />
           <button type="button" className={ghost} disabled={!MODELL.test(eigenText)} onClick={() => { setze(eigen, "modell", eigenText); setEigen(null); }}>OK</button></span>}
         {admin && !fest && JSON.stringify(reihe) !== JSON.stringify(VORSCHLAG[id]) && <button type="button" className={ghost} title={GRUND[id]} onClick={() => setReihe(VORSCHLAG[id])}>Vorschlag einsetzen</button>}
-        {GRUND[id] && <span className="basis-full text-[11px] text-slate-500">Vorschlag: {VORSCHLAG[id].map((e, i) => `${i + 1}. ${anbieter[e.anbieter]?.name || e.anbieter}${e.modell ? ` (${e.modell})` : ""}`).join(" · ")} – {GRUND[id]}</span>}
+        {GRUND[id] && <span className="basis-full text-xs text-slate-500">Vorschlag: {VORSCHLAG[id].map((e, i) => `${i + 1}. ${anbieter[e.anbieter]?.name || e.anbieter}${e.modell ? ` (${e.modell})` : ""}`).join(" · ")} – {GRUND[id]}</span>}
         {admin && !fest && frei.length > 0 && <select className={sel} value="" aria-label="Anbieter hinzufügen" onChange={(ev) => ev.target.value && setReihe([...reihe, { anbieter: ev.target.value }])}>
           <option value="">+ Anbieter</option>{frei.map((a) => <option key={a} value={a}>{anbieter[a].name}</option>)}</select>}
       </div>
@@ -156,7 +157,7 @@ function Zeile({ id, titel, hinweis, eintrag, admin, onSpeichern, anbieter = ANB
         {!fest && <label className="flex items-center gap-1">weiter ab
           {admin ? <select className={sel} value={ab} onChange={(e) => setAb(Number(e.target.value))}>{[70, 80, 90, 95, 100].map((x) => <option key={x} value={x}>{x} %</option>)}</select> : <b>{ab} %</b>}</label>}
         {admin && !fest && <button type="button" className={ghost} disabled={busy || !geaendert} onClick={speichern}>{busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}{eintrag ? "Speichern" : "Übernehmen"}</button>}
-        {admin && !fest && reihe.some((e) => e.anbieter !== "claude") && geaendert && <span className="basis-full text-[11px] text-amber-700 dark:text-amber-300">Hinweis: Fremde Anbieter bekommen Projekttexte und laufen auf dem PC; ihre Werkzeuge könnten technisch Dateien des PCs lesen.</span>}
+        {admin && !fest && reihe.some((e) => e.anbieter !== "claude") && geaendert && <span className="basis-full text-xs text-amber-700 dark:text-amber-300">Hinweis: Fremde Anbieter bekommen Projekttexte und laufen auf dem PC; ihre Werkzeuge könnten technisch Dateien des PCs lesen.</span>}
       </div>
     </div>);
 }
@@ -166,6 +167,7 @@ const VORLAGE_COPILOT = { id: "copilot", name: "GitHub Copilot", programm: "copi
   installieren: "npm install -g @github/copilot", anmelden: "copilot (dann /login)", hinweis: "GitHub Copilot CLI mit dem eigenen Copilot-Abo", neu: true };
 
 function AnbieterDialog({ wert, toast, onClose, onFertig }) {
+  const fokusfalle = useFokusfalle();   // Fokus bleibt im Dialog (Befund B2)
   const [w, setW] = useState(wert); const [busy, setBusy] = useState(false);
   const feld = (k, t, ph, mono) => <label className="flex flex-col gap-1 text-xs text-slate-500">{t}<input className={`${sel} text-sm ${mono ? "font-mono" : ""}`} value={w[k] || ""} placeholder={ph} onChange={(e) => setW({ ...w, [k]: e.target.value })} /></label>;
   const speichern = async () => {
@@ -179,7 +181,7 @@ function AnbieterDialog({ wert, toast, onClose, onFertig }) {
   };
   return (
     <div className="fixed inset-0 z-40 grid place-items-center bg-black/45 p-4" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div role="dialog" aria-modal="true" aria-label="KI-Anbieter" className={`${card} w-full max-w-lg p-5 flex flex-col gap-3 max-h-[90vh] overflow-y-auto`}>
+      <div ref={fokusfalle} role="dialog" aria-modal="true" aria-label="KI-Anbieter" className={`${card} w-full max-w-lg p-5 flex flex-col gap-3 max-h-[90vh] overflow-y-auto`}>
         <h3 className="font-display font-bold text-xl flex items-center gap-2"><Cpu className="w-5 h-5 text-emerald-700" />{wert.neu ? "KI-Anbieter hinzufügen" : `${wert.name} bearbeiten`}</h3>
         {wert.neu && <p className="text-xs text-slate-500">Vorlage: GitHub Copilot. Für andere Anbieter Felder anpassen – wichtig ist ein Kommandozeilen-Programm, das eine Frage beantwortet und die Antwort ausgibt.</p>}
         <div className="grid grid-cols-2 gap-2">{feld("id", "Kennung (klein, z. B. copilot)", "copilot", true)}{feld("name", "Name", "GitHub Copilot")}</div>
@@ -237,7 +239,7 @@ function Einrichten({ k, art, kopiere }) {
     <div className="flex flex-col gap-1.5" role="status">
       <ol className="flex flex-col gap-1">
         {SCHRITTE.map(([id, t], i) => <li key={id} className="flex items-center gap-1.5">
-          <span className={`w-4 h-4 rounded-full grid place-items-center text-[10px] font-bold ${i < idx ? "bg-emerald-700 text-white" : i === idx ? "border border-blue-600 text-blue-600" : "border border-slate-300 dark:border-slate-700 text-slate-400"}`}>{i < idx ? <Check className="w-3 h-3" /> : i + 1}</span>
+          <span className={`w-4 h-4 rounded-full grid place-items-center text-xs font-bold ${i < idx ? "bg-emerald-700 text-white" : i === idx ? "border border-blue-600 text-blue-600" : "border border-slate-300 dark:border-slate-700 text-slate-400"}`}>{i < idx ? <Check className="w-3 h-3" /> : i + 1}</span>
           <span className={i === idx ? "font-semibold" : "text-slate-500"}>{i === 1 && art === "fenster" ? "Im Fenster anmelden" : i === 1 ? "Im Browser anmelden" : t}</span>
           {i === idx && <Loader2 className="w-3 h-3 animate-spin text-blue-600" />}</li>)}
       </ol>
@@ -321,7 +323,7 @@ export default function KiAnbieter({ d, ich, toast }) {
           {Object.entries(liste).map(([key, a]) => (
             <div key={key} className="px-3 py-2 flex flex-wrap items-center gap-2 text-sm">
               <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${kiFarbe(key).punkt}`} aria-hidden="true" /><b>{a.name}</b><span className="text-xs text-slate-500 font-mono">{a.eigen ? `${a.programm} ${(a.eigen.argumente || []).join(" ")}` : a.programm}</span>
-              <span className={`text-[11px] rounded-full px-2 py-0.5 ${a.eigen ? "bg-slate-100 dark:bg-slate-800" : "bg-emerald-50 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"}`}>{a.eigen ? "eigener Anbieter" : "eingebaut"}</span>
+              <span className={`text-xs rounded-full px-2 py-0.5 ${a.eigen ? "bg-slate-100 dark:bg-slate-800" : "bg-emerald-50 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"}`}>{a.eigen ? "eigener Anbieter" : "eingebaut"}</span>
               {admin && a.eigen && <span className="ml-auto flex gap-1.5"><button type="button" className={ghost} onClick={() => setBearbeite({ ...a.eigen, argumenteText: (a.eigen.argumente || []).join("\n"), modelleText: (a.eigen.modelle || []).join(", ") })}>Bearbeiten</button>
                 <button type="button" className={ghost} onClick={async () => { const { error } = await supabase.rpc("ws_ki_anbieter_loeschen", { p_id: key }); if (error) toast(fehler(error)); else { toast(`${a.name} entfernt`); setTick((t) => t + 1); } }}><X className="w-3.5 h-3.5" />Entfernen</button></span>}
             </div>))}

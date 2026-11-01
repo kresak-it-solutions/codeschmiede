@@ -47,7 +47,7 @@ export function Markdown({ text, suche, klein = false }) {
             <div key={k} className="overflow-x-auto border border-slate-200 dark:border-slate-800 rounded-lg">
               <table className="w-full text-xs"><thead className="bg-slate-50 dark:bg-slate-950"><tr>{kopf.map((c, j) => <th key={j} className="text-left font-semibold px-2.5 py-2 align-top">{inline(c, `t${k}${j}`)}</th>)}</tr></thead>
                 <tbody>{zeigen.map((r, j) => <tr key={j} className="border-t border-slate-100 dark:border-slate-800">{r.map((c, x) => <td key={x} className="px-2.5 py-2 align-top">{inline(c, `t${k}-${j}-${x}`)}</td>)}</tr>)}</tbody></table>
-              {suche && zeigen.length < rows.length && <p className="text-[11px] text-slate-500 px-2.5 py-1.5 border-t border-slate-100 dark:border-slate-800">{zeigen.length} von {rows.length} Zeilen passen zur Suche</p>}
+              {suche && zeigen.length < rows.length && <p className="text-xs text-slate-500 px-2.5 py-1.5 border-t border-slate-100 dark:border-slate-800">{zeigen.length} von {rows.length} Zeilen passen zur Suche</p>}
             </div>);
         }
         if (b.t === "ul" || b.t === "ol") { const L = b.t; return <L key={k} className={`${L === "ol" ? "list-decimal" : "list-disc"} pl-5 flex flex-col gap-1`}>{b.v.map((x, j) => <li key={j} className={x.tief ? "ml-4" : ""}>{inline(x.v, `l${k}${j}`)}</li>)}</L>; }

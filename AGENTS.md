@@ -51,6 +51,8 @@ Zusammengeführt wird nur auf Gerhards Wort (in der Codeschmiede: Knopf „Freig
   Logik (0.10.2): Stationen nach Fehlern mit Pause (1/5/30 Min.) und Obergrenze, dann „angehalten“ mit „Erneut versuchen“ (Datenbank 0052);
   alle GitHub-Prüfläufe sind ein Tor vor Prüfung und Zusammenführen; Modellwahl nach Risikostufe statt Gruppenname. Push aufs Handy: Plan in
   `docs/KONZEPT.md` (Web-Push, braucht Edge Function) – bis dahin bleibt die Regel offen.
+  Bedienung (0.10.3): keine Schrift unter 12 px; Dialoge nur über `Dialog`/`useFokusfalle`, Bestätigungen über `useBestaetigen` (nie `window.confirm`);
+  neue Seiten der Oberfläche in `web/src/seiten/`, Grundbausteine in `web/src/bausteine/grund.jsx`, Daten in `web/src/daten/` – `App.jsx` bleibt der Rahmen.
 - **2026-10-27 08:18/08:27 – Oberfläche 2.0 & Chat (Entwurf 1.1 frei, `docs/KONZEPT-OBERFLAECHE-2.md`):** Chat wie bei Claude mit eigenen Unterhaltungen,
   @Feature/#Gruppe und Anhängen; Oberfläche gruppiert und aufgeräumt; Limits per Knopf „Jetzt aktualisieren“ (kostenloser Abruf wie „/usage“, keine offizielle
   Schnittstelle – bricht er, Mini-Anfrage und sichtbarer Hinweis; Anmeldung nur im Speicher). Gebaut wird künftig nur noch über die Codeschmiede;

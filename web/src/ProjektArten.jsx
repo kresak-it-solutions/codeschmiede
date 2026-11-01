@@ -7,6 +7,7 @@ import { supabase } from "./supabase";
 import { WS_ICON } from "./config";
 import { APP_ARTEN } from "./DesignerArten";
 import { FehlerSchluessel } from "./Fehler";
+import { useEscape, useFokusfalle } from "./bausteine/grund";
 
 const fehler = (e) => (e?.message || "Unbekannter Fehler").replace(/^.*?ERROR:\s*/, "");
 const btn = "inline-flex items-center justify-center gap-2 h-10 px-4 rounded-xl bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 text-white font-display font-bold tracking-wide transition";
@@ -32,13 +33,14 @@ const STAND_TEXT = { gruen: "grün", gelb: "gelb", rot: "rot", grau: "grau" };
 
 // ---------------- Assistent „Neues Projekt“ ----------------
 export function NeuesProjektAssistent({ toast, onClose, onFertig }) {
+  const fokusfalle = useFokusfalle();   // Fokus bleibt im Dialog (Befund B2)
   const [schritt, setSchritt] = useState(1);
   const [technik, setTechnik] = useState("web");
   const [name, setName] = useState(""); const [kennung, setKennung] = useState(""); const [besch, setBesch] = useState("");
   const [repo, setRepo] = useState(""); const [anlegen, setAnlegen] = useState(true); const [privat, setPrivat] = useState(true);   // Befund S2 (01.11.2026): neue Repos standardmäßig privat
   const [symbol, setSymbol] = useState("layers"); const [art, setArt] = useState("verwaltung");
   const [db, setDb] = useState("keine"); const [busy, setBusy] = useState(false);
-  useEffect(() => { const k = (e) => e.key === "Escape" && onClose(); window.addEventListener("keydown", k); return () => window.removeEventListener("keydown", k); }, [onClose]);
+  useEscape(onClose);   // nur der oberste Dialog (Review N2)
   const autoKennung = name.trim().toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40);
   const id = kennung || autoKennung;
   const datenOk = /^[a-z0-9][a-z0-9-]{1,39}$/.test(id) && !!name.trim() && (!repo || /^[A-Za-z0-9-]+\/[A-Za-z0-9._-]+$/.test(repo.trim()));
@@ -64,14 +66,14 @@ export function NeuesProjektAssistent({ toast, onClose, onFertig }) {
   const weiterOk = schritt !== 2 || datenOk;
   return (
     <div className="fixed inset-0 z-40 grid place-items-center bg-black/45 p-4" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div role="dialog" aria-modal="true" aria-label="Neues Projekt" className={`${card} w-full max-w-3xl p-5 flex flex-col gap-4 max-h-[92vh] overflow-y-auto`}>
+      <div ref={fokusfalle} role="dialog" aria-modal="true" aria-label="Neues Projekt" className={`${card} w-full max-w-3xl p-5 flex flex-col gap-4 max-h-[92vh] overflow-y-auto`}>
         <div className="flex flex-wrap items-center gap-3">
           <h3 className="font-display font-bold text-xl flex-1">Neues Projekt</h3>
           <ol className="flex flex-wrap gap-1.5" aria-label="Schritte">
             {SCHRITTE.map((t, i) => (
               <li key={t}><button type="button" onClick={() => (i + 1 < schritt || (i + 1 > schritt && datenOk) || i + 1 <= 2) && setSchritt(i + 1)} aria-current={schritt === i + 1 ? "step" : undefined}
                 className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold ${schritt === i + 1 ? "border-emerald-600 bg-emerald-50 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300" : "border-slate-200 dark:border-slate-700 text-slate-500"}`}>
-                <span className={`grid place-items-center w-4 h-4 rounded-full text-[10px] ${schritt > i + 1 ? "bg-emerald-600 text-white" : schritt === i + 1 ? "bg-emerald-700 text-white" : "bg-slate-200 dark:bg-slate-700"}`}>{schritt > i + 1 ? <Check className="w-3 h-3" /> : i + 1}</span>{t}</button></li>))}
+                <span className={`grid place-items-center w-4 h-4 rounded-full text-xs ${schritt > i + 1 ? "bg-emerald-600 text-white" : schritt === i + 1 ? "bg-emerald-700 text-white" : "bg-slate-200 dark:bg-slate-700"}`}>{schritt > i + 1 ? <Check className="w-3 h-3" /> : i + 1}</span>{t}</button></li>))}
           </ol>
         </div>
 

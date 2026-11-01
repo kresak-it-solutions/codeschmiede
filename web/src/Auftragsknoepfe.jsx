@@ -1,4 +1,4 @@
-// Freigeben und Zusammenführen eines Auftrags – mit Rückfrage. Gemeinsam für die Zentrale (App.jsx) und den Konzept-Chat (ClaudeSpalte.jsx).
+// Freigeben und Zusammenführen eines Auftrags – mit Rückfrage. Gemeinsam für die Zentrale (App.jsx) und den Konzept-Chat (KonzeptChat.jsx).
 import React, { useState } from "react";
 import { Check, GitMerge } from "lucide-react";
 
