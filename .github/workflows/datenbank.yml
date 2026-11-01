@@ -1,10 +1,12 @@
 name: Datenbank einspielen
 
 # Spielt eine SQL-Datei aus supabase/migrations/ oder supabase/admin/ in die Codeschmiede-Datenbank (Supabase, EU – Irland) ein.
-# Start: von Hand („Run workflow“, sobald der Ablauf in main ist) oder durch eine Änderung an supabase/einspielen.txt
-# auf einem Zweig (eine Datei je Zeile, in Reihenfolge) – Anweisung Gerhard 2026-10-22 („richte alles ein“).
+# Start: von Hand („Run workflow“) oder durch eine Änderung an supabase/einspielen.txt
+# in main (früher: auf jedem Zweig) (eine Datei je Zeile, in Reihenfolge) – Anweisung Gerhard 2026-10-22 („richte alles ein“).
+# Review H1 (02.11.2026): automatisch NUR auf main (nach Review und Zusammenführen) – ein ungeprüfter Zweig spielt nie mehr SQL ein.
 on:
   push:
+    branches: [main]
     paths: ["supabase/einspielen.txt"]
   workflow_dispatch:
     inputs:

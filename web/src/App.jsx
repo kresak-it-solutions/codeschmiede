@@ -1309,7 +1309,11 @@ function LiveVorschau({ projekt, a, f, darfMerken, toast, onBaustein, baustein }
       if (e.data.cs === "seite" && seiteOk(e.data.pfad)) setJetztSeite(e.data.pfad);
       if (e.data.cs === "baustein") {
         // Befund S4: nie den sichtbaren Text des Elements übernehmen (kann Namen von Kindern/Mitgliedern enthalten) – nur Name, Seite, Pfad
-        const b = { name: String(e.data.name || "").slice(0, 200), seite: String(e.data.seite || "").slice(0, 200), pfad: String(e.data.pfad || "").slice(0, 300) };
+        // Review M1: Name nur als Baustein-Kennung (data-ds/data-cs bzw. Komponentenname), Seite nur der Pfad, Pfad nur Selektor-Zeichen
+        const name = String(e.data.name || "").trim();
+        if (!/^[A-Za-z0-9_ ·-]{1,60}$/.test(name)) { toast("Dieses Element hat keinen Baustein-Namen – bitte ein anderes anklicken"); return; }
+        const seite = String(e.data.seite || "").split(" · ")[0].trim();
+        const b = { name, seite: /^\/[A-Za-z0-9/_.~-]{0,150}$/.test(seite) ? seite : "", pfad: String(e.data.pfad || "").replace(/[^A-Za-z0-9 >._#:-]/g, "").slice(0, 300) };
         onBaustein(b); setZeigen(false); toast(`Baustein gewählt: ${b.name} – schreib links, was sich ändern soll`);
       }
     };

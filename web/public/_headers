@@ -1,10 +1,10 @@
 # Sicherheitsregeln der Weboberfläche (Cloudflare Pages) – Befund S3 vom 01.11.2026, Anweisung Gerhard 01.11.2026 22:18/22:38.
 # script-src nur eigene Dateien (kein fremdes oder eingeschleustes Skript), Verbindungen nur zur Codeschmiede-Datenbank, zu GitHub (Änderungsprotokoll)
-# und zu den Testseiten der Projekte (*.pages.dev, version.json), Vorschau-Rahmen nur Projekt-Testseiten. „ipc:“/„ipc.localhost“ = Brücke zum Programm.
-# Neue Projekt-Adresse außerhalb von *.pages.dev (z. B. eigene Domain) → hier in connect-src und frame-src eintragen.
+# und zu den Testseiten von Codeschmiede und Trainer to go (version.json), Vorschau-Rahmen nur Trainer to go (Review M2: kein *.pages.dev). „ipc:“/„ipc.localhost“ = Brücke zum Programm.
+# Neues Projekt mit eigener Testseite/App-Adresse → hier in connect-src und frame-src eintragen (sonst bleibt seine Live-Vorschau leer).
 # Die Werkstatt darf diese Datei nicht ändern (desktop/dienst/index.mjs › VERBOTEN).
 /*
-  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://mvzlbpijdvsjnemubofy.supabase.co; font-src 'self' data:; connect-src 'self' https://mvzlbpijdvsjnemubofy.supabase.co wss://mvzlbpijdvsjnemubofy.supabase.co https://raw.githubusercontent.com https://*.pages.dev ipc: http://ipc.localhost; frame-src https://*.pages.dev https://trainer-to-go.at https://*.trainer-to-go.at; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://mvzlbpijdvsjnemubofy.supabase.co; font-src 'self' data:; connect-src 'self' https://mvzlbpijdvsjnemubofy.supabase.co wss://mvzlbpijdvsjnemubofy.supabase.co https://raw.githubusercontent.com https://codeschmiede.pages.dev https://*.codeschmiede.pages.dev https://trainer-to-go.pages.dev https://*.trainer-to-go.pages.dev https://codeschmiede-updates.pages.dev ipc: http://ipc.localhost; frame-src https://trainer-to-go.pages.dev https://*.trainer-to-go.pages.dev https://trainer-to-go.at https://*.trainer-to-go.at; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
   X-Content-Type-Options: nosniff
   Referrer-Policy: strict-origin-when-cross-origin
   Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=()

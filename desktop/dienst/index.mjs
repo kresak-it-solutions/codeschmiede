@@ -108,6 +108,10 @@ const VERBOTEN = [
   "Edit(**/.npmrc)", "Write(**/.npmrc)", "Edit(**/.yarnrc*)", "Write(**/.yarnrc*)", "Edit(**/.pnpmfile.cjs)", "Write(**/.pnpmfile.cjs)",
   "Edit(**/package-lock.json)", "Write(**/package-lock.json)", "Edit(**/npm-shrinkwrap.json)", "Write(**/npm-shrinkwrap.json)",
   "Edit(**/public/_headers)", "Write(**/public/_headers)",
+  // Review H1 (02.11.2026): Einspiel-Liste der Datenbank und Bau-Einstellungen, die beim Bauen Code ausführen (Rust build.rs/Cargo, PostCSS,
+  // Tailwind, ESLint) – Änderungen daran nur von Hand bzw. im Claude-Chat mit Review
+  ...["supabase/einspielen.txt", "**/supabase/einspielen.txt", "**/build.rs", "**/Cargo.toml", "**/postcss.config.*", "**/tailwind.config.*", "**/eslint.config.*", "**/.eslintrc*"]
+    .flatMap((m) => [`Edit(${m})`, `Write(${m})`]),
 ];
 // Bau- und Test-Einstellungen (laden beim Bauen in der Cloud Code): Änderung nur nach Erlaubnis im Programm (Befund S1, 01.11.2026).
 // Nicht ganz gesperrt, weil Design-2.0-Umbauten z. B. tools/bausteine.mjs oder vite.config.js ändern müssen.
@@ -128,16 +132,27 @@ async function log(auftrag, art, text, ausschnitt) {
 }
 // Werkstatt-Nachrichten nur über die geprüfte Funktion (Befund S9, Datenbank 0051): sie prüft, dass dieser PC den Auftrag bearbeitet.
 // Ohne 0051 (noch nicht eingespielt) wie bisher direkt.
-let nachrichtAlt = false;
+// Fehlt die Funktion, wird direkt geschrieben und die Funktion alle 5 Minuten erneut versucht (Review M3). Fehler werden immer gemeldet.
+let nachrichtAltBis = 0;
 async function nachricht(auftrag, art, text) {
-  const t = kuerzen(ohneGeheimnisse(text), 8000);
-  if (!nachrichtAlt) {
+  // Leerer Text wird von der Datenbank abgelehnt (Review M4)
+  const t = kuerzen(ohneGeheimnisse(String(text ?? "").trim() || "(ohne Text)"), 8000);
+  if (Date.now() >= nachrichtAltBis) {
     const { error } = await db.rpc("ws_werkstatt_nachricht", { p_pc: pcId, p_auftrag: auftrag, p_art: art, p_text: t });
-    if (!error) return;
-    if (!/function .* does not exist|schema cache|PGRST202/i.test(`${error.code || ""} ${error.message}`)) throw new Error(error.message);
-    nachrichtAlt = true;
+    if (!error) { nachrichtAltBis = 0; return; }
+    if (!/function .* does not exist|schema cache|PGRST202/i.test(`${error.code || ""} ${error.message}`)) {
+      melde("fehler", `Nachricht zu Auftrag #${auftrag} nicht gespeichert: ${kuerzen(ohneGeheimnisse(error.message), 200)}`, auftrag);
+      throw new Error(error.message);
+    }
+    nachrichtAltBis = Date.now() + 5 * 60 * 1000;
   }
-  await db.from("ws_nachrichten").insert({ auftrag_id: auftrag, von: null, art, text: t });
+  const { error } = await db.from("ws_nachrichten").insert({ auftrag_id: auftrag, von: null, art, text: t });
+  if (error) {
+    melde("fehler", `Nachricht zu Auftrag #${auftrag} nicht gespeichert: ${kuerzen(ohneGeheimnisse(error.message), 200)}`, auftrag);
+    // Datenbank 0051 inzwischen eingespielt (direktes Schreiben gesperrt)? Dann sofort wieder die Funktion
+    if (/row-level security/i.test(error.message)) nachrichtAltBis = 0;
+    throw new Error(error.message);
+  }
 }
 const sitzungenDatei = () => path.join(cfg.daten_ordner, "sitzungen.json");
 async function sitzungen() { try { return JSON.parse(await readFile(sitzungenDatei(), "utf8")); } catch { return {}; } }
