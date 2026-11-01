@@ -64,3 +64,30 @@ test("L6: Modell nach Risikostufe statt Gruppenname", () => {
   assert.equal(waehleModell({ art: "aendern", titel: "Farbe der Knöpfe auf Design 2.0 umstellen" }), "opus");
   assert.match(QUELLE, /art === "feature" && \(await aboLage\(\)\) === "klein" \? "sonnet" : "opus"/);
 });
+
+import { toreAuswerten, pruefungLauf } from "../lib/live.mjs";
+test("Review M2/N2: „Prüfung“ Pflicht, abgebrochene Läufe = neuer Versuch, rote = Nacharbeit", async () => {
+  const ok = { name: "web", status: "completed", ergebnis: "success" };
+  assert.equal(toreAuswerten([], { pflicht: false, laeufe: [] }).art, "gruen");
+  assert.equal(toreAuswerten([], { pflicht: true, laeufe: [] }).art, "offen");
+  assert.equal(toreAuswerten([ok], { pflicht: true, laeufe: [{ status: "completed", ergebnis: "success" }] }).art, "gruen");
+  assert.equal(toreAuswerten([ok], { pflicht: true, laeufe: [{ status: "in_progress", ergebnis: "" }] }).art, "offen");
+  assert.equal(toreAuswerten([ok], { pflicht: true, laeufe: [{ status: "completed", ergebnis: "failure" }] }).art, "rot");
+  assert.equal(toreAuswerten([ok], { pflicht: true, laeufe: [{ status: "completed", ergebnis: "cancelled" }] }).art, "fehler");
+  for (const e of ["cancelled", "stale", "action_required"]) assert.equal(toreAuswerten([{ name: "x", status: "completed", ergebnis: e }]).art, "fehler", e);
+  assert.equal(toreAuswerten([{ name: "x", status: "completed", ergebnis: "timed_out" }]).art, "rot");
+  const ohne = await pruefungLauf(async () => { const f = new Error("gh: Not Found (HTTP 404)"); throw f; }, "a/b", "c".repeat(40));
+  assert.deepEqual(ohne, { pflicht: false, laeufe: [] });
+  await assert.rejects(() => pruefungLauf(async () => { throw new Error("keine Verbindung"); }, "a/b", "c".repeat(40)));
+  const mit = await pruefungLauf(async (_b, args) => ({ stdout: args[1].includes("/contents/") ? "abc\n" : "completed\tsuccess\n" }), "a/b", "c".repeat(40));
+  assert.deepEqual(mit, { pflicht: true, laeufe: [{ status: "completed", ergebnis: "success" }] });
+});
+
+test("Review M1/M4/N1/N4: gemerkte Prüfung nur bei gleichem main, angehaltene ausgefiltert, Stopp kein Fehlversuch, schon zusammengeführt = live", () => {
+  assert.match(QUELLE, /gepr_sha === sha && a\.pruefung\[art\]\.gepr_main && a\.pruefung\[art\]\.gepr_main === mainVorher/);
+  assert.match(QUELLE, /pruefung->feature->>ergebnis\.neq\.angehalten/);
+  assert.match(QUELLE, /stopp \|\| abort\.signal\.aborted/);
+  assert.match(QUELLE, /pr\.state === "MERGED" && pr\.headRefName === a\.zweig/);
+  const p = stationNachFehler({ gepr_sha: "a", gepr_main: "b", test_sha: "c" }, "x", JETZT);
+  assert.equal(p.gepr_main, "b"); assert.equal(p.test_sha, "c");
+});

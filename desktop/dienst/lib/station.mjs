@@ -8,8 +8,9 @@ export const STATION_HAENGT_MIN = 90;              // „läuft“ ohne Lebensze
 /** Neuer Stationswert nach einem Fehler: Zähler hoch, Pause bis „naechster“, nach STATION_VERSUCHE „angehalten“. Gemerkte Prüfung bleibt. */
 export function stationNachFehler(alt = {}, befund = "", jetzt = Date.now()) {
   const versuche = (Number(alt.versuche) || 0) + 1;
-  const behalten = alt.gepr_sha ? { gepr_sha: alt.gepr_sha, gepr_ki: alt.gepr_ki, gepr_befund: alt.gepr_befund } : {};
+  const behalten = alt.gepr_sha ? { gepr_sha: alt.gepr_sha, gepr_main: alt.gepr_main, gepr_ki: alt.gepr_ki, gepr_befund: alt.gepr_befund } : {};
   if (alt.main_neu) behalten.main_neu = alt.main_neu;
+  if (alt.test_sha) behalten.test_sha = alt.test_sha;
   if (versuche > STATION_VERSUCHE) return { ergebnis: "angehalten", befund, versuche, ...behalten };
   const min = STATION_PAUSEN_MIN[Math.min(versuche, STATION_PAUSEN_MIN.length) - 1];
   return { ergebnis: "fehler", befund, versuche, naechster: new Date(jetzt + min * 60 * 1000).toISOString(), ...behalten };

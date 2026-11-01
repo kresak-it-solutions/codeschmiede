@@ -21,7 +21,8 @@ begin
   update public.ws_auftraege
      set pruefung = jsonb_set(a.pruefung, array[a.stand],
            jsonb_strip_nulls(jsonb_build_object('ergebnis', 'wartet', 'befund', 'Von Hand neu angestoßen', 'zeit', now(), 'versuche', 0,
-             'gepr_sha', p -> 'gepr_sha', 'gepr_ki', p -> 'gepr_ki', 'gepr_befund', p -> 'gepr_befund'))),
+             'gepr_sha', p -> 'gepr_sha', 'gepr_main', p -> 'gepr_main', 'gepr_ki', p -> 'gepr_ki', 'gepr_befund', p -> 'gepr_befund',
+             'test_sha', p -> 'test_sha'))),
          geaendert = now()
    where id = p_auftrag;
   insert into public.ws_protokoll (wer, was, details) values (auth.uid(), 'station_neu', jsonb_build_object('auftrag', p_auftrag, 'station', a.stand));

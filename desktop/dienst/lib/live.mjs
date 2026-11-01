@@ -76,6 +76,34 @@ export async function pruefLaeufe(sh, repo, sha) {
   return l;
 }
 
+// Review M2 (02.11.2026): Hat das Repository den Ablauf „Prüfung“ (.github/workflows/pruefung.yml), muss es für diesen Stand mindestens
+// einen abgeschlossenen, grünen Lauf davon geben – eine leere Liste von Prüfläufen reicht dann nicht.
+export const PRUEF_ABLAUF = ".github/workflows/pruefung.yml";
+export async function pruefungLauf(sh, repo, sha) {
+  repoPruefen(repo); if (!SHA.test(sha)) throw new Error("Ungültiger Stand");
+  try { await sh("gh", ["api", `repos/${repo}/contents/${PRUEF_ABLAUF}?ref=${sha}`, "--jq", ".sha"]); }
+  catch (e) { if (/404|Not Found/i.test(`${e?.stderr || ""} ${e?.message || ""}`)) return { pflicht: false, laeufe: [] }; throw e; }
+  const { stdout } = await sh("gh", ["api", `repos/${repo}/actions/runs?head_sha=${sha}&per_page=50`, "--jq", `.workflow_runs[] | select(.path == "${PRUEF_ABLAUF}") | [.status, (.conclusion // "")] | @tsv`]);
+  return { pflicht: true, laeufe: stdout.split("\n").filter((z) => z.trim()).map((z) => { const [status, ergebnis] = z.split("\t"); return { status, ergebnis: ergebnis || "" }; }) };
+}
+
+const HART_ROT = ["failure", "timed_out", "error"];
+const WEICH = ["cancelled", "stale", "action_required", "startup_failure"];   // Review N2: kein Code-Fehler → neuer Versuch, keine Nacharbeit
+/** Prüfläufe auswerten: { art: "gruen" | "rot" | "fehler" | "offen", text }. */
+export function toreAuswerten(liste, pflicht = { pflicht: false, laeufe: [] }, kurz = "") {
+  const rot = liste.filter((x) => x.status === "completed" && HART_ROT.includes(x.ergebnis));
+  const pRot = pflicht.laeufe.filter((x) => x.status === "completed" && HART_ROT.includes(x.ergebnis));
+  if (rot.length || pRot.length) return { art: "rot", text: `Prüflauf rot: ${[...rot.map((x) => `„${x.name}“ (${x.ergebnis})`), ...pRot.map((x) => `„Prüfung“ (${x.ergebnis})`)].slice(0, 5).join(", ")}${kurz ? ` für ${kurz}` : ""}` };
+  const weich = liste.filter((x) => x.status === "completed" && WEICH.includes(x.ergebnis));
+  const offen = liste.filter((x) => x.status !== "completed");
+  const pGruen = pflicht.laeufe.some((x) => x.status === "completed" && x.ergebnis === "success");
+  const pOffen = pflicht.laeufe.some((x) => x.status !== "completed");
+  if (offen.length || (pflicht.pflicht && !pGruen && (pOffen || !pflicht.laeufe.length)))
+    return { art: "offen", text: offen.length ? offen.slice(0, 5).map((x) => x.name).join(", ") : "„Prüfung“ (noch kein Lauf)" };
+  if (weich.length || (pflicht.pflicht && !pGruen)) return { art: "fehler", text: `Prüflauf abgebrochen oder wartet auf Freigabe: ${weich.slice(0, 5).map((x) => `„${x.name}“ (${x.ergebnis})`).join(", ") || "„Prüfung“"}${kurz ? ` für ${kurz}` : ""} – neuer Versuch später` };
+  return { art: "gruen", text: liste.length ? `Alle ${liste.length} Prüfläufe auf GitHub grün${pflicht.pflicht ? " (mit „Prüfung“)" : ""}${kurz ? ` für ${kurz}` : ""}` : `Keine weiteren Prüfläufe auf GitHub${kurz ? ` für ${kurz}` : ""}` };
+}
+
 // Ist die Testfassung in der Cloud fertig gebaut? Alle Cloud-Bauläufe müssen grün sein (Prüfung O4).
 // Baut das Projekt in der Cloud (mussLaufen), gilt „noch kein Lauf“ als „wird noch gebaut“.
 export async function testGebaut(sh, repo, sha, { mussLaufen = false } = {}) {
