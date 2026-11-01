@@ -906,9 +906,13 @@ function StationsUebersicht({ station, d, darf, toast, onSchliessen, onOeffne, o
                       {a.pruefung?.lokal && station === "freigabe" && <span>Bauen & Tests: {a.pruefung.lokal.ergebnis === "gruen" ? "grün" : "rot"}</span>}
                       {station === "zusammen" && a.pruefung?.sicherheit && <span className="text-green-700 dark:text-green-400">Sicherheitsprüfung grün</span>}
                       {p?.ergebnis === "laeuft" && <span className="inline-flex items-center gap-1"><Loader2 className="w-3 h-3 animate-spin" />läuft seit {fmt(p.zeit)}</span>}
-                      {p?.ergebnis === "fehler" && <span className="text-red-600">Fehler: {p.befund} – wird erneut versucht</span>}
+                      {p?.ergebnis === "fehler" && <span className="text-red-600">Fehler: {p.befund} – neuer Versuch {p.naechster ? `ab ${fmt(p.naechster)}` : "gleich"}{p.versuche ? ` (Versuch ${p.versuche} von 3)` : ""}</span>}
+                      {p?.ergebnis === "angehalten" && <span className="text-red-600 font-semibold">Angehalten{p.versuche ? ` nach ${p.versuche} Fehlversuchen` : ""}: {p.befund}</span>}
                       {p?.ergebnis === "wartet" && <span>{p.befund}</span>}
                     </div></div>
+                  {/* Befund L1 (01.11.2026, Datenbank 0052): angehaltene Station von Hand neu anstoßen */}
+                  {["angehalten", "fehler"].includes(p?.ergebnis) && kann(a) && <button type="button" className={`${ghost} h-9 text-sm`} disabled={busy}
+                    onClick={async () => { const { error } = await supabase.rpc("ws_station_neu_versuchen", { p_auftrag: a.id }); toast(error ? fehler(error) : `#${a.id}: wird erneut versucht`); }}><RefreshCw className="w-4 h-4" />Erneut versuchen</button>}
                   {aktion && (kann(a) ? <button type="button" className={`${btn} h-9 text-sm`} disabled={busy} onClick={() => ausfuehren([a])}>{aktion[1]}</button> : <span className="text-xs text-slate-500">kein Recht</span>)}
                 </div>);
             })}

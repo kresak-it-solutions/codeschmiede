@@ -48,6 +48,9 @@ Zusammengeführt wird nur auf Gerhards Wort (in der Codeschmiede: Knopf „Freig
   Warnung „nicht anmelden“; Vorschau-Rahmen mit Sandbox; Design-Freigabe nur für die eingetragene Testfassung/App; Werkstatt-Nachrichten nur über
   `ws_werkstatt_nachricht`; „Immer erlauben“ prüft auch die Datenbank; Limits-Knopf **ohne** Auslesen der Claude-Anmeldung (Statuszeile oder
   Mini-Anfrage – ersetzt den „kostenlosen Abruf wie /usage“ vom 27.10.); neue Repositories standardmäßig privat. Datenbank 0051.
+  Logik (0.10.2): Stationen nach Fehlern mit Pause (1/5/30 Min.) und Obergrenze, dann „angehalten“ mit „Erneut versuchen“ (Datenbank 0052);
+  alle GitHub-Prüfläufe sind ein Tor vor Prüfung und Zusammenführen; Modellwahl nach Risikostufe statt Gruppenname. Push aufs Handy: Plan in
+  `docs/KONZEPT.md` (Web-Push, braucht Edge Function) – bis dahin bleibt die Regel offen.
 - **2026-10-27 08:18/08:27 – Oberfläche 2.0 & Chat (Entwurf 1.1 frei, `docs/KONZEPT-OBERFLAECHE-2.md`):** Chat wie bei Claude mit eigenen Unterhaltungen,
   @Feature/#Gruppe und Anhängen; Oberfläche gruppiert und aufgeräumt; Limits per Knopf „Jetzt aktualisieren“ (kostenloser Abruf wie „/usage“, keine offizielle
   Schnittstelle – bricht er, Mini-Anfrage und sichtbarer Hinweis; Anmeldung nur im Speicher). Gebaut wird künftig nur noch über die Codeschmiede;

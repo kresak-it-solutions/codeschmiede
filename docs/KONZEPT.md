@@ -1,6 +1,6 @@
 # Codeschmiede – Konzept
 
-**Stand:** 2026-10-22 · Wer: Gerhard Kresak (Anweisungen und Freigaben 2026-10-22 12:06–13:39), Claude (Konzept, Umsetzung)
+**Stand:** 2026-11-01 (zuletzt: Befunde Sicherheit/Logik/Bedienung, `docs/BEFUNDE-2026-11-01.md`) · angelegt 2026-10-22 · Wer: Gerhard Kresak (Anweisungen und Freigaben 2026-10-22 12:06–13:39), Claude (Konzept, Umsetzung)
 **Herkunft:** entstanden als „Trainer-to-go Programmierumgebung“ im Repo `trainer-to-go` (Zweig `feature/auftrags-zentrale`, Entwurf 0.4 freigegeben 12:37);
 seit 13:16 eigenes Programm für alle Projekte. Entwurf: `docs/entwurf-0.4.html`.
 
@@ -124,7 +124,11 @@ Neue Projekte, Gruppen, Mitglieder, Abo-Schwellen: nur Admin.
 Auftrag → In Arbeit (Werkstatt-PC, eigener Zweig; seit 0.10.1 **keine** Bauen & Tests auf dem PC, Befund S1) → **Freigabe** (Klick; Admin oder Recht) →
 **Sicherheitsprüfung** (automatisch auf dem Admin-PC: Bauen & Tests + unabhängige Claude-Prüfung der Änderung) → **Zusammenführen** (Klick) →
 **Feature-Prüfung** (automatisch: Testfassung = Zweig + neuester main, Bauen & Tests, unabhängige Prüfung des ganzen Features) →
-bei Grün Pull Request in main = **live** → **Live & Wissen**. Rot an einer Prüfung → **Nacharbeit** (Werkstatt behebt, dann wieder Freigabe);
+bei Grün Pull Request in main = **live** → **Live & Wissen**. Seit 0.10.2 (Befund L2) sind **alle Prüfläufe auf GitHub** (z. B. „Prüfung“) ein Tor:
+die Stationen warten darauf (höchstens 45 Min.), rot = Nacharbeit, und prüfen sie unmittelbar vor dem Zusammenführen noch einmal. Scheitert eine Station
+an etwas anderem (z. B. GitHub nicht angemeldet), startet sie nach 1, 5 und 30 Minuten neu und ist danach **angehalten** – „Erneut versuchen“ in der
+Stationen-Übersicht (Datenbank 0052, Recht „freigeben“). Ein grün geprüfter Stand wird nicht noch einmal geprüft (Befund L1). Ab Abo-Schwelle
+„klein“ prüft Sonnet das ganze Feature, die Sicherheitsprüfung bleibt Opus (L6). Rot an einer Prüfung → **Nacharbeit** (Werkstatt behebt, dann wieder Freigabe);
 live geht dabei nichts. Reine Fragen → beantwortet, „erledigt“. Stationen oben in der Zentrale anklickbar (Übersicht nach Feature, einzeln oder alle).
 Bauen & Tests laufen nur in GitHub („Prüfung“) und Cloudflare – auf keinem PC der Codeschmiede läuft Projekt-Code (seit 0.10.1, Befund S1;
 die frühere Ausnahme „Bauen & Tests auf dem PC“ vom 22.10. 20:36 ist aufgehoben).
@@ -157,3 +161,22 @@ dem Klick „Verstanden, Vorschau anzeigen“ und zeigen dauerhaft „hier nicht
 | 2 | Programm (Tauri) + Werkstatt-Dienst | in Arbeit |
 | 3 | Live-Vorschau mit „Zeigen & kommentieren“ | erledigt 2026-10-23 (Feature-Arbeitsplatz und eigener Menüpunkt) |
 | 4 | Zusammenführen / Sicherheitsprüfung / Wissen auf dem Admin-PC; Zweige & Versionen, Prüfstand, Wissensdatenbank, Änderungsprotokoll, Dokumentation | erledigt 2026-10-23 (0.6.0, Projekt-Abgleich) |
+
+## Offene Punkte aus den Befunden vom 01.11.2026 (`docs/BEFUNDE-2026-11-01.md`)
+- **L3 Push-Nachricht aufs Handy (Pflichtregel AGENTS.md, noch nicht gebaut).** Ohne neue Infrastruktur nicht sinnvoll machbar: Jede Push-Nachricht
+  aufs Handy läuft über den Push-Dienst des Handy-Browsers (Google bzw. Apple) oder einen eigenen Server. **Plan (Empfehlung):** Web-Push für die
+  Codeschmiede als PWA (`codeschmiede.pages.dev` auf dem Handy „Zum Home-Bildschirm“, iPhone ab iOS 16.4): Service Worker, Tabelle `ws_push_abos`
+  (Endpunkt und Schlüssel je Gerät, nur eigene Person), Supabase Edge Function `push-senden` mit VAPID-Schlüssel (Geheimnis nur in Supabase),
+  Auslöser per Datenbank-Trigger bei neuer Erlaubnis-Anfrage, Rückfrage, Freigabe-bereit und angehaltener/roter Station. Inhalt nur kurz und ohne
+  Personendaten („Auftrag #12 wartet auf deine Erlaubnis“), Ende-zu-Ende verschlüsselt (RFC 8291) – der Push-Dienst sieht den Text nicht; trotzdem
+  Eintrag in `docs/DATENSCHUTZ.md` (Empfänger: Push-Dienst von Google/Apple/Mozilla, nur Gerätekennung). Aufwand etwa 1–2 Tage, Risiko NORMAL;
+  braucht Gerhard: VAPID-Schlüssel anlegen lassen und die Edge Function freigeben. Alternative ohne Google/Apple: eigener ntfy-Server (eigener
+  Rechner/Server nötig).
+- **L4 Warteschlange fürs Zusammenführen:** Seit 0.10.2 höchstens 3 Neustarts wegen eines bewegten main, dann „angehalten“. Eine echte
+  Warteschlange (oder die Merge-Queue von GitHub) folgt mit L7.
+- **L7 Vorhaben mit Stufen** (ein Auftrag, mehrere PRs) und Übernahme der Nacharbeit durch einen anderen PC derselben Person (heute: Nacharbeit
+  nimmt jeder PC der Person, die den Auftrag gestellt hat): eigenes Konzept mit Entwurf.
+- **L2 Schutzregel auf GitHub:** Die Codeschmiede wartet jetzt selbst auf alle Prüfläufe. Zusätzlich empfohlen: Schutzregel für `main` mit
+  Pflicht-Prüflauf „Prüfung“ (Einstellung in GitHub, macht Gerhard bzw. der zusammenführende Chat).
+- **L9 geprüft:** Der Kopplungs-Abgleich macht keine Mini-Anfragen (nur `--version`, `auth status`/`login status`, Limits von Codex ohne Anfrage).
+
