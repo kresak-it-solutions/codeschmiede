@@ -1,0 +1,27 @@
+name: Lock-Dateien erzeugen (einmalig)
+
+# Einmaliger Hilfsablauf für Befund S3 (01.11.2026): erzeugt package-lock.json für web/ und desktop/dienst/ auf GitHub
+# (in der Claude-Sitzung ist npm nicht erreichbar) und legt sie im Zweig ab. Wird im selben Pull Request wieder entfernt.
+on:
+  push:
+    branches: ['feature/sicherheit-2026-11']
+    paths: ['.github/workflows/lock-erzeugen.yml']
+
+permissions:
+  contents: write
+
+jobs:
+  lock:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Lock-Dateien erzeugen (ohne Skripte)
+        run: |
+          for d in web desktop/dienst; do (cd "$d" && npm install --package-lock-only --ignore-scripts --no-audit --no-fund); done
+          git config user.name "Claude"; git config user.email "noreply@anthropic.com"
+          git add web/package-lock.json desktop/dienst/package-lock.json
+          git commit -m "Lock-Dateien für web/ und desktop/dienst/ (Befund S3)" -m "Erzeugt auf GitHub mit npm install --package-lock-only --ignore-scripts." -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>" -m "Claude-Session: https://claude.ai/code/session_0158j2BkVqQtVjh2pbi3e49Y"
+          git push origin HEAD:feature/sicherheit-2026-11

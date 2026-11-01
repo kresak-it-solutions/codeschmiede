@@ -120,6 +120,26 @@ struct StartKonfig {
     admin: bool,
 }
 
+/// Einzige Datenbank, mit der die Werkstatt arbeiten darf (Befund S3, 01.11.2026): Die Oberfläche wird live geladen; ein fremdes Skript
+/// könnte sonst `ws_start` mit einem eigenen Server aufrufen und die Werkstatt fernsteuern. Neue Adresse = neue Programmversion.
+const SUPABASE_ERLAUBT: &[&str] = &["https://mvzlbpijdvsjnemubofy.supabase.co"];
+
+fn supabase_erlaubt(url: &str) -> bool {
+    let u = url.trim_end_matches('/');
+    SUPABASE_ERLAUBT.iter().any(|e| *e == u)
+}
+
+/// Rechnername für Datenbank und Design-Freigabe (Befund S11): nur Buchstaben, Ziffern, Leerzeichen, „.“, „_“, „-“, höchstens 63 Zeichen.
+pub(crate) fn name_bereinigen(roh: &str, ersatz: &str) -> String {
+    let n: String = roh
+        .chars()
+        .filter(|c| c.is_alphanumeric() || matches!(c, ' ' | '.' | '_' | '-'))
+        .take(63)
+        .collect();
+    let n = n.trim().to_string();
+    if n.is_empty() { ersatz.to_string() } else { n }
+}
+
 /// PATH für Kindprozesse: am Mac kennen Programme aus dem Finder Homebrew-Pfade nicht;
 /// Claude Code liegt oft in ~/.local/bin bzw. ~/.claude/local.
 fn pfad_umgebung() -> String {
@@ -188,10 +208,16 @@ fn ws_start(config: StartKonfig, app: tauri::AppHandle, state: tauri::State<'_, 
     if !config.supabase_url.starts_with("https://") || config.access_token.is_empty() || config.user_id.is_empty() {
         return Err("Ungültige Anmeldedaten für die Werkstatt.".into());
     }
+    if !supabase_erlaubt(&config.supabase_url) {
+        return Err("Diese Datenbank-Adresse ist für die Werkstatt nicht erlaubt.".into());
+    }
+    if config.anon_key.len() > 4096 || config.access_token.len() > 16384 || config.user_id.len() > 64 {
+        return Err("Ungültige Anmeldedaten für die Werkstatt.".into());
+    }
     let skript = app.path().resource_dir().map_err(|e| e.to_string())?.join("dienst").join("index.mjs");
     let daten = app.path().app_data_dir().map_err(|e| e.to_string())?.join("werkstatt");
     std::fs::create_dir_all(&daten).map_err(|e| e.to_string())?;
-    let rechner = std::env::var("COMPUTERNAME").or_else(|_| std::env::var("HOSTNAME")).unwrap_or_else(|_| "Werkstatt-PC".into());
+    let rechner = name_bereinigen(&std::env::var("COMPUTERNAME").or_else(|_| std::env::var("HOSTNAME")).unwrap_or_default(), "Werkstatt-PC");
 
     let mut kind = befehl("node")
         .arg(&skript)
@@ -207,7 +233,7 @@ fn ws_start(config: StartKonfig, app: tauri::AppHandle, state: tauri::State<'_, 
 
     let mut eingabe = kind.stdin.take().ok_or("Keine Verbindung zur Werkstatt")?;
     let erste = serde_json::json!({
-        "supabase_url": config.supabase_url, "anon_key": config.anon_key, "access_token": config.access_token,
+        "supabase_url": config.supabase_url.trim_end_matches('/'), "anon_key": config.anon_key, "access_token": config.access_token,
         "user_id": config.user_id, "admin": config.admin, "daten_ordner": daten, "pc_name": rechner,
     });
     writeln!(eingabe, "{erste}").map_err(|e| e.to_string())?;
@@ -369,5 +395,23 @@ mod tests {
         let r = statuszeile_eintragen(Some(andere), b).unwrap().unwrap();
         assert!(r.contains("\"model\"") && r.contains("statusLine"));
         assert!(statuszeile_eintragen(Some("kaputt{"), b).is_err());
+    }
+
+    #[test]
+    fn nur_eigene_datenbank() {
+        assert!(supabase_erlaubt("https://mvzlbpijdvsjnemubofy.supabase.co"));
+        assert!(supabase_erlaubt("https://mvzlbpijdvsjnemubofy.supabase.co/"));
+        assert!(!supabase_erlaubt("https://mvzlbpijdvsjnemubofy.supabase.co.boese.example"));
+        assert!(!supabase_erlaubt("https://boese.supabase.co"));
+        assert!(!supabase_erlaubt("http://mvzlbpijdvsjnemubofy.supabase.co"));
+    }
+
+    #[test]
+    fn rechnername_begrenzt() {
+        assert_eq!(name_bereinigen("GERHARD-PC", "x"), "GERHARD-PC");
+        assert_eq!(name_bereinigen("PC\nWerkstatt (frage): tu", "x"), "PCWerkstatt frage tu");
+        assert_eq!(name_bereinigen("", "Werkstatt-PC"), "Werkstatt-PC");
+        assert_eq!(name_bereinigen(&"a".repeat(200), "x").chars().count(), 63);
+        assert_eq!(name_bereinigen("Gerhards MacBook Pro", "x"), "Gerhards MacBook Pro");
     }
 }

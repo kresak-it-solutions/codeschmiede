@@ -2,7 +2,7 @@ import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useStat
 import {
   Inbox, Eye, GitBranch, ShieldCheck, BookOpen, History, Download, KeyRound, Plus, Send, Trash2, X, Check,
   Loader2, Info, Bot, Layers, GitPullRequest, Wrench, LogIn, MessageSquare, Users, Lock, Gauge, FolderPlus, Power,
-  Menu, Search, Bell, Settings, ChevronDown, ArrowLeft, ExternalLink, RefreshCw, Smartphone, Tablet, Monitor, MousePointerClick, GitMerge, CircleCheck, Palette, Globe, FolderInput, Cpu, FolderCog, Archive, ArchiveRestore, Scale, ListChecks, Rocket, Undo2, Pin, FlaskConical, ScanSearch, Plug, Code2, AlertTriangle, ClipboardList, PenLine,
+  Menu, Search, Bell, Settings, ChevronDown, ArrowLeft, ExternalLink, RefreshCw, Smartphone, Tablet, Monitor, MousePointerClick, GitMerge, CircleCheck, Palette, Globe, FolderInput, Cpu, FolderCog, Archive, ArchiveRestore, Scale, ListChecks, Rocket, Undo2, Pin, FlaskConical, ScanSearch, Plug, Code2, AlertTriangle, ClipboardList, PenLine, ShieldAlert,
 } from "lucide-react";
 import { supabase } from "./supabase";
 import { Markdown } from "./Markdown";
@@ -1250,6 +1250,12 @@ function FeatureArbeitsplatz({ f, g, d, ich, darf, toast, onZurueck, onLoeschen 
 // Live-Vorschau: echte Testseite des Auftrags (Cloudflare), meldet neue Stände, „Zeigen & kommentieren“ über den Vorschau-Helfer der App
 function LiveVorschau({ projekt, a, f, darfMerken, toast, onBaustein, baustein }) {
   const url = vorschauUrl(projekt, a);
+  // Befund S5 (01.11.2026): Zweig-Testseiten zeigen ungeprüften KI-Code und sprechen (Trainer to go) mit der echten Datenbank.
+  // Erst nach ausdrücklichem Klick laden, dauerhaft warnen: hier nicht anmelden.
+  const istZweig = !!(a?.zweig && projekt?.vorschau_domain && !ABGESCHLOSSEN.includes(a.stand));
+  const zweigGeprueft = istZweig && a?.pruefung?.sicherheit?.ergebnis === "gruen";
+  const [zweigFrei, setZweigFrei] = useState(false);
+  useEffect(() => { setZweigFrei(false); }, [url]);
   const [gemerkt, setGemerkt] = useState(f?.vorschau_pfad || null);
   useEffect(() => { setGemerkt(f?.vorschau_pfad || null); }, [f?.id, f?.vorschau_pfad]);
   const startSeite = seiteOk(gemerkt) ? gemerkt : seiteOk(projekt?.vorschau_pfad) ? projekt.vorschau_pfad : "/";
@@ -1302,7 +1308,8 @@ function LiveVorschau({ projekt, a, f, darfMerken, toast, onBaustein, baustein }
       }
       if (e.data.cs === "seite" && seiteOk(e.data.pfad)) setJetztSeite(e.data.pfad);
       if (e.data.cs === "baustein") {
-        const b = { name: String(e.data.name || "").slice(0, 200), seite: String(e.data.seite || "").slice(0, 200), pfad: String(e.data.pfad || "").slice(0, 300), text: String(e.data.text || "").slice(0, 200) };
+        // Befund S4: nie den sichtbaren Text des Elements übernehmen (kann Namen von Kindern/Mitgliedern enthalten) – nur Name, Seite, Pfad
+        const b = { name: String(e.data.name || "").slice(0, 200), seite: String(e.data.seite || "").slice(0, 200), pfad: String(e.data.pfad || "").slice(0, 300) };
         onBaustein(b); setZeigen(false); toast(`Baustein gewählt: ${b.name} – schreib links, was sich ändern soll`);
       }
     };
@@ -1337,11 +1344,23 @@ function LiveVorschau({ projekt, a, f, darfMerken, toast, onBaustein, baustein }
         {designWahl === "seiten" ? "Vorschau mit dem gespeicherten Seiten-Entwurf (Plattform-Standard) – nur hier sichtbar, nichts wird geändert. Voraussetzung: Der Seiten-Designer (App-Designer › Seiten) war in dieser Sitzung offen und freigegeben – sonst zeigt die Vorschau die aktuelle App." : "Vorschau mit dem Grunddesign-Entwurf – nur hier sichtbar. In der App wirkt er erst, wenn du ihn im App-Designer als Auftrag sendest."}</p>}
       {neu && <button type="button" onClick={neuLaden} className="m-2 self-end inline-flex items-center gap-2 rounded-full bg-emerald-700 text-white px-3 py-1.5 text-sm font-semibold"><RefreshCw className="w-4 h-4" />Neuer Stand da · neu laden</button>}
       {baustein && <div className="mx-2 mt-2 text-xs rounded-lg border border-orange-400 bg-orange-50 dark:bg-orange-950/40 px-2.5 py-1.5 flex items-center gap-2">Gewählt: <b>{baustein.name}</b>{baustein.seite && <span className="text-slate-500">· {baustein.seite}</span>}<button type="button" className="ml-auto" onClick={() => onBaustein(null)} title="Auswahl aufheben"><X className="w-3.5 h-3.5" /></button></div>}
+      {istZweig && zweigFrei && <p role="alert" className="mx-2 mt-2 text-xs rounded-lg border border-red-300 bg-red-50 dark:bg-red-950/40 dark:border-red-900 text-red-800 dark:text-red-300 px-2.5 py-1.5 flex items-center gap-2">
+        <ShieldAlert className="w-4 h-4 shrink-0" aria-hidden="true" />{zweigGeprueft ? "Sicherheitsgeprüft, aber noch nicht live" : "Ungeprüfter Stand"} – diese Testseite arbeitet mit der echten Datenbank. Hier nicht anmelden und nichts ändern.</p>}
       <div className="flex-1 min-h-0 bg-slate-100 dark:bg-slate-950 p-2 overflow-auto flex flex-col">
+        {istZweig && !zweigFrei ? <div className="flex-1 min-h-[440px] grid place-items-center p-6">
+          <div className="max-w-md text-center space-y-3">
+            <ShieldAlert className="w-8 h-8 mx-auto text-red-600" aria-hidden="true" />
+            <p className="font-semibold">{zweigGeprueft ? "Stand nach der Sicherheitsprüfung, noch nicht live" : "Ungeprüfter Stand der Werkstatt"}</p>
+            <p className="text-sm text-slate-600 dark:text-slate-400">Diese Testseite zeigt den Zweig von Auftrag #{a.id}{zweigGeprueft ? "" : " vor der Sicherheitsprüfung"}. Sie arbeitet mit der <b>echten Datenbank</b> der App. Melde dich dort <b>nicht</b> an und ändere keine Daten – zum Ansehen reicht die Seite ohne Anmeldung.</p>
+            <button type="button" onClick={() => setZweigFrei(true)} className="inline-flex items-center gap-2 h-10 px-4 rounded-lg border border-red-300 text-red-800 dark:text-red-300 dark:border-red-900 font-semibold"><Eye className="w-4 h-4" aria-hidden="true" />Verstanden, Vorschau anzeigen</button>
+          </div>
+        </div> :
         <GeraeteRahmen geraet={geraet} hoehe={geraet === "pc" ? "fuellen" : "geraet"} einpassen="beide" className="flex-1 min-h-[440px]" rahmenClass="bg-white rounded-lg border border-slate-200 dark:border-slate-800">
+          {/* Befund S7: Sandbox ohne allow-top-navigation – die Testseite kann das Programmfenster nicht umleiten */}
           <iframe key={schluessel} ref={frame} title="Live-Vorschau" src={`${url}${mitCs(startSeite)}`} className="block w-full h-full bg-white"
+            sandbox="allow-scripts allow-same-origin allow-forms allow-popups" referrerPolicy="strict-origin-when-cross-origin"
             onLoad={() => { setHelfer(false); frame.current?.contentWindow?.postMessage({ cs: "hallo" }, herkunft); }} />
-        </GeraeteRahmen>
+        </GeraeteRahmen>}
       </div>
     </div>);
 }

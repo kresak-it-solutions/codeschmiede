@@ -19,9 +19,8 @@ import os from "node:os";
 import { createClient } from "@supabase/supabase-js";
 import { ohneGeheimnisse, kuerzen, heikleDatei } from "./lib/geheim.mjs";
 import { waehleModell } from "./lib/modell.mjs";
-import { werteAus, zweigName } from "./lib/ergebnis.mjs";
+import { werteAus, zweigName, bausteinBlock } from "./lib/ergebnis.mjs";
 import { findeAboLimits, aboEntscheidung } from "./lib/abo.mjs";
-import { anmeldungFinden, nutzungAbrufen } from "./lib/nutzung.mjs";
 import { anhaengeLaden, anhaengeText } from "./lib/anhaenge.mjs";
 import { pruefErgebnis } from "./lib/pruefung.mjs";
 import { designPrompt, designAntwort, bausteinAusFrage, bausteinVorschlag } from "./lib/design.mjs";
@@ -71,8 +70,10 @@ let laeuft = null;         // { id, abort }
 let stopp = false;
 
 // ---------- Erlaubte Werkzeuge ohne Rückfrage (alles andere fragt Gerhard im Programm) ----------
+// Lesen nur im Arbeitsordner des Auftrags (Befund S2, 01.11.2026): kein freies „Read“/„Grep“/„Glob“ mehr. Lesen außerhalb geht über die
+// Erlaubnis-Brücke (lib/einstufung.mjs: im Ordner automatisch, außerhalb fragen); Anmeldedaten sperren VERBOTEN und LESE_SPERREN.
 const ERLAUBT = [
-  "Read", "Grep", "Glob", "Edit", "Write", "NotebookEdit", "TodoWrite", "Task",
+  "Read(./**)", "Edit", "Write", "NotebookEdit", "TodoWrite", "Task",
   // feste Lese-Befehle statt Freigabe nach Anfang (git log/diff --output= schreibt Dateien – Prüfung 2026-10-22)
   "Bash(git status)", "Bash(git status --short)", "Bash(git diff)", "Bash(git diff --stat)", "Bash(git diff --cached)",
   "Bash(git log --oneline -20)", "Bash(git log -5)", "Bash(git add -A)", "Bash(git add .)", "Bash(git add -- *)", "Bash(git commit -m *)", "Bash(git fetch origin)",
@@ -102,7 +103,16 @@ const VERBOTEN = [
   // Anmeldedaten auf dem PC sind tabu
   "Read(~/.claude/**)", "Read(~/.ssh/**)", "Read(~/.codeschmiede/**)", "Read(~/.config/gh/**)", "Read(~/.aws/**)",
   "Read(**/zugriff.token)", "Read(**/.env*)", "Read(**/*.pem)", "Read(**/*.key)",
+  // Paket-Einstellungen und CSP darf die Werkstatt nicht ändern (Befund S1/S3, 01.11.2026): .npmrc/.yarnrc lenken Installationen um,
+  // Lock-Dateien legen die Abhängigkeiten fest, _headers trägt die Sicherheitsregeln (CSP) der Weboberfläche
+  "Edit(**/.npmrc)", "Write(**/.npmrc)", "Edit(**/.yarnrc*)", "Write(**/.yarnrc*)", "Edit(**/.pnpmfile.cjs)", "Write(**/.pnpmfile.cjs)",
+  "Edit(**/package-lock.json)", "Write(**/package-lock.json)", "Edit(**/npm-shrinkwrap.json)", "Write(**/npm-shrinkwrap.json)",
+  "Edit(**/public/_headers)", "Write(**/public/_headers)",
 ];
+// Bau- und Test-Einstellungen (laden beim Bauen in der Cloud Code): Änderung nur nach Erlaubnis im Programm (Befund S1, 01.11.2026).
+// Nicht ganz gesperrt, weil Design-2.0-Umbauten z. B. tools/bausteine.mjs oder vite.config.js ändern müssen.
+const FRAGEN = ["vite.config.*", "vitest.config.*", "playwright.config.*", "jest.config.*", "wrangler.toml", "tools/**", "scripts/**"]
+  .flatMap((m) => [`Edit(**/${m})`, `Write(**/${m})`, `Edit(${m})`, `Write(${m})`]);
 
 // Zusätzliche Lese-Sperren (Chat mit Claude, Prüfung 2026-10-23)
 // (nicht ganz ~/AppData sperren – dort liegt unter Windows der Lese-Ordner der Werkstatt; --restricted begrenzt Grep/Glob bereits)
@@ -116,15 +126,38 @@ async function git(cwd, ...args) { return (await sh("git", args, { cwd, maxBuffe
 async function log(auftrag, art, text, ausschnitt) {
   await db.from("ws_live_log").insert({ auftrag_id: auftrag, art, text: kuerzen(ohneGeheimnisse(text), 500), ausschnitt: ausschnitt ? kuerzen(ohneGeheimnisse(ausschnitt), 2000) : null });
 }
+// Werkstatt-Nachrichten nur über die geprüfte Funktion (Befund S9, Datenbank 0051): sie prüft, dass dieser PC den Auftrag bearbeitet.
+// Ohne 0051 (noch nicht eingespielt) wie bisher direkt.
+let nachrichtAlt = false;
 async function nachricht(auftrag, art, text) {
-  await db.from("ws_nachrichten").insert({ auftrag_id: auftrag, von: null, art, text: kuerzen(ohneGeheimnisse(text), 8000) });
+  const t = kuerzen(ohneGeheimnisse(text), 8000);
+  if (!nachrichtAlt) {
+    const { error } = await db.rpc("ws_werkstatt_nachricht", { p_pc: pcId, p_auftrag: auftrag, p_art: art, p_text: t });
+    if (!error) return;
+    if (!/function .* does not exist|schema cache|PGRST202/i.test(`${error.code || ""} ${error.message}`)) throw new Error(error.message);
+    nachrichtAlt = true;
+  }
+  await db.from("ws_nachrichten").insert({ auftrag_id: auftrag, von: null, art, text: t });
 }
 const sitzungenDatei = () => path.join(cfg.daten_ordner, "sitzungen.json");
 async function sitzungen() { try { return JSON.parse(await readFile(sitzungenDatei(), "utf8")); } catch { return {}; } }
 async function merkeSitzung(id, wert) { const s = await sitzungen(); s[id] = wert; await writeFile(sitzungenDatei(), JSON.stringify(s, null, 2)); }
 
 const tokenDatei = () => path.join(cfg.daten_ordner, "zugriff.token");
-async function tokenSchreiben() { await writeFile(tokenDatei(), token || "", { mode: 0o600 }); }
+// Zugriffstoken für die Erlaubnis-Brücke. Unter Windows wirkt „mode 0o600“ nicht (Befund S12): Zugriff per icacls nur für die eigene
+// Person (Vererbung aus, SYSTEM für Sicherungen). Claude darf die Datei ohnehin nicht lesen (VERBOTEN „zugriff.token“).
+let tokenGeschuetzt = false;
+async function tokenSchreiben() {
+  await writeFile(tokenDatei(), token || "", { mode: 0o600 });
+  if (process.platform === "win32" && !tokenGeschuetzt) {
+    const ich = process.env.USERDOMAIN && process.env.USERNAME ? `${process.env.USERDOMAIN}\\${process.env.USERNAME}` : process.env.USERNAME;
+    if (!ich) return;
+    try {
+      await sh("icacls", [tokenDatei(), "/inheritance:r", "/grant:r", `${ich}:F`, "/grant:r", "*S-1-5-18:F"], { windowsHide: true, timeout: 15000 });
+      tokenGeschuetzt = true;
+    } catch (e) { melde("fehler", `Zugriffstoken konnte nicht geschützt werden (icacls): ${kuerzen(ohneGeheimnisse(e?.message || String(e)), 160)}`); tokenGeschuetzt = true; }
+  }
+}
 function verbinde() {
   db = createClient(cfg.supabase_url, cfg.anon_key, {
     accessToken: async () => token,
@@ -190,8 +223,9 @@ async function aboAusStatuszeile() {
     await aboMelden(findeAboLimits(JSON.parse(await readFile(datei, "utf8"))), "statuszeile");
   } catch { /* keine Statuszeile eingerichtet */ }
 }
-// Knopf „Jetzt aktualisieren“ (0050): kostenloser Abruf wie „/usage“ im eigenen Takt (nur Netz, kein Claude-Lauf).
-// Klappt er nicht, wird die Mini-Anfrage nur vorgemerkt und in der Hauptschleife ausgeführt (nie neben einem Auftrag, nie in der Abo-Pause –
+// Knopf „Jetzt aktualisieren“ (0050, umgestellt mit Befund S6 am 01.11.2026): KEIN Auslesen der Anmeldung von Claude Code mehr.
+// Quelle ist die offizielle Statuszeile von Claude Code (~/.codeschmiede/abo.json, werkzeuge/abo-statuszeile.mjs) bzw. der Ausgabestrom.
+// Ist deren Stand älter als 2 Minuten, wird die Mini-Anfrage nur vorgemerkt und in der Hauptschleife ausgeführt (nie neben einem Auftrag, nie in der Abo-Pause –
 // Prüfung 0.10.0 Befund 2). Neue Anforderungen erkennt die Werkstatt am geänderten Zeitstempel der Datenbank, nicht an der PC-Uhr (Befund 3).
 let abrufLaeuft = false; let abrufZuletzt = null; let miniNoetig = null;
 async function abrufMelden(art, hinweis) {
@@ -206,15 +240,26 @@ async function limitsAbruf() {
   abrufLaeuft = true;
   try {
     kopplungAbgleich(true).catch(() => {});   // ChatGPT-Limits gleich mit
-    const r = await nutzungAbrufen({ anmeldung: await anmeldungFinden() });
+    const r = await statuszeileFrisch();
     if (r.werte) {
-      const ok = await aboMelden(r.werte, "abruf");
-      await abrufMelden(ok ? "abruf" : "fehler", ok ? "Kostenloser Abruf bei Anthropic" : "Werte abgerufen, aber nicht gespeichert – siehe Fehler der Werkstatt");
+      const ok = await aboMelden(r.werte, "statuszeile");
+      await abrufMelden(ok ? "abruf" : "fehler", ok ? "Werte aus der Statuszeile von Claude Code (höchstens 2 Minuten alt)" : "Werte gelesen, aber nicht gespeichert – siehe Fehler der Werkstatt");
     }
     else if (laeuft) await abrufMelden("fehler", `${r.grund} – gerade läuft ein Auftrag, die Werte kommen mit dessen nächster Antwort`);   // Nachprüfung N2
     else if (findeClaude()) miniNoetig = { grund: r.grund, stand: JSON.stringify(aboStand) };
     else await abrufMelden("fehler", r.grund);
   } finally { abrufLaeuft = false; }
+}
+/** Werte der offiziellen Statuszeile, wenn sie höchstens 2 Minuten alt sind (Befund S6). Liest nie Anmeldedaten. */
+async function statuszeileFrisch(jetzt = Date.now()) {
+  const datei = path.join(os.homedir(), ".codeschmiede", "abo.json");
+  try {
+    const j = JSON.parse(await readFile(datei, "utf8"));
+    const zeit = Number(j?.zeit) || (await stat(datei)).mtimeMs;
+    if (jetzt - zeit > 2 * 60 * 1000) return { grund: "Statuszeile von Claude Code hat keinen frischen Stand" };
+    const werte = findeAboLimits(j);
+    return werte ? { werte } : { grund: "Statuszeile von Claude Code liefert keine Limits" };
+  } catch { return { grund: "Statuszeile von Claude Code ist nicht eingerichtet (Einrichtung › Dieser PC)" }; }
 }
 /** Gelöschte Chat-Anhänge der eigenen Person im Speicher entfernen (ws_chat_dateien_weg, 0050). */
 async function chatDateienAufraeumen() {
@@ -236,7 +281,7 @@ async function miniAnfrage() {
     try {
       await claudeOhneWerkzeuge("Antworte nur mit: OK", { modell: "haiku" });
       const neu = JSON.stringify(aboStand) !== vorher;
-      await abrufMelden(neu ? "mini" : "fehler", `Kostenloser Abruf ging nicht (${grund}) – ${neu ? "Mini-Anfrage gemacht" : "auch die Mini-Anfrage brachte keine Werte"}`);
+      await abrufMelden(neu ? "mini" : "fehler", `${grund} – ${neu ? "Mini-Anfrage gemacht" : "auch die Mini-Anfrage brachte keine Werte"}`);
     } catch { await abrufMelden("fehler", `${grund}; Mini-Anfrage fehlgeschlagen`); }
   } finally { miniNoetig = null; }
   return true;
@@ -316,13 +361,15 @@ async function holeWissen(projektId) {
 }
 function auftragstext(auftrag, projekt, gruppe, feature, nachrichten, zweig, neuesProjekt, vorlagen = [], wissen = [], fehlerDaten = "") {
   // Text aus dem Team kann keine Zeilen vortäuschen, die wie Werkstatt-Antworten aussehen (Prüfung 2026-10-24)
+  // Seit Befund S9 (01.11.2026) auch Werkstatt-Zeilen: sie konnten bis Datenbank 0051 von jedem mit Werkstatt-Recht geschrieben werden.
   const entschaerft = (t) => String(t ?? "").replace(/^(\s*)(Werkstatt|Gerhard\/Team)(\s*\()/gim, "$1› $2$3");
-  const verlauf = nachrichten.map((n) => `${n.von ? "Gerhard/Team" : "Werkstatt"} (${n.art}): ${n.von ? entschaerft(n.text) : n.text}`).join("\n");
+  const verlauf = nachrichten.map((n) => `${n.von ? "Gerhard/Team" : "Werkstatt"} (${n.art}): ${entschaerft(n.text)}`).join("\n");
   return [
     `Du bist die Werkstatt der Codeschmiede für das Projekt „${projekt.name}“ (Repository ${projekt.repo}).`,
     `Auftrag #${auftrag.id} – Gruppe „${gruppe?.name || "?"}“${feature ? `, Feature „${feature.name}“ (${feature.id})` : ", ganze Gruppe"}. Art: ${auftrag.art}.`,
     gruppe?.ws_bereiche?.global ? "GLOBALE EINSTELLUNG: Dieses Feature gilt für die ganze App und alle Nutzer und Rollen (z. B. Anmeldung, Sitzung, App-Rahmen). Es ist in der App kein eigener Bereich/Menüpunkt – setze es zentral um (gemeinsamer Code, Einstellungen, Datenbank), nicht in einer einzelnen Seite, und prüfe die Wirkung auf alle Bereiche und Rollen (Dorfverein und Profiverein)." : "",
-    auftrag.baustein ? `Gezeigter Baustein: ${JSON.stringify(auftrag.baustein)}` : "",
+    // Befund S4 (01.11.2026): nur Name, Seite und Pfad – nie sichtbarer Text aus der App (kann Namen von Kindern/Mitgliedern enthalten)
+    bausteinBlock(auftrag.baustein),
     // Feature-Bezüge (KONZEPT-FEATURE-BEZUEGE.md): Referenz-Features gezielt mitgeben, vorher melden, was übernommen wird
     vorlagen.length ? [
       "VORLAGEN (Referenz-Features im selben Projekt – baue nach diesem Vorbild):",
@@ -399,10 +446,14 @@ async function fuehreAus(auftrag, { fortsetzen = false, nacharbeit = false, ersa
       CS_SUPABASE_URL: cfg.supabase_url, CS_ANON_KEY: cfg.anon_key, CS_TOKEN_DATEI: tokenDatei(), CS_AUFTRAG: String(auftrag.id), CS_GRUPPE: auftrag.gruppe_id, CS_ADMIN_PC: cfg.admin ? "1" : "0", CS_ORDNER: ordner,
     } } } };
     const args = ["-p", prompt, "--output-format", "stream-json", "--verbose", "--model", modell,
-      "--permission-mode", "default", "--allowedTools", ERLAUBT.join(","), "--disallowedTools", VERBOTEN.join(","),
+      // Lese-Sperren gelten seit Befund S2 (01.11.2026) auch im Bau-Lauf, nicht nur im Chat und in der Prüfung
+      "--permission-mode", "default", "--allowedTools", ERLAUBT.join(","), "--disallowedTools", [...VERBOTEN, ...LESE_SPERREN].join(","),
       "--mcp-config", JSON.stringify(mcp), "--strict-mcp-config", "--permission-prompt-tool", "mcp__werkstatt__erlaubnis",
       // nur die Benutzer-Einstellungen laden: ein Projekt-Repository kann so keine Freigaben, Hooks oder apiKeyHelper mitbringen
-      "--setting-sources", "user"];
+      "--setting-sources", "user",
+      // „ask“ geht vor „allow“: Bau-/Test-Einstellungen und Websuche laufen immer über die Erlaubnis-Brücke (Befund S1/S2)
+      // Lesen außerhalb des Arbeitsordners verweigert Claude Code selbst (Befund S2); Hooks aus (wie in der Prüfung)
+      "--settings", JSON.stringify({ disableAllHooks: true, permissions: { ask: [...FRAGEN, "WebSearch", "WebFetch"], blockReadsOutsideWorkingDirectories: true } })];
     if ((fortsetzen || nacharbeit) && merk.sitzung) args.push("--resume", merk.sitzung);
     // Ohne API-Schlüssel in der Umgebung arbeitet Claude Code mit dem eigenen Abo-Login dieser Person
     const env = { ...process.env };
@@ -471,14 +522,16 @@ async function fuehreAus(auftrag, { fortsetzen = false, nacharbeit = false, ersa
       await nachricht(auftrag.id, "ergebnis", r.text || "Fertig.");
       // Bauen & Tests selbst auf diesem PC (Ersatz, solange GitHub nicht prüfen kann – Entscheidung Gerhard 20:36)
       // Ersatz-Bau: KEINE lokale Prüfung (sonst liefe der Code des Ersatzes ohne Sandbox auf diesem PC, Prüfung 0.8.6 R3) – geprüft wird in der Cloud
-      if (!r.ersatz && !r.hand) await log(auftrag.id, "test", "Bauen & Tests auf diesem PC …");
-      const lokal = r.ersatz ? { ok: true, text: "Übersprungen (Ersatz-Bau) – Bauen & Tests laufen in der Cloud und in der Sicherheitsprüfung" }
-        : r.hand ? { ok: true, text: "Übersprungen (Hand-Änderung) – Bauen & Tests laufen in GitHub und in der Sicherheitsprüfung" } : await lokalePruefung(ordner);
+      // Befund S1 (01.11.2026): auf KEINEM PC mehr npm ci/build/test mit dem Code, den die KI geschrieben hat – Bauen und Tests nur in
+      // GitHub („Prüfung“) und Cloudflare; die Sicherheitsprüfung wartet darauf (Stationen).
+      const lokal = { ok: true, text: r.ersatz ? "Übersprungen (Ersatz-Bau) – Bauen & Tests laufen in der Cloud und in der Sicherheitsprüfung"
+        : r.hand ? "Übersprungen (Hand-Änderung) – Bauen & Tests laufen in GitHub und in der Sicherheitsprüfung"
+        : "Keine Prüfung auf diesem PC – Bauen & Tests laufen in GitHub und Cloudflare, die Sicherheitsprüfung wartet darauf" };
       const { data: jetzt } = await db.from("ws_auftraege").select("pruefung").eq("id", auftrag.id).single();
       const pruefung = { ...(jetzt?.pruefung || {}), lokal: { ergebnis: lokal.ok ? "gruen" : "rot", befund: lokal.text, zeit: new Date().toISOString(), pc: cfg.pc_name } };
       if (lokal.ok) {
         await db.from("ws_auftraege").update({ stand: "freigabe", pr_nummer: r.nummer, zweig, letzter_commit: commit, pruefung }).eq("id", auftrag.id);
-        await log(auftrag.id, "test", "Bauen & Tests: grün");
+        await log(auftrag.id, "test", lokal.text);
         melde("status", `Fertig zur Freigabe: PR #${r.nummer}`, auftrag.id);
       } else {
         await db.from("ws_auftraege").update({ stand: "nacharbeit", pr_nummer: r.nummer, zweig, letzter_commit: commit, pruefung }).eq("id", auftrag.id);
@@ -753,35 +806,9 @@ async function ersatzBau({ auftrag, projekt, ordner, zweig, prompt, signal }) {
   return { art: "pr", nummer, ersatz: true, text: `Gebaut von ChatGPT (Codex) als Ersatz – geprüft wird wie immer von Claude.\n${kuerzen(text || "", 3000)}` };
 }
 
-// ---------- Bauen & Tests auf diesem PC ----------
-// Führt nur feste Befehle aus (keine Eingaben aus Aufträgen). Windows braucht für npm.cmd die Shell – die Argumente sind fest.
-function npm(ordner, args, minuten = 15) {
-  return new Promise((fertig) => {
-    const kind = spawn(process.platform === "win32" ? "npm.cmd" : "npm", args, { cwd: ordner, shell: process.platform === "win32", windowsHide: true, env: { ...process.env, CI: "true" } });
-    let aus = ""; const merke = (d) => { aus = (aus + d.toString()).slice(-6000); };
-    kind.stdout.on("data", merke); kind.stderr.on("data", merke);
-    const uhr = setTimeout(() => { kind.kill(); aus += `\nAbgebrochen nach ${minuten} Minuten.`; }, minuten * 60 * 1000);
-    kind.on("error", (e) => { clearTimeout(uhr); fertig({ code: 1, aus: e.message }); });
-    kind.on("close", (code) => { clearTimeout(uhr); fertig({ code, aus }); });
-  });
-}
-async function lokalePruefung(ordner) {
-  // Regel (Prüfung 2026-10-22, R2): Der Admin-PC führt nie Projekt-Code aus – dort prüft der Cloudflare-Bau (gefunden 2026-10-23: lief trotzdem).
-  if (cfg.admin) return { ok: true, text: "Admin-PC: keine lokale Prüfung – gebaut und geprüft wird in der Cloud (Cloudflare-Bau)." };
-  if (!(await existiert(path.join(ordner, "package.json")))) return { ok: true, text: "Kein package.json – nichts zu bauen." };
-  const pkg = JSON.parse(await readFile(path.join(ordner, "package.json"), "utf8"));
-  const schritte = [[(await existiert(path.join(ordner, "package-lock.json"))) ? ["ci", "--no-audit", "--no-fund"] : ["install", "--no-audit", "--no-fund"], "Abhängigkeiten"]];
-  if (pkg.scripts?.build) schritte.push([["run", "build"], "Bauen"]);
-  if (pkg.scripts?.test) schritte.push([["test"], "Tests"]);
-  if (pkg.scripts?.lint) schritte.push([["run", "lint"], "Lint"]);
-  const bericht = [];
-  for (const [args, name] of schritte) {
-    const r = await npm(ordner, args);
-    bericht.push(`${name}: ${r.code === 0 ? "grün" : "ROT"}`);
-    if (r.code !== 0) return { ok: false, text: kuerzen(ohneGeheimnisse(`${bericht.join(" · ")}\n${r.aus.slice(-2500)}`), 3000) };
-  }
-  return { ok: true, text: bericht.join(" · ") };
-}
+// ---------- Bauen & Tests ----------
+// Früher liefen hier auf Entwickler-PCs npm ci/build/test/lint im Arbeitsordner. Abgeschaltet mit Befund S1 (01.11.2026):
+// Projekt-Code läuft auf keinem PC der Codeschmiede, nur in GitHub und Cloudflare (bzw. in einer Sandbox, siehe lib/sandbox.mjs).
 
 // ---------- Prüfung durch eine unabhängige Claude-Sitzung (nur lesen) ----------
 const PRUEF_ERLAUBT = ["Read", "Grep", "Glob", "Bash(git diff origin/main...HEAD)", "Bash(git diff --stat origin/main...HEAD)",
@@ -796,7 +823,9 @@ async function claudePruefung(auftragId, ordner, prompt, { nurLesen = false, gre
     ? ["--restricted", "--tools", "Read,Grep,Glob", "--disallowedTools", ["Bash", "Edit", "Write", "NotebookEdit", "WebFetch", "WebSearch", "Task", "mcp__*", ...VERBOTEN.filter((v) => v.startsWith("Read(")), ...LESE_SPERREN].join(","), "--permission-prompts", "none"]
     : ["--allowedTools", PRUEF_ERLAUBT.join(","), "--disallowedTools", ["Edit", "Write", "NotebookEdit", "WebFetch", "WebSearch", ...VERBOTEN, ...LESE_SPERREN].join(",")];
   const args = ["-p", prompt, "--output-format", "stream-json", "--verbose", "--model", "opus", "--permission-mode", "default", ...werkzeuge,
-    "--mcp-config", JSON.stringify({ mcpServers: {} }), "--strict-mcp-config", "--setting-sources", "user", "--settings", JSON.stringify({ disableAllHooks: true })];
+    "--mcp-config", JSON.stringify({ mcpServers: {} }), "--strict-mcp-config", "--setting-sources", "user",
+    // Prüfung liest nur im Prüf-Ordner (Befund S2, 01.11.2026)
+    "--settings", JSON.stringify({ disableAllHooks: true, permissions: { blockReadsOutsideWorkingDirectories: true } })];
   const zeit = grenzeMin ? setTimeout(() => laeuft?.abort?.abort(), grenzeMin * 60 * 1000) : null;
   let ende = null; let kosten = 0;
   try { await new Promise((fertig, fehl) => {
