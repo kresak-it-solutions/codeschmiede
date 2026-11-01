@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import { Lightbulb, CircleCheck, Circle, Plus, Trash2, Loader2, BookOpen, Palette, MessageSquare, FileText, Download } from "lucide-react";
 import { Markdown } from "./Markdown";
 import { supabase } from "./supabase";
-import ClaudeChat, { KAPITEL } from "./ClaudeSpalte";
+import ClaudeChat, { KAPITEL } from "./KonzeptChat";
 
 // Konzept-Arbeitsplatz (Entwurf „Konzept zuerst“ 1.0, freigegeben von Gerhard 2026-10-23 18:06):
 // erste Gruppe im Bereich App. Hier wird das Grundkonzept besprochen, bevor gebaut wird; geklärte Entscheidungen gehen
@@ -111,7 +111,7 @@ function KonzeptStand({ liste, d, ich, darf, toast, onDesigner }) {
           <div key={k} className="rounded-xl border border-slate-200 dark:border-slate-800 p-2.5 flex flex-col gap-1.5">
             <div className="flex items-center gap-1.5 text-sm font-semibold">
               {fertig ? <CircleCheck className="w-4 h-4 text-emerald-700" /> : <Circle className="w-4 h-4 text-slate-400" />}{titel}
-              <span className={`ml-auto text-[11px] font-semibold rounded-full px-2 py-0.5 ${k === "offen" ? (eintraege.length ? "bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300" : "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300") : fertig ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300" : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"}`}>
+              <span className={`ml-auto text-xs font-semibold rounded-full px-2 py-0.5 ${k === "offen" ? (eintraege.length ? "bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300" : "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300") : fertig ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300" : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"}`}>
                 {k === "offen" ? (eintraege.length || "keine") : fertig ? "im Wissen" : "offen"}</span>
             </div>
             {eintraege.map((w) => (

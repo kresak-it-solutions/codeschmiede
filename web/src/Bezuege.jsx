@@ -64,12 +64,12 @@ export const MitErwaehnung = React.forwardRef(function MitErwaehnung({ value, on
         }} />
       {treffer && (
         <ul role="listbox" aria-label={treffer.art === "gruppe" ? "Gruppe wählen" : "Feature wählen"} className="absolute z-20 left-0 bottom-full mb-1 w-80 max-w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-lg p-1 text-sm">
-          <li className="px-2.5 pt-1 pb-0.5 text-[11px] font-semibold uppercase tracking-wider text-slate-500" aria-hidden="true">{treffer.art === "gruppe" ? "Gruppen" : "Features"}</li>
+          <li className="px-2.5 pt-1 pb-0.5 text-xs font-semibold uppercase tracking-wider text-slate-500" aria-hidden="true">{treffer.art === "gruppe" ? "Gruppen" : "Features"}</li>
           {treffer.liste.map((f, i) => (
             <li key={f.id} role="option" aria-selected={i === aktiv}>
               <button type="button" onMouseDown={(e) => { e.preventDefault(); waehle(f); }} className={`w-full text-left px-2.5 py-1.5 rounded-lg flex items-center gap-2 ${i === aktiv ? "bg-emerald-50 dark:bg-emerald-950" : ""}`}>
                 {treffer.art === "gruppe" ? <Hash className="w-3.5 h-3.5 text-amber-600" /> : <Link2 className="w-3.5 h-3.5 text-emerald-700" />}<span className="truncate">{f.name}</span>
-                <span className="ml-auto text-[11px] text-slate-400 font-mono truncate max-w-[45%]">{treffer.art === "gruppe" ? (f.bereich || "") : f.id}</span></button></li>))}
+                <span className="ml-auto text-xs text-slate-400 font-mono truncate max-w-[45%]">{treffer.art === "gruppe" ? (f.bereich || "") : f.id}</span></button></li>))}
         </ul>)}
     </div>);
 });

@@ -4,6 +4,7 @@ import { supabase } from "./supabase";
 import { isDesktop, tauri } from "./desktop";
 import { designFreigabeStand } from "./designFrage";
 import { kiAnzeigename } from "./kiName";
+import { useBestaetigen, useFokusfalle } from "./bausteine/grund";
 
 // Einrichtungs-Assistent (Gerhard 2026-10-22/23: „Anleitung, wie man Claude und die anderen Produkte koppeln muss“, Assistent mit Prüfung,
 // beim ersten Start und jederzeit, Statusleiste; 14:27: ChatGPT-Kopplung im Assistenten erklären). Prüft jeden Schritt echt auf diesem PC.
@@ -77,6 +78,7 @@ export function useEinrichtung(ich, d) {
 }
 
 export default function Einrichtung({ ich, d, toast, onClose }) {
+  const fokusfalle = useFokusfalle();   // Fokus bleibt im Dialog (Befund B2)
   const { st, pruefen } = useEinrichtung(ich, d);
   const [schritt, setSchritt] = useState(0); const [busy, setBusy] = useState(false);
   const entwickler = ich.rolle === "admin" || d.mitglieder.some((m) => m.benutzer_id === ich.id && m.rolle === "entwickler");
@@ -170,7 +172,7 @@ export default function Einrichtung({ ich, d, toast, onClose }) {
   const schliessen = () => { try { localStorage.setItem("cs-einrichtung-gesehen", "1"); } catch { /* egal */ } onClose(); };
   return (
     <div className="fixed inset-0 z-40 grid place-items-center bg-black/45 p-4" onMouseDown={(e) => e.target === e.currentTarget && schliessen()}>
-      <div role="dialog" aria-modal="true" aria-label="Einrichtung" className={`${card} w-full max-w-xl p-5 flex flex-col gap-4 max-h-[90vh] overflow-y-auto`}>
+      <div ref={fokusfalle} role="dialog" aria-modal="true" aria-label="Einrichtung" className={`${card} w-full max-w-xl p-5 flex flex-col gap-4 max-h-[90vh] overflow-y-auto`}>
         <div className="flex items-center gap-2"><I className="w-5 h-5 text-emerald-700" /><h3 className="font-display font-bold text-xl flex-1">Einrichtung · {S.titel}</h3>
           <button type="button" className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800" onClick={schliessen} aria-label="Schließen"><X className="w-4 h-4" /></button></div>
         <ol className="flex gap-1" aria-label="Schritte">{SCHRITTE.map((x, i) => <li key={x.titel} className={`h-1.5 flex-1 rounded-full ${i <= schritt ? "bg-emerald-600" : "bg-slate-200 dark:bg-slate-800"}`} title={x.titel} />)}</ol>
@@ -190,6 +192,7 @@ export default function Einrichtung({ ich, d, toast, onClose }) {
 // Sandbox und alte Werkstatt-PCs (Entfernen nur der Admin, Datenbank 0040 ws_werkstatt_pc_entfernen mit Rechteprüfung und Protokoll).
 const ALT_TAGE = 14;
 function DieserPc({ ich, d, st, pc, toast }) {
+  const bestaetigen = useBestaetigen();   // statt window.confirm (Befund B2)
   const [schluessel, setSchluessel] = useState(undefined);   // undefined = lädt, null = keiner/Browser
   const [namen, setNamen] = useState({}); const [busy, setBusy] = useState(null);
   const desk = !!st?.desk;
@@ -211,7 +214,7 @@ function DieserPc({ ich, d, st, pc, toast }) {
   const wer = (id) => (id === ich.id ? "du" : d.benutzer.find((u) => u.id === id)?.name || "Mitglied");
   const datum = (x) => (x ? new Date(x).toLocaleDateString("de-AT", { day: "2-digit", month: "2-digit", year: "numeric" }) : "–");
   const entfernen = async (p) => {
-    if (!window.confirm(`Werkstatt-PC „${p.name}“ (${wer(p.benutzer_id)}) entfernen? Seine KI-Kopplungen fallen weg; meldet er sich wieder an, erscheint er neu.`)) return;
+    if (!(await bestaetigen({ titel: `Werkstatt-PC „${p.name}“ entfernen?`, text: `${wer(p.benutzer_id)} · Seine KI-Kopplungen fallen weg; meldet er sich wieder an, erscheint er neu.`, ja: "Entfernen", gefahr: true }))) return;
     setBusy(p.id);
     const { error } = await supabase.rpc("ws_werkstatt_pc_entfernen", { p_pc: p.id });
     setBusy(null);
@@ -248,7 +251,7 @@ function DieserPc({ ich, d, st, pc, toast }) {
                 <span className="flex-1 min-w-0"><b className="font-semibold">{p.name}</b> · {wer(p.benutzer_id)} · {p.an ? "an" : "aus"} · zuletzt {datum(p.zuletzt)}{p.admin_pc ? " · Admin-PC" : ""}</span>
                 {admin && <button type="button" className={`${ghost} h-8 text-xs`} disabled={busy === p.id} onClick={() => entfernen(p)}>{busy === p.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}Entfernen</button>}
               </li>))}</ul>)}
-          <p className="text-[11px] text-slate-500 flex items-center gap-1"><ShieldCheck className="w-3.5 h-3.5" aria-hidden="true" />{admin ? "Entfernen geht nur bei PCs, die gerade nicht eingeschaltet sind; es steht im Änderungsprotokoll." : "Entfernen darf nur der Admin."}</p>
+          <p className="text-xs text-slate-500 flex items-center gap-1"><ShieldCheck className="w-3.5 h-3.5" aria-hidden="true" />{admin ? "Entfernen geht nur bei PCs, die gerade nicht eingeschaltet sind; es steht im Änderungsprotokoll." : "Entfernen darf nur der Admin."}</p>
         </div>
       </div>
     </div>);

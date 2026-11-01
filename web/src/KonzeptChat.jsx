@@ -58,13 +58,13 @@ export default function ClaudeChat({ d, ich, ort = "konzept", kontext, toast, le
         {!liste.length && (leer || <p className="text-slate-500">Dein Chat zum Projekt: Hier besprecht ihr das Grundkonzept und jedes neue Vorhaben, bevor gebaut wird. {ki.name} liest im Projekt nach, stellt Rückfragen zum Anklicken und legt die Aufträge selbst an, sobald alles geklärt ist – du gibst danach nur frei und führst zusammen.</p>)}
         {liste.map((m) => m.frage_id ? (
           <div key={m.id} className="rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 p-2.5 max-w-[92%]">
-            <div className="text-[11px] font-bold text-slate-500 flex items-center gap-1"><Bot className="w-3.5 h-3.5" />{ki.von(m.ki)} · {zeit(m.erstellt)}</div>
+            <div className="text-xs font-bold text-slate-500 flex items-center gap-1"><Bot className="w-3.5 h-3.5" />{ki.von(m.ki)} · {zeit(m.erstellt)}</div>
             <Markdown text={m.text} klein />
             {m.vorschlag && <Vorschlag m={m} d={d} ich={ich} kann={fragen[m.frage_id]?.von === ich.id} toast={toast} onAntwort={schicke} sperre={wartet || senden} />}
           </div>
         ) : (
           <div key={m.id} className="ml-auto rounded-xl bg-emerald-50 dark:bg-emerald-950/50 p-2.5 max-w-[86%]">
-            <div className="text-[11px] font-bold text-slate-500">Du{m.ort !== "konzept" ? ` · ${ORT_NAME(m.ort)}` : ""} · {zeit(m.erstellt)}</div>
+            <div className="text-xs font-bold text-slate-500">Du{m.ort !== "konzept" ? ` · ${ORT_NAME(m.ort)}` : ""} · {zeit(m.erstellt)}</div>
             <Markdown text={m.text} klein />
             {m.stand === "fehler" && <p className="text-xs text-red-600 mt-1">Nicht beantwortet</p>}
           </div>))}
@@ -205,7 +205,7 @@ function AuftraegeVorschlag({ m, d, ich, kann, toast }) {
           <div key={i} className="rounded-lg border border-slate-200 dark:border-slate-800 p-2 grid gap-1.5">
             <div className="flex items-start gap-2"><div className="min-w-0"><p className="font-semibold">{ids[i] ? `#${ids[i]} · ` : ""}{x.titel}</p>
               <p className="text-xs text-slate-500">{g?.name || x.gruppe_id}{f ? ` › ${f.name}` : ""}</p></div>
-              {a && <span className={`ml-auto shrink-0 text-[11px] font-semibold rounded-full px-2 py-0.5 ${["freigabe", "zusammen", "frage"].includes(a.stand) ? "bg-amber-50 text-amber-800 dark:bg-amber-950 dark:text-amber-200" : ["wissen", "erledigt"].includes(a.stand) ? "bg-green-50 text-green-700 dark:bg-green-950 dark:text-green-300" : a.stand === "nacharbeit" ? "bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300" : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"}`}>{STAND_TEXT[a.stand] || a.stand}</span>}</div>
+              {a && <span className={`ml-auto shrink-0 text-xs font-semibold rounded-full px-2 py-0.5 ${["freigabe", "zusammen", "frage"].includes(a.stand) ? "bg-amber-50 text-amber-800 dark:bg-amber-950 dark:text-amber-200" : ["wissen", "erledigt"].includes(a.stand) ? "bg-green-50 text-green-700 dark:bg-green-950 dark:text-green-300" : a.stand === "nacharbeit" ? "bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300" : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"}`}>{STAND_TEXT[a.stand] || a.stand}</span>}</div>
             {offen && <p className="whitespace-pre-wrap text-xs bg-slate-50 dark:bg-slate-950 rounded p-2 max-h-40 overflow-auto">{x.text}</p>}
             {a && admin && a.stand === "freigabe" && <FreigabeKnopf a={a} onJa={() => rpc("ws_freigeben", a, `Auftrag #${a.id} freigegeben – Sicherheitsprüfung startet`)} />}
             {a && admin && a.stand === "zusammen" && <ZusammenKnopf a={a} onJa={() => rpc("ws_zusammenfuehren", a, `Auftrag #${a.id}: Zusammenführen gestartet`)} />}

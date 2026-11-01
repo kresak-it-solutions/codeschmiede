@@ -162,6 +162,12 @@ dem Klick „Verstanden, Vorschau anzeigen“ und zeigen dauerhaft „hier nicht
 | 3 | Live-Vorschau mit „Zeigen & kommentieren“ | erledigt 2026-10-23 (Feature-Arbeitsplatz und eigener Menüpunkt) |
 | 4 | Zusammenführen / Sicherheitsprüfung / Wissen auf dem Admin-PC; Zweige & Versionen, Prüfstand, Wissensdatenbank, Änderungsprotokoll, Dokumentation | erledigt 2026-10-23 (0.6.0, Projekt-Abgleich) |
 
+## Aufbau der Oberfläche im Code (seit 0.10.3, Befund B1)
+`web/src/App.jsx` = Rahmen, Kopfzeile, Navigation, Ansichten-Weiche · `web/src/seiten/*.jsx` = Seiten (Zentrale, Zu erledigen & Live, Live-Vorschau,
+Verwaltung, Verbrauch, Werkstatt, Anmelden, Kopfzeile) · `web/src/bausteine/grund.jsx` = Knopf-Klassen, Hilfen, `Badge`, `Toast`, `Dialog` (mit
+Fokusfalle), `BestaetigenRahmen`/`useBestaetigen`, `useFokusfalle` · `web/src/daten/werkstattDaten.js` = Live-Daten und Rechte. Übrige Bereiche
+(Chat, Aufgaben, Designer …) haben wie bisher eigene Dateien.
+
 ## Offene Punkte aus den Befunden vom 01.11.2026 (`docs/BEFUNDE-2026-11-01.md`)
 - **L3 Push-Nachricht aufs Handy (Pflichtregel AGENTS.md, noch nicht gebaut).** Ohne neue Infrastruktur nicht sinnvoll machbar: Jede Push-Nachricht
   aufs Handy läuft über den Push-Dienst des Handy-Browsers (Google bzw. Apple) oder einen eigenen Server. **Plan (Empfehlung):** Web-Push für die
@@ -178,5 +184,7 @@ dem Klick „Verstanden, Vorschau anzeigen“ und zeigen dauerhaft „hier nicht
   nimmt jeder PC der Person, die den Auftrag gestellt hat): eigenes Konzept mit Entwurf.
 - **L2 Schutzregel auf GitHub:** Die Codeschmiede wartet jetzt selbst auf alle Prüfläufe. Zusätzlich empfohlen: Schutzregel für `main` mit
   Pflicht-Prüflauf „Prüfung“ (Einstellung in GitHub, macht Gerhard bzw. der zusammenführende Chat).
+- **B4 ein Chat-Baustein** für alle Orte (Chat, Konzept, Feature, Design, Baustein, Kachel) mit Bezug als Chip, Begriffe „Besprechen“/„Als Auftrag“ –
+  zusammen mit dem Umbau des App-Designers (eigener Chat). **B9** Leer-/Lade-/Fehlerzustand als Bausteine mit „Erneut versuchen“.
 - **L9 geprüft:** Der Kopplungs-Abgleich macht keine Mini-Anfragen (nur `--version`, `auth status`/`login status`, Limits von Codex ohne Anfrage).
 

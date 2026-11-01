@@ -5,6 +5,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Code2, FileText, Lock, Loader2, Search, GitPullRequest, X, RefreshCw, Info, Check, FolderOpen } from "lucide-react";
 import { supabase } from "./supabase";
+import { useFokusfalle } from "./bausteine/grund";
 
 const fehler = (e) => (e?.message || "Unbekannter Fehler").replace(/^.*?ERROR:\s*/, "");
 const btn = "inline-flex items-center justify-center gap-2 h-10 px-4 rounded-xl bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 text-white font-display font-bold tracking-wide transition";
@@ -128,7 +129,7 @@ export default function CodeEditor({ d, ich, toast, onAuftrag }) {
             {!laedt && liste.map((x, i) => {
               const o = ordnerVon(x.p); const neuOrdner = i === 0 || ordnerVon(liste[i - 1].p) !== o;
               return (<React.Fragment key={x.p}>
-                {neuOrdner && o && <div className="px-2 pt-2 pb-0.5 text-[11px] uppercase tracking-wider text-slate-400 truncate flex items-center gap-1"><FolderOpen className="w-3 h-3" />{o}</div>}
+                {neuOrdner && o && <div className="px-2 pt-2 pb-0.5 text-xs uppercase tracking-wider text-slate-400 truncate flex items-center gap-1"><FolderOpen className="w-3 h-3" />{o}</div>}
                 <button type="button" disabled={!!x.x} onClick={() => oeffne(x.p)} title={x.x ? "Geheime Datei – gesperrt" : x.p}
                   className={`w-full flex items-center gap-1.5 px-2 py-1 rounded-md text-left ${aktiv === x.p ? "bg-emerald-50 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-200" : "hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300"} ${x.x ? "opacity-50 cursor-not-allowed" : ""}`}>
                   {x.x ? <Lock className="w-3.5 h-3.5 shrink-0" /> : <FileText className="w-3.5 h-3.5 shrink-0" />}<span className="truncate">{x.p.split("/").pop()}</span>
@@ -188,7 +189,7 @@ function Aenderungen({ entwurf, dateien, darf, onSpeichern, onVerwerfen, onOeffn
       return (<div key={p} className="flex flex-col gap-1">
         <button type="button" className="text-left text-sm font-semibold font-mono truncate hover:underline" onClick={() => onOeffne(p)}>{p}</button>
         {alt == null ? <p className="text-xs text-slate-500">Datei neu öffnen, um die Gegenüberstellung zu sehen.</p>
-          : <pre className="m-0 text-[11.5px] leading-[17px] font-mono rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#0a1613] py-1 overflow-x-auto">
+          : <pre className="m-0 text-xs leading-[17px] font-mono rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#0a1613] py-1 overflow-x-auto">
             {diffZeilen(alt, entwurf[p].inhalt).map(([art, t], i) => <div key={i} className={`px-2 ${art === "p" ? "bg-emerald-100/70 text-emerald-900 dark:bg-emerald-900/30 dark:text-emerald-200" : art === "m" ? "bg-red-100/70 text-red-900 dark:bg-red-900/30 dark:text-red-200" : "text-slate-400"}`}>{t || " "}</div>)}</pre>}
       </div>);
     }) : <p className="text-sm text-slate-500">Noch nichts geändert.</p>}
@@ -199,6 +200,7 @@ function Aenderungen({ entwurf, dateien, darf, onSpeichern, onVerwerfen, onOeffn
 }
 
 function Speichern({ gruppen, d, entwurf, toast, onClose, onFertig }) {
+  const fokusfalle = useFokusfalle();   // Fokus bleibt im Dialog (Befund B2)
   const [titel, setTitel] = useState(""); const [text, setText] = useState(""); const [gid, setGid] = useState(gruppen[0]?.id || ""); const [busy, setBusy] = useState(false);
   useEffect(() => { const k = (e) => e.key === "Escape" && onClose(); window.addEventListener("keydown", k); return () => window.removeEventListener("keydown", k); }, [onClose]);
   const pfade = Object.keys(entwurf);
@@ -216,7 +218,7 @@ function Speichern({ gruppen, d, entwurf, toast, onClose, onFertig }) {
   };
   return (
     <div className="fixed inset-0 z-40 grid place-items-center bg-black/45 p-4" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div role="dialog" aria-modal="true" aria-label="Als Auftrag speichern" className={`${card} w-full max-w-lg p-5 flex flex-col gap-3`}>
+      <div ref={fokusfalle} role="dialog" aria-modal="true" aria-label="Als Auftrag speichern" className={`${card} w-full max-w-lg p-5 flex flex-col gap-3`}>
         <h3 className="font-display font-bold text-xl">Als Auftrag speichern</h3>
         <label className="flex flex-col gap-1 text-sm text-slate-500">Titel<input className={input} value={titel} onChange={(e) => setTitel(e.target.value)} maxLength={120} autoFocus placeholder="z. B. Kalender: Wochenstart Montag" /></label>
         <label className="flex flex-col gap-1 text-sm text-slate-500">Gruppe
