@@ -13,6 +13,7 @@ import Begruendung from "./Begruendung";
 import { useTokenBruecke } from "./useTokenBruecke";
 import { tokenWerte, nurAbweichungen, begruendungSchluessel } from "../designSystem";
 import { pruefeDsTokens } from "../kontrast";
+import { useBestaetigen } from "./dialog";
 
 const fehlerText = (e) => String(e?.message || "Fehler").slice(0, 300);
 const ebeneFertig = (e) => e.level === "all" || (e.level === "package" ? !!e.package_key : !!e.club_id && (e.level !== "role" || !!e.role_key));
@@ -20,6 +21,7 @@ const ebeneSchluessel = (e) => [e.level, e.package_key || "", e.club_id || "", e
 
 export default function AppDesigner3({ projekt, ds, ansicht, darf, toast, onFreigabe }) {
   const { daten, html } = ds;
+  const bestaetigen = useBestaetigen();
   const [leiste, setLeisteRoh] = useState(() => leisteLesen(projekt.id));
   const setLeiste = (l) => {
     if (l.rolle !== leiste.rolle) { setSeite(null); setRoute(null); setWahl(null); }
@@ -45,13 +47,13 @@ export default function AppDesigner3({ projekt, ds, ansicht, darf, toast, onFrei
     try {
       const a = await bruecke.frage({ cs: "ds-tokens-laden", ebene: e });
       if (ebeneSchluessel(e) !== ebeneSchluessel(ebeneRef.current)) return;
-      setStand({ ...a, laden: false }); setEigen(a.eigen && typeof a.eigen === "object" ? a.eigen : {});
-    } catch (f) { setStand((s) => ({ ...s, laden: false, fehler: fehlerText(f) })); }
+      setStand({ ...a, laden: false, geladen: true, fehler: null, eigenGeaendert: false }); setEigen(a.eigen && typeof a.eigen === "object" ? a.eigen : {});
+    } catch (f) { setStand((s) => ({ ...s, laden: false, geladen: false, fehler: fehlerText(f) })); }
   }, [bruecke]);
   useEffect(() => { if (bruecke.bereit) laden(ebeneRef.current); }, [bruecke.bereit]); // eslint-disable-line react-hooks/exhaustive-deps
-  const setEbene = (e) => {
-    if (Object.keys(eigen).length && stand.eigenGeaendert && !window.confirm("Noch nicht gespeicherte Token-Änderungen verwerfen?")) return;
-    setEbeneRoh(e); setEigen({}); setSpeichert(null); setStand((s) => ({ ...s, entwurf: null, live: null, geerbt: {}, eigenGeaendert: false }));
+  const setEbene = async (e) => {
+    if (stand.eigenGeaendert && !(await bestaetigen({ titel: "Token-Änderungen verwerfen?", text: "Für diese Ebene gibt es noch nicht gespeicherte Änderungen.", ja: "Verwerfen", nein: "Behalten", gefahr: true }))) return;
+    setEbeneRoh(e); setEigen({}); setSpeichert(null); setStand((s) => ({ ...s, entwurf: null, live: null, geerbt: {}, eigenGeaendert: false, geladen: false }));
     if (bruecke.bereit && ebeneFertig(e)) laden(e);
   };
   const werte = useMemo(() => tokenWerte(daten, stand.geerbt, eigen), [daten, stand.geerbt, eigen]);
@@ -59,16 +61,22 @@ export default function AppDesigner3({ projekt, ds, ansicht, darf, toast, onFrei
   const setzeToken = (m, k, v) => { if (darf) aendern({ ...werte, [m]: { ...werte[m], [k]: v } }); };
   const setzeEcke = (k, v) => { if (darf) aendern({ ...werte, ecken: { ...werte.ecken, [k]: v } }); };
   const zuruecksetzen = () => { setEigen({}); setStand((s) => ({ ...s, eigenGeaendert: true })); };
+  // Speichern nur, wenn ohne Fehler geladen und wirklich etwas geändert ist (Review #58 M1)
+  const kannSpeichern = darf && bruecke.bereit && stand.geladen && !stand.fehler && !stand.laden && !!stand.eigenGeaendert && ebeneFertig(ebene) && speichert !== "laeuft";
   const speichern = async () => {
-    if (!ebeneFertig(ebene)) { toast("Bitte zuerst wählen, für wen es gilt."); return; }
+    if (!kannSpeichern) return;
+    const leer = !Object.keys(eigen).length;
+    // Alle Werte dieser Ebene entfernen nur nach ausdrücklicher Bestätigung (die App verlangt dafür loeschen: true)
+    if (leer && !(await bestaetigen({ titel: "Alle Token-Werte dieser Ebene entfernen?", text: "Die Ebene erbt danach wieder die Werte darüber bzw. die Ausgangswerte von Design 2.0. Wirkt erst nach der Freigabe.", ja: "Entfernen", nein: "Abbrechen", gefahr: true }))) return;
     setSpeichert("laeuft");
     try {
-      const a = await bruecke.frage({ cs: "ds-tokens-speichern", ebene, ds: eigen });
+      const a = await bruecke.frage({ cs: "ds-tokens-speichern", ebene, ds: eigen, ...(leer ? { loeschen: true } : {}) });
       setStand((s) => ({ ...s, entwurf: a.entwurf || s.entwurf, eigenGeaendert: false, fehler: null }));
       setSpeichert({ ok: true, text: `Als Entwurf im Design-Paket gespeichert${a.entwurf?.version ? ` (Version ${a.entwurf.version})` : ""} – freigeben unter „Übernehmen“.` });
       toast("Design-Tokens als Entwurf gespeichert");
     } catch (f) { setSpeichert({ ok: false, text: fehlerText(f) }); }
   };
+  const entwurfTokens = useMemo(() => ({ ...werte, ecken: nurAbweichungen(daten, {}, werte).ecken || {} }), [daten, werte]);
   const befunde = useMemo(() => pruefeDsTokens(werte, daten.pruefungen), [werte, daten.pruefungen]);
   // Für die echte App nur die Abweichungen (geerbt + eigen); leer = Vorschau entfernen
   const dsVorschau = useMemo(() => { const v = nurAbweichungen(daten, {}, werte); return Object.keys(v).length ? v : null; }, [daten, werte]);
@@ -92,14 +100,14 @@ export default function AppDesigner3({ projekt, ds, ansicht, darf, toast, onFrei
         <div className="min-w-0 space-y-3">
           {echt
             ? <EchteApp projekt={projekt} leiste={leiste} route={route} tokensDs={dsVorschau} onRoute={setRoute} onBaustein={onBaustein} />
-            : html ? <EntwurfVorschau html={html} leiste={leiste} seite={seite} tokens={werte} markiert={leiste.bausteine ? wahl : null} onSeite={onSeite} onBaustein={onBaustein} />
+            : html ? <EntwurfVorschau html={html} leiste={leiste} seite={seite} tokens={entwurfTokens} markiert={leiste.bausteine ? wahl : null} onSeite={onSeite} onBaustein={onBaustein} />
               : <p className="p-4 text-sm text-slate-500">Das Paket enthält keinen Entwurf. In der App `node tools/design-system.mjs` ausführen und den Projekt-Abgleich abwarten.</p>}
           {leiste.begruendung && <Begruendung begruendung={schluessel ? daten.begruendungen[schluessel] : null} titel={titel} />}
         </div>
         <div className="lg:col-span-2 2xl:col-span-1">
           <Inspektor daten={daten} wahl={wahl} zaehler={echt ? null : info?.zaehler} modus={modus} setModus={setModus} werte={werte} eigen={eigen}
             setzeToken={setzeToken} setzeEcke={setzeEcke} zuruecksetzen={zuruecksetzen} befunde={befunde} darf={darf}
-            ebene={ebene} setEbene={setEbene} stand={stand} speichern={speichern} speichert={speichert} bruecke={bruecke} onFreigabe={onFreigabe} />
+            ebene={ebene} setEbene={setEbene} stand={stand} speichern={speichern} speichert={speichert} kannSpeichern={kannSpeichern} bruecke={bruecke} onFreigabe={onFreigabe} />
         </div>
       </div>
       {bruecke.unsichtbar}

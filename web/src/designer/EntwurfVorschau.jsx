@@ -2,7 +2,7 @@
 // Der Entwurf läuft in einem abgeschotteten Rahmen: srcdoc + sandbox="allow-scripts" (ohne allow-same-origin → eigene, leere Herkunft,
 // kein Zugriff auf die Codeschmiede, ihre Anmeldung oder das Programm). Gesteuert wird nur per postMessage (Steuer-Skript der App,
 // tools/design-system/steuerung.js); angenommen werden nur Nachrichten genau aus diesem Rahmen, und nur Namen von Seiten und Bausteinen.
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 import GeraeteRahmen from "../GeraeteRahmen";
 
@@ -35,7 +35,12 @@ async function eigeneSchriften() {
   return schriftenCache;
 }
 
-export default function EntwurfVorschau({ html, leiste, seite, tokens, markiert, onSeite, onBaustein }) {
+// Eigene CSP der Codeschmiede, als erstes Element in <head> – gilt auch dann, wenn das Paket selbst keine mitbringt (Review #58 M2)
+const CSP = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; font-src data: blob:; img-src data:">`;
+export const mitCsp = (html) => (/<head[^>]*>/i.test(html) ? html.replace(/<head[^>]*>/i, (k) => `${k}${CSP}`) : null);
+
+export default function EntwurfVorschau({ html: roh, leiste, seite, tokens, markiert, onSeite, onBaustein }) {
+  const html = useMemo(() => mitCsp(roh), [roh]);
   const rahmen = useRef(null);
   const [bereit, setBereit] = useState(false);
   const sende = useCallback((n) => { try { rahmen.current?.contentWindow?.postMessage(n, "*"); } catch { /* egal */ } }, []);
@@ -67,10 +72,12 @@ export default function EntwurfVorschau({ html, leiste, seite, tokens, markiert,
   useEffect(() => { if (bereit) sende({ cs: "markieren", ds: markiert || "" }); }, [bereit, markiert, sende]);
 
   const handy = leiste.geraet === "handy";
+  // ohne <head> keine Vorschau (die CSP muss sicher drinstehen)
   // Wechsel PC ↔ Handy baut den Rahmen neu – bis der Entwurf sich wieder meldet, nichts senden
   useEffect(() => { setBereit(false); }, [handy]);
   const iframe = <iframe key={handy ? "handy" : "pc"} ref={rahmen} title="Design-Entwurf 2.0" srcDoc={html} sandbox="allow-scripts" referrerPolicy="no-referrer"
     className="block w-full h-full border-0" style={{ background: leiste.thema === "dark" ? "#0a0f1c" : "#eef2f8" }} />;
+  if (!html) return <p className="p-4 text-sm text-slate-500">Der eingebettete Entwurf ist unvollständig (kein &lt;head&gt;) – nicht angezeigt.</p>;
   return (
     <div className="relative min-w-0">
       {!bereit && <div className="absolute inset-0 z-10 grid place-items-center text-sm text-slate-500"><span className="inline-flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" />Entwurf lädt …</span></div>}

@@ -1,7 +1,7 @@
 import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Palette, Shapes, Stamp, Save, Send, Copy, Plus, Trash2, Undo2, Redo2, History, GitCompareArrows, Monitor, Tablet, Smartphone,
-  Sun, Moon, LayoutGrid, CheckCheck, CircleCheck, CircleAlert, TriangleAlert, Loader2, Bot, ShieldCheck, Sparkles, Check, X, ExternalLink, LayoutTemplate, Home, Users, Calendar, Trophy, Settings, Bell, Search,
+  Sun, Moon, LayoutGrid, CheckCheck, CircleCheck, CircleAlert, TriangleAlert, Loader2, Bot, ShieldCheck, Sparkles, Check, X, ExternalLink, LayoutTemplate, Home, Users, Calendar, Trophy, Settings, Bell, Search, Menu,
 } from "lucide-react";
 import { supabase } from "./supabase";
 import { useKiName } from "./kiName";
@@ -14,6 +14,7 @@ const SeitenModus = lazy(() => import("./SeitenModus"));
 const Uebernehmen = lazy(() => import("./Uebernehmen"));   // App-Designer 2.0 · Etappe 4
 const AppDesigner3 = lazy(() => import("./designer/AppDesigner3"));   // App-Designer 3.0 (Design-Entwurf 2.0, 01.11.2026)
 import { useDesignSystem } from "./designer/useDesignSystem";
+import { BestaetigenRahmen, useBestaetigen, useFokusfalle, useEscape } from "./designer/dialog";
 import { useBausteinDesigner, BausteinInspektor } from "./BausteinInspektor";
 import { designFrageBeantworten } from "./designFrage";
 import { APP_ARTEN, ART_BASIS, ArtEinstellungen, ArtMuster, beispieleBereinigen, beispieleFuer, menueSymbol } from "./DesignerArten";
@@ -142,7 +143,13 @@ Marke mit eingelesenem Logo (marke.zeichen = "eigen", marke.vektor = feste Forme
 Alle Werte (JSON):
 ${JSON.stringify(werte, null, 1)}`;
 
-export default function Designer({ d, ich, toast }) {
+// Bestätigen-Dialog statt window.confirm (Review #58): der Rahmen liegt um den ganzen Designer
+export default function Designer(props) {
+  return <BestaetigenRahmen><DesignerInnen {...props} /></BestaetigenRahmen>;
+}
+
+function DesignerInnen({ d, ich, toast }) {
+  const bestaetigen = useBestaetigen();
   const projekt = d.projekte.find((p) => p.id === d.projektId);
   // App-Designer 3.0: Hat das Projekt ein Design-System-Paket (Trainer to go), zeigt der Designer den Entwurf 2.0 statt Grunddesign/Galerie
   const ds = useDesignSystem(d.projektId);
@@ -224,8 +231,8 @@ export default function Designer({ d, ich, toast }) {
   const eigen = !aktiv || aktiv.erstellt_von === ich.id || ich.rolle === "admin";
   const bearbeitbar = darf && !fest && eigen;
 
-  const oeffne = (e) => {
-    if (geaendert && !window.confirm("Ungespeicherte Änderungen verwerfen?")) return;
+  const oeffne = async (e) => {
+    if (geaendert && !(await bestaetigen({ titel: "Änderungen verwerfen?", text: "Im Editor gibt es ungespeicherte Änderungen.", ja: "Verwerfen", nein: "Behalten", gefahr: true }))) return;
     setAktivId(e?.id || null); setWerte(e ? mische(BASIS, e.werte) : gueltig); setVerlauf({ zurueck: [], vor: [] }); setGeaendert(false);
   };
   const aendere = (pfad, v) => {
@@ -251,7 +258,7 @@ export default function Designer({ d, ich, toast }) {
     setGeaendert(false); holen(); toast(`Gespeichert – Version ${data}`);
   };
   const verwerfen = async () => {
-    if (!aktiv || !window.confirm(`Entwurf „${aktiv.name}“ verwerfen? (bleibt im Protokoll, wird ausgeblendet)`)) return;
+    if (!aktiv || !(await bestaetigen({ titel: `Entwurf „${aktiv.name}“ verwerfen?`, text: "Er bleibt im Protokoll und wird ausgeblendet.", ja: "Entwurf verwerfen", nein: "Behalten", gefahr: true }))) return;
     const { error } = await supabase.rpc("ws_design_verwerfen", { p_entwurf: aktiv.id });
     if (error) return toast(fehler(error));
     setAktivId(null); setWerte(gueltig); setGeaendert(false); toast("Entwurf verworfen");
@@ -290,7 +297,7 @@ export default function Designer({ d, ich, toast }) {
               className={`inline-flex items-center gap-1.5 h-8 px-3 rounded-lg text-sm font-semibold ${modus === id ? "bg-white dark:bg-slate-900 shadow-sm text-emerald-800 dark:text-emerald-300" : "text-slate-600 dark:text-slate-300"}`}><I className="w-4 h-4" />{t}</button>))}
           <button type="button" role="tab" aria-selected={modus === "uebernehmen"} onClick={() => setModus("uebernehmen")} title="Alle offenen Design-Änderungen übernehmen und freigeben"
             className={`inline-flex items-center gap-1.5 h-8 px-3 rounded-lg text-sm font-semibold ${modus === "uebernehmen" ? "bg-white dark:bg-slate-900 shadow-sm text-emerald-800 dark:text-emerald-300" : "text-slate-600 dark:text-slate-300"}`}>
-            <CheckCheck className="w-4 h-4" />Übernehmen{offenGesamt > 0 && <span className="text-[11px] font-bold bg-emerald-700 text-white rounded-full px-1.5">{offenGesamt}</span>}</button>
+            <CheckCheck className="w-4 h-4" />Übernehmen{offenGesamt > 0 && <span className="text-xs font-bold bg-emerald-700 text-white rounded-full px-1.5">{offenGesamt}</span>}</button>
         </div>
         {neu3 ? <span className="text-sm text-slate-500">Design-System {ds.daten.stand}{ds.aktualisiert ? ` · abgeglichen ${fmt(ds.aktualisiert)}` : ""} · {ds.daten.bausteine.length} Bausteine · {ds.daten.tokens.length} Tokens</span> : <>
         <label className="flex items-center gap-1.5 text-sm text-slate-500" title={APP_ARTEN.find(([k]) => k === art)?.[2]}>App-Art
@@ -357,7 +364,7 @@ export default function Designer({ d, ich, toast }) {
               {[["chat", `Chat mit ${ki.name}`, Bot], ["pruef", "Prüfungen", ShieldCheck]].map(([id, t, I]) => (
                 <button key={id} type="button" role="tab" aria-selected={rechts === id} onClick={() => setRechts(id)}
                   className={`inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-sm font-semibold ${rechts === id ? "bg-emerald-50 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300" : "text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"}`}>
-                  <I className="w-4 h-4" />{t}{id === "pruef" && (rot ? <span className="text-[11px] font-bold bg-red-600 text-white rounded-full px-1.5">{rot}</span> : hinweise ? <span className="text-[11px] font-bold bg-amber-500 text-amber-950 rounded-full px-1.5">{hinweise}</span> : null)}</button>))}
+                  <I className="w-4 h-4" />{t}{id === "pruef" && (rot ? <span className="text-xs font-bold bg-red-600 text-white rounded-full px-1.5">{rot}</span> : hinweise ? <span className="text-xs font-bold bg-amber-500 text-amber-950 rounded-full px-1.5">{hinweise}</span> : null)}</button>))}
             </div>}
             {rechts === "pruef" && modus !== "bausteine" ? <Pruefliste befunde={befunde} rot={rot} hinweise={hinweise} kiName={ki.name} onFragen={() => setRechts("chat")} />
               : designChat}
@@ -465,7 +472,7 @@ function Geruest({ w, modus, geraet, name, art = "verwaltung", bsp = beispieleFu
       {seitlich && <Menue />}
       <div className="flex-1 min-w-0 flex flex-col">
         <header style={{ borderColor: f.rand, padding: `${fo.abstand * 0.6}px ${fo.abstand}px` }} className="flex items-center gap-3 border-b">
-          {pos === "burger" && <span style={{ color: f.text }}>☰</span>}
+          {pos === "burger" && <Menu size={18} style={{ color: f.text }} aria-hidden="true" />}
           {kopfLogo && w.logo.platz !== "kopf-mitte" && <Logo />}
           <h2 style={{ fontFamily: fontH, fontWeight: s.gewicht, fontSize: s.basis * 1.6 }} className={w.logo.platz === "kopf-mitte" ? "flex-1" : ""}>{bsp.titel}</h2>
           {kopfLogo && w.logo.platz === "kopf-mitte" && <Logo />}
@@ -566,8 +573,10 @@ function Vergleich({ entwuerfe, gueltig, liveText = "Live", aktuell, modus, name
 }
 const Wert = ({ v }) => (typeof v === "string" && /^#[0-9a-f]{6}$/i.test(v) ? <span className="inline-flex items-center gap-1.5 font-mono text-xs"><i className="w-3.5 h-3.5 rounded border border-black/10" style={{ background: v }} />{v}</span> : <span className="font-mono text-xs">{String(v ?? "–")}</span>);
 
+// Dialog-Hülle mit Fokusfalle und Escape (Review #58); ein Klick daneben schließt nicht mehr (Eingaben gingen verloren)
 function Hulle({ titel, onClose, children }) {
-  return <div className="fixed inset-0 z-50 bg-black/40 grid place-items-center p-4" onMouseDown={(e) => e.target === e.currentTarget && onClose()}><div role="dialog" aria-modal="true" aria-label={titel} className={`${card} w-full max-w-xl max-h-[85vh] overflow-auto p-4 shadow-xl`}><h3 className="font-display font-bold text-xl mb-3">{titel}</h3>{children}</div></div>;
+  const fokus = useFokusfalle(); useEscape(onClose);
+  return <div className="fixed inset-0 z-50 bg-black/40 grid place-items-center p-4"><div ref={fokus} role="dialog" aria-modal="true" aria-label={titel} className={`${card} w-full max-w-xl max-h-[85vh] overflow-auto p-4 shadow-xl`}><h3 className="font-display font-bold text-xl mb-3">{titel}</h3>{children}</div></div>;
 }
 function NeuDialog({ vorschlag, onClose, onOk }) {
   const [n, setN] = useState(vorschlag);
@@ -676,13 +685,13 @@ function DesignChat({ d, ich, projekt, entwurf, werte, befunde, darf, toast, onU
           : <div className="text-slate-500 space-y-2"><p>Frag {ki.name} zum Design{entwurf ? ` von „${entwurf.name}“` : ""}. {ki.name} erklärt und schlägt Werte vor – übernommen wird nur, was du anklickst.</p></div>)}
         {liste.map((m) => m.frage_id ? (
           <div key={m.id} className="rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 p-2.5 max-w-[95%]">
-            <div className="text-[11px] font-bold text-slate-500 flex items-center gap-1"><Bot className="w-3.5 h-3.5" />{ki.von(m.ki)}{fragen[m.frage_id] && fragen[m.frage_id].von !== ich.id ? ` · über die Werkstatt von ${d.benutzer.find((u) => u.id === fragen[m.frage_id].von)?.name || "Mitglied"}` : ""}</div>
+            <div className="text-xs font-bold text-slate-500 flex items-center gap-1"><Bot className="w-3.5 h-3.5" />{ki.von(m.ki)}{fragen[m.frage_id] && fragen[m.frage_id].von !== ich.id ? ` · über die Werkstatt von ${d.benutzer.find((u) => u.id === fragen[m.frage_id].von)?.name || "Mitglied"}` : ""}</div>
             <Markdown text={m.text} klein />
             {m.werte && <Vorschlag m={m} werte={werte} kann={fragen[m.frage_id]?.von === ich.id && darf} onEntscheid={(e) => entscheide(m, e)} />}
           </div>
         ) : (
           <div key={m.id} className="ml-auto rounded-xl bg-emerald-50 dark:bg-emerald-950/50 p-2.5 max-w-[90%]">
-            <div className="text-[11px] font-bold text-slate-500">{m.von === ich.id ? "Du" : d.benutzer.find((u) => u.id === m.von)?.name || "Mitglied"} · {fmt(m.erstellt)}</div>
+            <div className="text-xs font-bold text-slate-500">{m.von === ich.id ? "Du" : d.benutzer.find((u) => u.id === m.von)?.name || "Mitglied"} · {fmt(m.erstellt)}</div>
             <Markdown text={m.text} klein />
             {m.stand === "fehler" && <p className="text-xs text-red-600 mt-1">Nicht beantwortet</p>}
           </div>))}

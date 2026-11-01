@@ -72,6 +72,11 @@ test("Kontrast-Wächter: DS-Paare, Blau nie Status, Terminart ≠ Status", () =>
   assert.ok(r.filter((x) => x.gruppe === "Blau nie Status").every((x) => x.ok));     // ok grün, info grau
   const blau = pruefeDsTokens(tokenWerte(d, {}, { hell: { ok: "#2563eb" } }), d.pruefungen);
   assert.ok(blau.some((x) => x.gruppe === "Blau nie Status" && x.a === "ok" && x.modus === "hell" && !x.ok && x.stufe === "pflicht"));
+  // Grau-Ausnahme nur für info: ein entsättigtes Blau als „ok“ fällt trotzdem durch
+  const blassblau = pruefeDsTokens(tokenWerte(d, {}, { hell: { ok: "#6b7a99" } }), d.pruefungen);
+  assert.ok(blassblau.some((x) => x.gruppe === "Blau nie Status" && x.a === "ok" && x.modus === "hell" && !x.ok));
+  const infoBlassblau = pruefeDsTokens(tokenWerte(d, {}, { hell: { info: "#6b7a99" } }), d.pruefungen);
+  assert.ok(infoBlassblau.filter((x) => x.gruppe === "Blau nie Status" && x.a === "info").every((x) => x.ok));
   const lila = pruefeDsTokens(tokenWerte(d, {}, { hell: { "cat-spiel": "#157a3a" } }), d.pruefungen);
   assert.ok(lila.some((x) => x.gruppe === "Terminart ≠ Status" && x.stufe === "hinweis"));
   const schlecht = pruefeDsTokens(tokenWerte(d, {}, { hell: { text: "#dddddd" } }), d.pruefungen).find((x) => x.a === "text" && x.modus === "hell");

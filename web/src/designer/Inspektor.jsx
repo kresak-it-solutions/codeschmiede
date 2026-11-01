@@ -13,6 +13,8 @@ const input = "rounded-lg border border-slate-300 dark:border-slate-700 bg-slate
 const ROLLEN_APP = [["trainer", "Trainer"], ["admin", "Vereinsadmin"], ["parent", "Eltern"], ["player", "Spieler"], ["funktionaer", "Funktionäre"]];
 
 function Farbe({ t, modus, wert, geaendert, onChange, darf }) {
+  // Hex-Feld eintippbar: Zwischenstand lokal, übernommen erst bei vollständigem Wert (Review #58)
+  const [tipp, setTipp] = useState(null);
   return (
     <div className="flex items-center gap-2 py-1">
       <input type="color" aria-label={`${t.schluessel} (${modus})`} value={wert} disabled={!darf} onChange={(e) => onChange(e.target.value.toLowerCase())}
@@ -26,7 +28,9 @@ function Farbe({ t, modus, wert, geaendert, onChange, darf }) {
         </div>
         {t.zweck && <div className="text-xs text-slate-500 truncate" title={t.zweck}>{t.zweck}</div>}
       </div>
-      <input aria-label={`${t.schluessel} Farbwert`} value={wert} disabled={!darf} onChange={(e) => /^#[0-9a-fA-F]{6}$/.test(e.target.value) && onChange(e.target.value.toLowerCase())}
+      <input aria-label={`${t.schluessel} Farbwert`} value={tipp ?? wert} disabled={!darf} maxLength={7} spellCheck={false}
+        onChange={(e) => { const v = e.target.value.trim(); if (/^#[0-9a-fA-F]{6}$/.test(v)) { setTipp(null); onChange(v.toLowerCase()); } else setTipp(v); }}
+        onBlur={() => setTipp(null)}
         className={`${input} w-[84px] font-mono text-xs`} />
     </div>
   );
@@ -43,7 +47,7 @@ function Ecke({ e, wert, onChange, darf }) {
 }
 
 export default function Inspektor({ daten, wahl, zaehler, modus, setModus, werte, eigen, setzeToken, setzeEcke, zuruecksetzen, befunde, darf,
-  ebene, setEbene, stand, speichern, speichert, bruecke, onFreigabe }) {
+  ebene, setEbene, stand, speichern, speichert, kannSpeichern, bruecke, onFreigabe }) {
   const [reiter, setReiter] = useState("baustein");
   const b = bausteinZuName(daten, wahl);
   const tokenVon = useMemo(() => Object.fromEntries(daten.tokens.map((t) => [t.schluessel, t])), [daten]);
@@ -146,14 +150,14 @@ export default function Inspektor({ daten, wahl, zaehler, modus, setModus, werte
           {ebene.level === "role" && <select aria-label="Rolle" value={ebene.role_key || ""} onChange={(e) => setEbene({ ...ebene, role_key: e.target.value })} className={input}><option value="">Rolle wählen</option>{ROLLEN_APP.map(([k, t]) => <option key={k} value={k}>{t}</option>)}</select>}
         </div>
         <div className="flex items-center gap-1.5">
-          <button type="button" className={btn} disabled={!darf || !bruecke.bereit || speichert === "laeuft" || stand.laden} onClick={speichern}>
+          <button type="button" className={btn} disabled={!kannSpeichern} onClick={speichern}>
             {speichert === "laeuft" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}Als Entwurf speichern{anzahlEigen ? ` (${anzahlEigen})` : ""}</button>
           <button type="button" className={ghost} onClick={onFreigabe} title="Freigeben unter App-Designer › Übernehmen"><CheckCheck className="w-4 h-4" />Zur Freigabe</button>
         </div>
         <p className="text-xs text-slate-500">
           {!bruecke.erlaubt ? "Speichern geht nur mit einer Testfassung von Trainer to go." : !bruecke.bereit ? "Testfassung wird verbunden … (angemeldet sein mit dem Betreiber-Konto, PC für das Design freigegeben)."
             : stand.fehler ? stand.fehler : typeof speichert === "object" && speichert ? speichert.text
-            : `Ausgangswerte = Design 2.0${stand.entwurf?.version ? ` · Entwurf Version ${stand.entwurf.version}` : ""}${stand.live?.version ? ` · freigegeben Version ${stand.live.version}` : ""}. Wirkt nach der Freigabe sofort in der App.`}
+            : `Ausgangswerte = Design 2.0${stand.entwurf?.version ? ` · Entwurf Version ${stand.entwurf.version}` : ""}${stand.live?.version ? ` · freigegeben Version ${stand.live.version}` : ""}. Nach der Freigabe wirken sofort nur Tokens mit „wirkt in der App“; „nur Entwurf“ erst, wenn die Bausteine umgestellt sind (Auftrag).${!stand.eigenGeaendert ? " Noch nichts geändert." : ""}`}
           {!darf && " Nur ansehen: Gestalten dürfen Entwickler mit Design-Recht."}
         </p>
       </div>

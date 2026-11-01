@@ -10,6 +10,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { LayoutGrid, Send, Loader2, RefreshCw, ExternalLink, Hammer, X } from "lucide-react";
 import { supabase } from "./supabase";
 import GeraeteRahmen from "./GeraeteRahmen";
+import { useFokusfalle } from "./designer/dialog";
 import { designFrageBeantworten, designFreigabeMerken } from "./designFrage";
 import { isDesktop } from "./desktop";
 import { kiAnzeigename } from "./kiName";
@@ -112,6 +113,7 @@ export default function SeitenModus({ projekt, d, ich, werte, dunkel, darf, toas
     return () => { aus = true; supabase.removeChannel(ch); };
   }, [kcAbo, kcTick, projekt.id, ich?.id, kcKi, kcBereit, kcHinweis, anRahmen]);
   const [kcBestaetigung, setKcBestaetigung] = useState(null);   // { schluessel, titel, text } – Dialog „Auftrag stellen?“
+  const fokusKc = useFokusfalle();   // Fokusfalle im Bestätigungs-Dialog (Review #58)
   const [kcStellt, setKcStellt] = useState(false);
   const [kcFrei, setKcFrei] = useState(false);   // „Auftrag stellen“ erst nach 1 s (kein versehentlicher Klick)
   const kcRuheBis = useRef(0);
@@ -208,7 +210,7 @@ export default function SeitenModus({ projekt, d, ich, werte, dunkel, darf, toas
       {kcBestaetigung && (
         <div className="fixed inset-0 z-50 bg-black/40 grid place-items-center p-4" role="dialog" aria-modal="true" aria-labelledby="kc-auftrag-titel"
           onKeyDown={(e) => { if (e.key === "Escape" && !kcStellt) auftragAbbrechen(); }}>
-          <div className={`${card} w-full max-w-2xl max-h-[85vh] flex flex-col shadow-xl`}>
+          <div ref={fokusKc} className={`${card} w-full max-w-2xl max-h-[85vh] flex flex-col shadow-xl`}>
             <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-200 dark:border-slate-800">
               <Hammer className="w-4 h-4 text-emerald-700" aria-hidden="true" />
               <h3 id="kc-auftrag-titel" className="font-display font-bold flex-1">Auftrag stellen?</h3>

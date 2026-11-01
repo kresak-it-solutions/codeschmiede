@@ -9,11 +9,17 @@ import GeraeteRahmen from "../GeraeteRahmen";
 const NAME = /^[\p{L}\p{N} ·/()„“&+-]{1,80}$/u;
 const ROUTE = /^(\/[a-z][a-z-:]{0,39}){1,3}(\?[A-Za-z0-9_=&-]{0,80})?$/;
 
-/** Adresse der Testfassung: mit „Test & Live“ die Testfassung (main), sonst die App-Adresse – nur https. */
+/**
+ * Adresse der Testfassung – NUR test_url auf *.pages.dev (Review #58): nie die Live-Adresse (echte Daten, echte Nutzer) und nie die
+ * eigene Herkunft der Codeschmiede. Ohne Testfassung gibt es keine echte Vorschau und kein Speichern.
+ */
 export function testBasis(projekt) {
-  const b = projekt?.live_zweig && /^https:\/\/[^/\s]+/i.test(projekt.test_url || "") ? projekt.test_url : projekt?.live_url;
-  if (!/^https:\/\/[^/\s]+/i.test(b || "")) return null;
-  try { return new URL(b).origin; } catch { return null; }
+  try {
+    const u = new URL(String(projekt?.test_url || ""));
+    if (u.protocol !== "https:" || !/^([a-z0-9-]+\.)+pages\.dev$/i.test(u.hostname)) return null;
+    if (typeof window !== "undefined" && u.origin === window.location.origin) return null;
+    return u.origin;
+  } catch { return null; }
 }
 
 export default function EchteApp({ projekt, leiste, route, tokensDs, onRoute, onBaustein }) {
@@ -44,7 +50,7 @@ export default function EchteApp({ projekt, leiste, route, tokensDs, onRoute, on
   useEffect(() => { if (bereit && route) sende({ cs: "seite", route }); }, [bereit, route, sende]);
   useEffect(() => { if (bereit) sende({ cs: "ds-tokens-vorschau", ds: tokensDs }); }, [bereit, tokensDs, sende]);
 
-  if (!basis) return <p className="p-4 text-sm text-slate-500">Das Projekt hat noch keine Testfassung (https-Adresse). Sobald es eine hat, erscheint hier die echte App.</p>;
+  if (!basis) return <p className="p-4 text-sm text-slate-500">Das Projekt hat keine Testfassung (test_url auf *.pages.dev). Die Live-Adresse wird hier bewusst nie geladen.</p>;
   return (
     <div className="min-w-0 space-y-2">
       {rolleStand && !rolleStand.ok && (

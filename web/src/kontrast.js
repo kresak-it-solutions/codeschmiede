@@ -144,7 +144,8 @@ export function pruefeDsTokens(werte, regeln) {
       for (const s of b.status) {
         if (!istHex(f[s])) continue;
         const t = farbton(f[s]);
-        const grau = t.h == null || t.s <= b.maxSaettigungInfo;
+        // Grau-Ausnahme nur für „info“ (Schiefergrau, Konzept §4) – ok/warn/bad müssen auch entsättigt Abstand zum Blau halten (Review #58)
+        const grau = s === "info" ? t.h == null || t.s <= b.maxSaettigungInfo : t.h == null;
         const abstand = tonAbstand(haupt, t.h);
         const ok = grau || abstand >= b.minFarbton;
         out.push({ modus, gruppe: "Blau nie Status", was: `Status „${s}“ unterscheidet sich von der Hauptfarbe`, wert: grau ? null : abstand, soll: b.minFarbton,
