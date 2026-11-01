@@ -51,7 +51,7 @@ jobs:
           printf 'window.TTG_START_URL = "%s";\n' "$START_URL" > ui/config.js
       - name: Werkstatt-Dienst mit Abhängigkeiten für dieses System
         working-directory: desktop/dienst
-        run: npm install --omit=dev --no-audit --no-fund
+        run: npm ci --omit=dev --no-audit --no-fund   # Lock-Datei (Befund S3, 01.11.2026)
       - name: Programm-Symbole
         run: npx --yes @tauri-apps/cli@^2 icon app-icon.png
       - name: Tests

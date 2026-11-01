@@ -32,7 +32,7 @@ jobs:
         with:
           node-version: "22"
       - name: Bauen
-        run: npm install --no-audit --no-fund && npm run build
+        run: npm ci --no-audit --no-fund && npm run build   # Lock-Datei (Befund S3, 01.11.2026)
       - name: Zu Cloudflare Pages hochladen
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
