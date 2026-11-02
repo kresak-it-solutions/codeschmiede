@@ -53,16 +53,18 @@ end $$;
 revoke execute on function public.ws_projektordner_melden(uuid, jsonb) from public, anon;
 grant execute on function public.ws_projektordner_melden(uuid, jsonb) to authenticated;
 
--- ---------- REGELN.md: gemeldete und bestätigte Fassung je Projekt ----------
+-- ---------- REGELN.md: gemeldete Fassung je Projekt und PC, Bestätigung je Prüfsumme (M1, Nachprüfung M1a/M1b) ----------
+-- Jede Werkstatt meldet die REGELN.md, die SIE sieht (verschiedene Festplatten/PCs möglich). Der Admin bestätigt eine Prüfsumme; sie gilt für
+-- alle PCs mit derselben Prüfsumme. Die Prüfsumme muss zum gemeldeten Text passen (sonst ließe sich ein harmloser Text mit der Prüfsumme
+-- eines anderen bestätigen); Dateien über 30.000 Zeichen werden abgelehnt (nie gekürzt bestätigen).
 create table if not exists public.ws_regeln_stand (
-  projekt_id text primary key references public.ws_projekte(id) on delete cascade,
-  sha text check (sha is null or sha ~ '^[0-9a-f]{64}$'),
-  text text check (text is null or char_length(text) <= 30000),
+  projekt_id text not null references public.ws_projekte(id) on delete cascade,
+  pc_id uuid not null references public.ws_werkstatt_pcs(id) on delete cascade,
+  sha text not null check (sha ~ '^[0-9a-f]{64}$'),
+  text text not null check (char_length(text) <= 30000),
   konflikte smallint not null default 0 check (konflikte between 0 and 50),
-  gemeldet timestamptz,
-  bestaetigt_sha text check (bestaetigt_sha is null or bestaetigt_sha ~ '^[0-9a-f]{64}$'),
-  bestaetigt_von uuid references auth.users(id) on delete set null,
-  bestaetigt_am timestamptz
+  gemeldet timestamptz not null default now(),
+  primary key (projekt_id, pc_id)
 );
 alter table public.ws_regeln_stand enable row level security;
 revoke all on public.ws_regeln_stand from anon, authenticated;
@@ -71,30 +73,46 @@ drop policy if exists ws_regeln_stand_lesen on public.ws_regeln_stand;
 create policy ws_regeln_stand_lesen on public.ws_regeln_stand for select to authenticated using (public.ws_sieht_projekt(projekt_id));
 do $$ begin alter publication supabase_realtime add table public.ws_regeln_stand; exception when others then null; end $$;
 
--- Werkstatt (Admin oder Entwickler im Projekt, eigener PC) meldet die aktuelle REGELN.md
+create table if not exists public.ws_regeln_freigaben (
+  projekt_id text not null references public.ws_projekte(id) on delete cascade,
+  sha text not null check (sha ~ '^[0-9a-f]{64}$'),
+  von uuid references auth.users(id) on delete set null,
+  am timestamptz not null default now(),
+  primary key (projekt_id, sha)
+);
+alter table public.ws_regeln_freigaben enable row level security;
+revoke all on public.ws_regeln_freigaben from anon, authenticated;
+grant select on public.ws_regeln_freigaben to authenticated;
+drop policy if exists ws_regeln_freigaben_lesen on public.ws_regeln_freigaben;
+create policy ws_regeln_freigaben_lesen on public.ws_regeln_freigaben for select to authenticated using (public.ws_sieht_projekt(projekt_id));
+do $$ begin alter publication supabase_realtime add table public.ws_regeln_freigaben; exception when others then null; end $$;
+
+-- Werkstatt (Admin oder Entwickler im Projekt, eigener PC) meldet die REGELN.md, die sie sieht
+drop function if exists public.ws_regeln_melden(uuid, text, text, text, int);
 create or replace function public.ws_regeln_melden(p_pc uuid, p_projekt text, p_sha text, p_text text, p_konflikte int default 0) returns void
 language plpgsql security definer set search_path = public as $$
 begin
   if auth.uid() is null then raise exception 'Nicht angemeldet'; end if;
   if not exists (select 1 from public.ws_werkstatt_pcs w where w.id = p_pc and w.benutzer_id = auth.uid()) then raise exception 'Unbekannter Werkstatt-PC'; end if;
   if coalesce(public.ws_rolle_im_projekt(p_projekt), '') not in ('admin','entwickler') then raise exception 'Kein Recht in diesem Projekt'; end if;
-  if p_sha is null or p_sha !~ '^[0-9a-f]{64}$' then raise exception 'Ungültige Prüfsumme'; end if;
-  insert into public.ws_regeln_stand (projekt_id, sha, text, konflikte, gemeldet)
-  values (p_projekt, p_sha, left(p_text, 30000), least(greatest(coalesce(p_konflikte, 0), 0), 50), now())
-  on conflict (projekt_id) do update set sha = excluded.sha, text = excluded.text, konflikte = excluded.konflikte, gemeldet = now()
+  if p_text is null or char_length(p_text) > 30000 then raise exception 'REGELN.md ist zu lang (höchstens 30.000 Zeichen) – bitte kürzen'; end if;
+  if p_sha is null or p_sha is distinct from encode(sha256(convert_to(p_text, 'UTF8')), 'hex') then raise exception 'Prüfsumme passt nicht zum Text'; end if;
+  insert into public.ws_regeln_stand (projekt_id, pc_id, sha, text, konflikte, gemeldet)
+  values (p_projekt, p_pc, p_sha, p_text, least(greatest(coalesce(p_konflikte, 0), 0), 50), now())
+  on conflict (projekt_id, pc_id) do update set sha = excluded.sha, text = excluded.text, konflikte = excluded.konflikte, gemeldet = now()
    where ws_regeln_stand.sha is distinct from excluded.sha or ws_regeln_stand.konflikte is distinct from excluded.konflikte;
 end $$;
 revoke execute on function public.ws_regeln_melden(uuid, text, text, text, int) from public, anon;
 grant execute on function public.ws_regeln_melden(uuid, text, text, text, int) to authenticated;
 
--- Nur der Admin bestätigt – und nur genau die zuletzt gemeldete Fassung
+-- Nur der Admin bestätigt – nur eine Prüfsumme, die ein PC gerade meldet
 create or replace function public.ws_regeln_bestaetigen(p_projekt text, p_sha text) returns void
 language plpgsql security definer set search_path = public as $$
 begin
   if not public.ws_ist_admin() then raise exception 'Projektregeln bestätigt nur der Admin'; end if;
-  update public.ws_regeln_stand set bestaetigt_sha = sha, bestaetigt_von = auth.uid(), bestaetigt_am = now()
-   where projekt_id = p_projekt and sha = p_sha;
-  if not found then raise exception 'Diese Fassung ist nicht mehr aktuell – bitte neu laden'; end if;
+  if not exists (select 1 from public.ws_regeln_stand where projekt_id = p_projekt and sha = p_sha) then raise exception 'Diese Fassung meldet gerade kein PC – bitte neu laden'; end if;
+  insert into public.ws_regeln_freigaben (projekt_id, sha, von, am) values (p_projekt, p_sha, auth.uid(), now())
+  on conflict (projekt_id, sha) do update set von = excluded.von, am = now();
   insert into public.ws_protokoll (wer, was, details) values (auth.uid(), 'regeln_bestaetigt', jsonb_build_object('projekt', p_projekt, 'sha', p_sha));
 end $$;
 revoke execute on function public.ws_regeln_bestaetigen(text, text) from public, anon;

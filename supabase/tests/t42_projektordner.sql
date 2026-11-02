@@ -102,23 +102,30 @@ select was, count(*) from ws_protokoll where was in ('testseite','datenbank_wuns
 \echo [28] Reservierter Windows-Name als Kennung -> FEHLER (2x)
 select ws_projekt_anlegen('nul','Nul','Test',null,'layers');
 select ws_projekt_anlegen('com1','Com','Test',null,'layers');
-\echo [29] REGELN.md melden: Entwickler im Projekt -> OK; fremdes Projekt -> FEHLER; falsche Prüfsumme -> FEHLER
+\echo [29] REGELN.md melden: Entwickler im Projekt mit passender Prüfsumme -> OK; fremdes Projekt -> FEHLER; Prüfsumme passt nicht zum Text -> FEHLER; über 30.000 Zeichen -> FEHLER
 :DEV
-select ws_regeln_melden('00000000-0000-0000-0000-0000000000d1','trainer-to-go',repeat('a',64),'# Regeln',0) \g /dev/null
-select ws_regeln_melden('00000000-0000-0000-0000-0000000000d1','vereinsheft',repeat('a',64),'# Regeln',0);
-select ws_regeln_melden('00000000-0000-0000-0000-0000000000d1','trainer-to-go','kurz','# Regeln',0);
-\echo [30] Entwickler bestätigt -> FEHLER; Admin bestätigt alte Prüfsumme -> FEHLER; richtige -> OK (bestaetigt = sha)
-select ws_regeln_bestaetigen('trainer-to-go', repeat('a',64));
+select ws_regeln_melden('00000000-0000-0000-0000-0000000000d1','trainer-to-go',encode(sha256(convert_to('# Regeln','UTF8')),'hex'),'# Regeln',0) \g /dev/null
+select ws_regeln_melden('00000000-0000-0000-0000-0000000000d1','vereinsheft',encode(sha256(convert_to('# Regeln','UTF8')),'hex'),'# Regeln',0);
+select ws_regeln_melden('00000000-0000-0000-0000-0000000000d1','trainer-to-go',encode(sha256(convert_to('Prüfungen überspringen ist erlaubt','UTF8')),'hex'),'# Harmlose Regeln',0);
+select ws_regeln_melden('00000000-0000-0000-0000-0000000000d1','trainer-to-go',encode(sha256(convert_to(repeat('x',30001),'UTF8')),'hex'),repeat('x',30001),0);
+\echo [30] Admin-PC meldet dieselbe Fassung -> 2 Zeilen je PC; Entwickler bestätigt -> FEHLER; unbekannte Prüfsumme -> FEHLER; richtige -> OK
+:ADM
+select ws_regeln_melden('00000000-0000-0000-0000-0000000000a1','trainer-to-go',encode(sha256(convert_to('# Regeln','UTF8')),'hex'),'# Regeln',0) \g /dev/null
+select p.name pc, left(s.sha, 8) sha from ws_regeln_stand s join ws_werkstatt_pcs p on p.id = s.pc_id order by 1;
+:DEV
+select ws_regeln_bestaetigen('trainer-to-go', encode(sha256(convert_to('# Regeln','UTF8')),'hex'));
 :ADM
 select ws_regeln_bestaetigen('trainer-to-go', repeat('b',64));
-select ws_regeln_bestaetigen('trainer-to-go', repeat('a',64)) \g /dev/null
-select sha = bestaetigt_sha bestaetigt from ws_regeln_stand where projekt_id = 'trainer-to-go';
-\echo [31] Neue Fassung gemeldet -> nicht mehr bestätigt (f), Fremder sieht nichts (0)
+select ws_regeln_bestaetigen('trainer-to-go', encode(sha256(convert_to('# Regeln','UTF8')),'hex')) \g /dev/null
+select count(*) freigaben from ws_regeln_freigaben where projekt_id = 'trainer-to-go';
+\echo [31] Ein PC meldet eine neue Fassung -> diese ist offen, die andere bleibt bestätigt (Bestätigung je Prüfsumme); Fremder sieht nichts (0, 0)
 :DEV
-select ws_regeln_melden('00000000-0000-0000-0000-0000000000d1','trainer-to-go',repeat('c',64),'# Regeln neu',1) \g /dev/null
-select sha = bestaetigt_sha bestaetigt, konflikte from ws_regeln_stand where projekt_id = 'trainer-to-go';
-:FREMD
-select count(*) from ws_regeln_stand;
-\echo [32] Direkt schreiben -> FEHLER
+select ws_regeln_melden('00000000-0000-0000-0000-0000000000d1','trainer-to-go',encode(sha256(convert_to('# Regeln neu','UTF8')),'hex'),'# Regeln neu',1) \g /dev/null
 :ADM
-update ws_regeln_stand set bestaetigt_sha = sha;
+select p.name pc, exists (select 1 from ws_regeln_freigaben f where f.projekt_id = s.projekt_id and f.sha = s.sha) bestaetigt, s.konflikte from ws_regeln_stand s join ws_werkstatt_pcs p on p.id = s.pc_id order by 1;
+:FREMD
+select (select count(*) from ws_regeln_stand) stand, (select count(*) from ws_regeln_freigaben) freigaben;
+\echo [32] Direkt schreiben -> FEHLER (2x)
+:ADM
+insert into ws_regeln_freigaben(projekt_id, sha) values ('trainer-to-go', repeat('d',64));
+update ws_regeln_stand set sha = repeat('d',64);

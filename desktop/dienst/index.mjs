@@ -44,7 +44,7 @@ import { rm, readdir, lstat, realpath } from "node:fs/promises";
 import { kennungPasst, konfigLesen, ordnerStand, sicherOrdner, sicherSchreiben, sicherLesen, sicherLoeschen, dateienSammeln, dateienKopieren, geruestAnlegen, altOrdner, dokuListe, projektregelnAusAgents, regelnVorlage } from "./lib/projektordner.mjs";
 import { konflikteFinden, konfliktKurz, konfliktNachricht, regelBlock } from "./lib/regeln.mjs";
 import { testseiteEinrichten, lotsePruefen, Lotse } from "./lib/testseite.mjs";
-import { laufSperren, gefaehrlicheGitConfig } from "./lib/rechte.mjs";
+import { laufSperren, sperrListe, gefaehrlicheGitConfig, gefaehrlicheAttribute, gitdirOk, linksNachAussen } from "./lib/rechte.mjs";
 
 const HIER = path.dirname(fileURLToPath(import.meta.url));
 // Claude Code finden. Windows: nativer Installer (claude.exe in %USERPROFILE%\.local\bin) oder npm (cli.js) – immer OHNE Shell
@@ -85,7 +85,8 @@ const ERLAUBT = [
   "Bash(git status)", "Bash(git status --short)", "Bash(git diff)", "Bash(git diff --stat)", "Bash(git diff --cached)",
   "Bash(git log --oneline -20)", "Bash(git log -5)", "Bash(git add -A)", "Bash(git add .)", "Bash(git add -- *)", "Bash(git commit -m *)", "Bash(git fetch origin)",
   "Bash(git checkout -b feature/cs-*)", "Bash(git switch -c feature/cs-*)", "Bash(git push -u origin HEAD)", "Bash(git push origin HEAD)",
-  "Bash(gh pr create *)", "Bash(gh pr view*)", "Bash(gh pr checks*)", "Bash(ls*)",
+  // Ohne Leerzeichen vor „*“ wäre z. B. „ls*“ auch „lsof …“ bzw. „gh pr view-…“ (Nachprüfung R4)
+  "Bash(gh pr create *)", "Bash(gh pr view)", "Bash(gh pr view *)", "Bash(gh pr checks)", "Bash(gh pr checks *)", "Bash(ls)", "Bash(ls *)",
   // Bewusst NICHT frei: node (auch --check: --require lädt Code), npm test / npm run build / python3 tools/* / cat – führen Code bzw. Dateien aus, die die Werkstatt selbst
   // ändern kann (Prüfung 2026-10-22, Befund ROT). Diese Befehle laufen über eine Erlaubnis-Anfrage im Programm.
 ];
@@ -103,6 +104,8 @@ const VERBOTEN = [
   "Bash(git push * --delete*)", "Bash(git push * -d *)", "Bash(git push * --mirror*)", "Bash(git push * --all*)", "Bash(git push * --tags*)",
   "Bash(git push * --receive-pack*)", "Bash(git push * --exec*)", "Bash(git push * --no-verify*)",
   // nichts außerhalb des Arbeitsordners und nichts in Git-Interna / Hook-Ordnern schreiben
+  // „../**“ wirkt in Claude Code nicht (Pfade außerhalb des Bezugsordners werden übersprungen) – der Schutz außerhalb sind die absoluten
+  // Verbote je Lauf (lib/rechte.mjs, sperrListe); die Zeile bleibt nur als harmlose Ergänzung
   "Edit(../**)", "Write(../**)", "Edit(**/.git/**)", "Write(**/.git/**)", "Edit(**/.husky/**)", "Write(**/.husky/**)",
   // Einstellungen, Hooks und Abläufe darf die Werkstatt nicht selbst ändern (sonst Umgehung der Erlaubnis-Brücke)
   "Edit(.claude/**)", "Write(.claude/**)", "Edit(**/.claude/**)", "Write(**/.claude/**)", "Edit(.mcp.json)", "Write(.mcp.json)",
@@ -134,7 +137,8 @@ const LESE_SPERREN = ["Read(~/.git-credentials)", "Read(~/.npmrc)", "Read(~/.net
 // ---------- Hilfen ----------
 async function existiert(p) { try { await access(p); return true; } catch { return false; } }
 // Jeder git-Aufruf des Dienstes ohne fsmonitor und ohne „ext::“-Transport – eine untergeschobene Einstellung startet so kein Programm (H1)
-async function git(cwd, ...args) { return (await sh("git", ["-c", "core.fsmonitor=false", "-c", "protocol.ext.allow=never", ...args], { cwd, maxBuffer: 20 * 1024 * 1024 })).stdout.trim(); }
+const GIT_SICHER = ["-c", "core.fsmonitor=false", "-c", "protocol.ext.allow=never"];
+async function git(cwd, ...args) { return (await sh("git", [...GIT_SICHER, ...args], { cwd, maxBuffer: 20 * 1024 * 1024 })).stdout.trim(); }
 async function log(auftrag, art, text, ausschnitt) {
   await db.from("ws_live_log").insert({ auftrag_id: auftrag, art, text: kuerzen(ohneGeheimnisse(text), 500), ausschnitt: ausschnitt ? kuerzen(ohneGeheimnisse(ausschnitt), 2000) : null });
 }
@@ -380,15 +384,41 @@ async function arbeitsordnerRepo(projekt, o) {
   const keineHooks = path.join(ort.arbeit, "keine-hooks");
   await mkdir(keineHooks, { recursive: true });
   await git(ort.repo, "config", "core.hooksPath", keineHooks);
-  // Gemeinsamer Git-Ordner: keine Einstellung, mit der git ein Programm startet oder Zugänge umlenkt (H1) – sonst abbrechen und melden
-  const boese = gefaehrlicheGitConfig(await git(ort.repo, "config", "--local", "--list").catch(() => ""), { "core.hookspath": keineHooks });
-  if (boese.length) throw new Error(`Gefährliche Git-Einstellung in der Arbeitskopie (${boese.slice(0, 5).join(", ")}) – abgebrochen. Bitte prüfen; „code“ im Projektordner ggf. löschen, die Codeschmiede klont neu.`);
-  return ort;
+  await gitPruefen(ort.repo, keineHooks, projekt);
+  return { ...ort, keineHooks };
+}
+/**
+ * Gemeinsamen Git-Ordner prüfen (H1, Nachprüfung R5): keine Einstellung, mit der git ein Programm startet oder Zugänge umlenkt; origin zeigt
+ * auf genau das Repository des Projekts; keine Treiber in .git/info/attributes; ordner (Arbeitsordner) mit einer .git-Datei, die genau auf
+ * <common>/worktrees/<name> zeigt. Läuft vor UND nach jedem Lauf – sonst Abbruch mit Meldung.
+ */
+async function gitPruefen(repo, keineHooks, projekt, ordner = null) {
+  const common = path.join(repo, ".git");
+  // Alte Kopien (vor dem Umzug der Organisation am 25.10.2026) zeigen noch auf die alte Adresse – nur origin, nur gleicher Name, nur GitHub: auf die erwartete setzen
+  const url = await git(repo, "config", "--local", "--get", "remote.origin.url").catch(() => "");
+  const name = String(projekt.repo || "").split("/")[1] || "";
+  if (url && name && new RegExp(`^https://github\\.com/[A-Za-z0-9-]+/${name.replace(/[.]/g, "\\.")}(\\.git)?$`, "i").test(url.trim()) && !url.toLowerCase().includes(projekt.repo.toLowerCase())) {
+    await git(repo, "remote", "set-url", "origin", `https://github.com/${projekt.repo}.git`);
+  }
+  const fehler = gefaehrlicheGitConfig(await git(repo, "config", "--local", "--list").catch(() => ""), { "core.hookspath": keineHooks }, projekt.repo);
+  const attr = gefaehrlicheAttribute(await readFile(path.join(common, "info", "attributes"), "utf8").catch(() => ""));
+  if (attr.length) fehler.push("info/attributes");
+  if (ordner) {
+    const st = await lstat(path.join(ordner, ".git")).catch(() => null);
+    const inhalt = st?.isFile() ? await readFile(path.join(ordner, ".git"), "utf8").catch(() => "") : "";
+    if (!gitdirOk(inhalt, common)) fehler.push(".git des Arbeitsordners");
+  }
+  if (fehler.length) throw new Error(`Gefährliche Git-Einstellung in der Arbeitskopie (${[...new Set(fehler)].slice(0, 6).join(", ")}) – abgebrochen. Bitte prüfen; „code“ im Projektordner ggf. löschen, die Codeschmiede klont neu.`);
+}
+/** Links im Arbeitsordner, die hinauszeigen → Abbruch (Nachprüfung R3). */
+async function linksPruefen(ordner) {
+  const l = await linksNachAussen(ordner);
+  if (l.length) throw new Error(`Im Arbeitsordner zeigen Verknüpfungen aus dem Ordner hinaus (${l.slice(0, 5).join(", ")}) – abgebrochen. Bitte im Zweig entfernen bzw. den Arbeitsordner löschen.`);
 }
 async function arbeitsordner(projekt, auftrag) {
   // Ein Auftrag, der vor dem Umzug in der alten Kopie begonnen hat, arbeitet dort zu Ende
   const altAuftrag = path.join(altOrdner(cfg.daten_ordner, projekt.id), `auftrag-${auftrag.id}`);
-  const { repo, arbeit } = await arbeitsordnerRepo(projekt, { altErlaubt: await existiert(altAuftrag) });
+  const { repo, arbeit, keineHooks } = await arbeitsordnerRepo(projekt, { altErlaubt: await existiert(altAuftrag) });
   await git(repo, "fetch", "origin", "main");
   const ordner = path.join(arbeit, `auftrag-${auftrag.id}`);
   const zweig = zweigName(auftrag.id, auftrag.titel);
@@ -399,6 +429,9 @@ async function arbeitsordner(projekt, auftrag) {
     try { await git(repo, "worktree", "add", "-b", zweig, ordner, basis); }
     catch { await git(repo, "worktree", "add", ordner, zweig); } // Zweig gibt es schon lokal (Fortsetzung)
   }
+  // Nach Anlegen bzw. vor jeder Fortsetzung: .git-Datei des Arbeitsordners und Verknüpfungen prüfen (R3/R5)
+  await gitPruefen(repo, keineHooks, projekt, ordner);
+  await linksPruefen(ordner);
   return { ordner, zweig };
 }
 
@@ -522,9 +555,11 @@ async function fuehreAus(auftrag, { fortsetzen = false, nacharbeit = false, ersa
       .in("gruppe_id", (pgr || []).map((x) => x.id)).in("stand", ["freigabe", "zusammen", "sicherheit", "wissen"]);
     const { ordner, zweig } = await arbeitsordner(projekt, auftrag);
     anhangOrdner = path.join(ordner, ".codeschmiede-anhaenge");
-    // Projektordner dieses Laufs (für die absoluten Schreib-Verbote); liegt der Auftrag noch in der alten Kopie, gelten die relativen
+    // Absolute Schreib-Verbote dieses Laufs: im Projektordner und im Daten-Ordner alles außer dem eigenen Arbeitsordner (R1/R2) –
+    // auch für Aufträge, die noch in der alten Kopie im Daten-Ordner laufen
     const poLauf = await projektOrdner(projekt.id).catch(() => null);
     const laufWurzel = poLauf?.stand === "ok" && ordner.startsWith(poLauf.arbeit + path.sep) ? poLauf.wurzel : null;
+    const laufVerbote = laufSperren({ ordner, sperren: await sperrListe({ ordner, wurzel: laufWurzel, datenOrdner: cfg.daten_ordner }) });
     const merk = (await sitzungen())[auftrag.id] || {};
     const versuch = merk.versuch || 0;
     const lage = await aboLage();
@@ -577,7 +612,7 @@ async function fuehreAus(auftrag, { fortsetzen = false, nacharbeit = false, ersa
       // „ask“ geht vor „allow“: Bau-/Test-Einstellungen und Websuche laufen immer über die Erlaubnis-Brücke (Befund S1/S2)
       // Lesen außerhalb des Arbeitsordners verweigert Claude Code selbst (Befund S2); Hooks aus (wie in der Prüfung)
       // Feste Schreib-Verbote je Lauf: Ebenen über dem Arbeitsordner und die Unterordner des Projektordners, absolut (H1)
-      "--settings", JSON.stringify({ disableAllHooks: true, permissions: { ask: [...FRAGEN, "WebSearch", "WebFetch"], deny: laufSperren({ wurzel: laufWurzel }), blockReadsOutsideWorkingDirectories: true } })];
+      "--settings", JSON.stringify({ disableAllHooks: true, permissions: { ask: [...FRAGEN, "WebSearch", "WebFetch"], deny: laufVerbote, blockReadsOutsideWorkingDirectories: true } })];
     if ((fortsetzen || nacharbeit) && merk.sitzung) args.push("--resume", merk.sitzung);
     // Ohne API-Schlüssel in der Umgebung arbeitet Claude Code mit dem eigenen Abo-Login dieser Person
     const env = { ...process.env };
@@ -618,6 +653,8 @@ async function fuehreAus(auftrag, { fortsetzen = false, nacharbeit = false, ersa
     const ergebnisText = String(ende?.result || "");
     if (ende && ergebnisText.length < 600 && istLimit(ergebnisText)) throw new LimitFehler(ergebnisText.trim());
     if (!ende || ende.subtype !== "success") throw new Error(ende?.subtype ? `Lauf beendet: ${ende.subtype}` : "Lauf ohne Ergebnis beendet");
+    // Nach dem Lauf: Git-Ordner und Verknüpfungen erneut prüfen, bevor die Werkstatt selbst git benutzt (R5)
+    { const ort = await repoOrt(projekt, { altErlaubt: true }); await gitPruefen(ort.repo, path.join(ort.arbeit, "keine-hooks"), projekt, ordner); await linksPruefen(ordner); }
     r = werteAus(ende.result);
     }
     // Bild-Vorlagen aus dem Assistenten nach dem Lauf vom PC löschen (Datenschutz: „mit Abschluss gelöscht“, Prüfung M1)
@@ -750,19 +787,22 @@ async function regelnLesen(po, projektId) {
   const b = await sicherLesen(po.wurzel, "regeln/REGELN.md", 256 * 1024).catch(() => null);
   const aktuell = b ? b.toString("utf8") : "";
   const sha = b ? sha256(b) : null;
-  let bestaetigtSha = null;
-  try { const { data } = await db.from("ws_regeln_stand").select("bestaetigt_sha").eq("projekt_id", projektId).maybeSingle(); bestaetigtSha = data?.bestaetigt_sha || null; } catch { /* ohne Datenbank 0055 */ }
-  let text = ""; const bestaetigt = !!sha && sha === bestaetigtSha;
+  const zuLang = aktuell.length > 30000;   // wird nie gekürzt bestätigt (Nachprüfung M1a)
+  // Bestätigt ist eine Prüfsumme (gilt für alle PCs mit genau diesem Inhalt, Nachprüfung M1b)
+  let frei = new Set();
+  try { const { data } = await db.from("ws_regeln_freigaben").select("sha").eq("projekt_id", projektId).limit(500); frei = new Set((data || []).map((x) => x.sha)); } catch { /* ohne Datenbank 0055 */ }
+  let text = ""; const bestaetigt = !!sha && !zuLang && frei.has(sha);
   if (bestaetigt) {
     text = aktuell;
     await mkdir(path.dirname(regelnKopie(projektId)), { recursive: true }).catch(() => {});
     await writeFile(regelnKopie(projektId), JSON.stringify({ sha, text })).catch(() => {});
-  } else if (bestaetigtSha) {
-    try { const c = JSON.parse(await readFile(regelnKopie(projektId), "utf8")); if (c?.sha === bestaetigtSha && sha256(Buffer.from(String(c.text), "utf8")) === c.sha) text = String(c.text); } catch { /* keine bestätigte Kopie auf diesem PC */ }
+  } else {
+    // zuletzt auf diesem PC bestätigte Fassung – nur, wenn ihre Prüfsumme noch bestätigt ist und zum Text passt
+    try { const c = JSON.parse(await readFile(regelnKopie(projektId), "utf8")); if (frei.has(c?.sha) && sha256(Buffer.from(String(c.text), "utf8")) === c.sha) text = String(c.text); } catch { /* keine bestätigte Kopie */ }
   }
   const f = await sicherLesen(po.wurzel, "regeln/regelwerk/FASSUNG.md", 64 * 1024).catch(() => null);
   const fassung = f ? (/Fassung ([0-9a-f]{7,40})/.exec(f.toString("utf8"))?.[1] || "").slice(0, 12) || null : null;
-  return { text, aktuell, sha, da: !!b, bestaetigt, konflikte: konflikteFinden(aktuell), konflikteGilt: konflikteFinden(text), fassung };
+  return { text, aktuell, sha, da: !!b, zuLang, bestaetigt, konflikte: konflikteFinden(aktuell), konflikteGilt: konflikteFinden(text), fassung };
 }
 
 /** Für einen Bau-Lauf: Regel-Block (Rangfolge), Konflikte und Material als Daten im Anhang-Ordner des Laufs (von Git ausgeschlossen, danach gelöscht). */
@@ -867,7 +907,7 @@ async function spiegeln(p, po) {
   for (const d of liste) {
     neu[d.rel] = d.sha;
     if (vorher.dateien?.[d.rel] === d.sha && await sicherLesen(po.wurzel, `doku/${d.rel}`, d.groesse + 1)) continue;
-    const { stdout } = await sh("git", ["cat-file", "blob", d.sha], { cwd: repo, encoding: "buffer", maxBuffer: 11 * 1024 * 1024 });
+    const { stdout } = await sh("git", [...GIT_SICHER, "cat-file", "blob", d.sha], { cwd: repo, encoding: "buffer", maxBuffer: 11 * 1024 * 1024 });
     await sicherSchreiben(po.wurzel, `doku/${d.rel}`, stdout);
   }
   // Was die Codeschmiede früher gespiegelt hat und nicht mehr in docs/ steht, wieder entfernen (nur diese Dateien)
@@ -908,6 +948,9 @@ async function umzugHindernis(p, alt, { nurAlte = false } = {}) {
   if (eo) return "Umzug wartet: Aufträge nicht prüfbar";
   const relevant = (offen || []).filter((a) => !nurAlte || ids.includes(a.id));
   if (relevant.length) return `Umzug wartet auf Auftrag #${relevant.slice(0, 5).map((a) => a.id).join(", #")}`.slice(0, 200);
+  // Zurückgestellte Änderungen (git stash) gelten für alle Arbeitsordner der Kopie – nicht leer → nicht umziehen (Nachprüfung M2)
+  const stash = await git(path.join(alt, "repo"), "stash", "list").catch(() => "?");
+  if (stash.trim()) return "Umzug wartet: In der alten Kopie liegen zurückgestellte Änderungen (git stash)";
   const { data: staende } = ids.length ? await db.from("ws_auftraege").select("id, stand").in("id", ids) : { data: [] };
   const fertig = new Set((staende || []).filter((a) => ["wissen", "erledigt", "abgebrochen"].includes(a.stand)).map((a) => a.id));
   for (const o of ordner) {
@@ -964,7 +1007,8 @@ async function umziehen(p, po) {
     for (const id of ids) if (s[id]?.sitzung) { s[id] = { versuch: s[id].versuch || 0 }; neuS = true; }
     if (neuS) await writeFile(sitzungenDatei(), JSON.stringify(s, null, 2));
     // Unmittelbar vor dem Aufräumen erneut prüfen (M2) – sonst beim nächsten Durchlauf
-    if (!(await umzugHindernis(p, alt, { nurAlte: true }))) await altAufraeumen(p, alt);
+    // Prüf- und Lese-Ordner (pruef-N, lesen) werden nur gelöscht, wenn auf diesem PC gar nichts läuft (umzugHindernis prüft laeuft zuerst)
+    if (!(await umzugHindernis(p, alt, { nurAlte: true })) && !laeuft) await altAufraeumen(p, alt);
   } finally { umzugLaeuft.delete(p.id); }
   return { stand: "ok", hinweis: "Arbeitskopie in den Projektordner umgezogen" };
 }
@@ -996,9 +1040,10 @@ async function projektordnerPflegen(zwingend = false) {
           const r = await regelnLesen(po, p.id);
           m.konflikte = Math.min(50, r.konflikte.length);
           if (r.konflikte.length) m.hinweis = konfliktKurz(r.konflikte[0], r.konflikte.length);
+          else if (r.zuLang) m.hinweis = "REGELN.md ist zu lang (höchstens 30.000 Zeichen) – bitte kürzen, bis dahin gilt die zuletzt bestätigte Fassung";
           else if (r.da && !r.bestaetigt) m.hinweis = "REGELN.md geändert – unter Anbindungen bestätigen, bis dahin gilt die zuletzt bestätigte Fassung";
-          // Aktuelle Fassung zur Bestätigung durch den Admin melden (Text und Prüfsumme, keine Pfade)
-          if (r.sha) await db.rpc("ws_regeln_melden", { p_pc: pcId, p_projekt: p.id, p_sha: r.sha, p_text: r.aktuell.slice(0, 30000), p_konflikte: Math.min(50, r.konflikte.length) }).then(() => {}, () => {});
+          // Aktuelle Fassung zur Bestätigung durch den Admin melden (Text und Prüfsumme über genau diese Bytes, keine Pfade)
+          if (r.sha && !r.zuLang) await db.rpc("ws_regeln_melden", { p_pc: pcId, p_projekt: p.id, p_sha: r.sha, p_text: r.aktuell, p_konflikte: Math.min(50, r.konflikte.length) }).then(({ error }) => { if (error && !/does not exist|schema cache/i.test(error.message)) melde("fehler", `REGELN.md melden: ${kuerzen(ohneGeheimnisse(error.message), 160)}`); }, () => {});
           await spiegeln(p, po).catch((e) => melde("fehler", `Spiegel ${p.name}: ${kuerzen(ohneGeheimnisse(e?.message || String(e)), 200)}`));
         }
       } catch (e) {
@@ -1174,7 +1219,7 @@ function mitSperre(schluessel, f) {
   return jetzt;
 }
 let codeLaeuft = false; const codeAbruf = new Map(); let codeAufgeraeumt = 0;
-const gitRoh = async (cwd, ...args) => (await sh("git", args, { cwd, maxBuffer: 2 * 1024 * 1024, encoding: "buffer" })).stdout;
+const gitRoh = async (cwd, ...args) => (await sh("git", [...GIT_SICHER, ...args], { cwd, maxBuffer: 2 * 1024 * 1024, encoding: "buffer" })).stdout;
 async function codeArbeit() {
   if (codeLaeuft || stopp) return;
   codeLaeuft = true;
@@ -1306,6 +1351,7 @@ async function pruefOrdner(projekt, auftrag) {
   if (await existiert(ordner)) { try { await git(repo, "worktree", "remove", "--force", ordner); } catch { await rm(ordner, { recursive: true, force: true }); await git(repo, "worktree", "prune"); } }
   await git(repo, "fetch", "origin", "main", auftrag.zweig);
   await git(repo, "worktree", "add", "--detach", ordner, `origin/${auftrag.zweig}`);
+  await linksPruefen(ordner);   // auch die Prüfung liest nur im Ordner (R3)
   return { repo, ordner };
 }
 
@@ -2018,6 +2064,7 @@ async function ampelMelden(p) {
         werte.projektordner = umzug ? { stand: "gelb", text: "Verknüpft · Arbeitskopie wird umgezogen, sobald kein Auftrag offen ist" } : { stand: "gruen", text: "Verknüpft · Festplatte angesteckt" };
         const r = await regelnLesen(po, p.id);
         werte.regeln = r.konflikte.length ? { stand: "rot", text: konfliktKurz(r.konflikte[0], r.konflikte.length) }
+          : r.zuLang ? { stand: "gelb", text: "REGELN.md ist zu lang (höchstens 30.000 Zeichen) – bitte kürzen; bis dahin gilt die zuletzt bestätigte Fassung" }
           : r.da && !r.bestaetigt ? { stand: "gelb", text: "REGELN.md geändert – unter „Anbindungen“ bestätigen (bis dahin gilt die zuletzt bestätigte Fassung)" }
           : r.da ? { stand: "gruen", text: `Projektregeln aktiv · Rangfolge Sicherheit › Projektregeln › Regelwerk${r.fassung ? ` (Fassung ${r.fassung.slice(0, 7)})` : ""}` }
           : { stand: "gelb", text: "REGELN.md fehlt noch – die Werkstatt legt sie aus der Vorlage an" };
@@ -2025,10 +2072,12 @@ async function ampelMelden(p) {
     } catch { /* Lampen fehlen diesmal */ }
     // Testseite (0.13.0): Lotse erledigt? Dann trägt die Werkstatt die Adresse selbst ein (nur ein Pages-Projekt, das mit genau diesem Repository verbunden ist)
     if (p.testseite_stand === "lotse") {
-      const sub = await lotsePruefen({ sh: wranglerSh, projekt: p }).catch(() => null);
+      const gef = await lotsePruefen({ sh: wranglerSh, projekt: p }).catch(() => null);
+      const sub = gef?.subdomain;
       if (sub) {
-        const { error: et } = await db.rpc("ws_testseite_melden", { p_pc: pcId, p_projekt: p.id, p_stand: "eingerichtet", p_domain: sub, p_hinweis: `Automatisch eingetragen: https://${sub}` });
-        if (!et) werte.testseite = { stand: "gelb", text: `Testseite eingetragen (${sub}) – erster Bau läuft bei Cloudflare` };
+        const hinweis = `Automatisch eingetragen: https://${sub}${gef.vorschauOk ? "" : " · Vorschau bitte in Cloudflare auf Zweige feature/cs-* begrenzen"}`;
+        const { error: et } = await db.rpc("ws_testseite_melden", { p_pc: pcId, p_projekt: p.id, p_stand: "eingerichtet", p_domain: sub, p_hinweis: hinweis });
+        if (!et) werte.testseite = { stand: "gelb", text: gef.vorschauOk ? `Testseite eingetragen (${sub}) – erster Bau läuft bei Cloudflare` : `Testseite eingetragen (${sub}) – Vorschau bitte in Cloudflare auf feature/cs-* begrenzen` };
       } else werte.testseite = { stand: "gelb", text: "Wartet auf die Einrichtung in Cloudflare (Lotse unter „Anbindungen“) – danach trägt die Codeschmiede die Adresse selbst ein" };
     }
     const { error } = await db.rpc("ws_anbindungen_melden", { p_pc: pcId, p_projekt: p.id, p_werte: werte });

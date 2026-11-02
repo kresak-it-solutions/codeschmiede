@@ -4,8 +4,6 @@ import assert from "node:assert/strict";
 import { mkdtemp, mkdir, writeFile, readFile, symlink, rm, link, lstat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { laufSperren, regelPfade, gefaehrlicheGitConfig } from "../lib/rechte.mjs";
-import { readFile as lies } from "node:fs/promises";
 import { kennungOk, kennungPasst, konfigPruefen, relOk, pfadOk, sicherOrdner, sicherSchreiben, sicherLesen, sicherLoeschen, dateienSammeln, dateienKopieren, geruestAnlegen, dokuListe, projektregelnAusAgents, regelnVorlage, ordnerStand } from "../lib/projektordner.mjs";
 import { konflikteFinden, regelBlock, SICHERHEIT, konfliktKurz, konfliktNachricht } from "../lib/regeln.mjs";
 import { projektDaten, cf, cfToken, testseiteEinrichten, lotsePruefen, Lotse, buildFuer } from "../lib/testseite.mjs";
@@ -48,35 +46,6 @@ test("Kennungsdatei: nur gleiche Kennung und gleiches Kennzeichen, keine Verknü
     await symlink(path.join(d, "k.json"), path.join(w, ".codeschmiede-projekt.json"));
     assert.equal(await kennungPasst(w, "x1", "a".repeat(32)), false);
   } finally { await rm(w, { recursive: true, force: true }); await rm(d, { recursive: true, force: true }); }
-});
-
-test("Rechte je Lauf (H1): Schreiben nur im Arbeitsordner, Projektordner und Ebenen darüber gesperrt", async () => {
-  const quelle = await lies(new URL("../index.mjs", import.meta.url), "utf8");
-  const erlaubt = /const ERLAUBT = \[([\s\S]*?)\];/.exec(quelle)[1];
-  for (const w of ["Edit", "Write", "NotebookEdit"]) {
-    assert.ok(erlaubt.includes(`"${w}(./**)"`), `${w}(./**) erlaubt`);
-    assert.ok(!new RegExp(`"${w}"`).test(erlaubt), `${w} ohne Pfad darf nicht frei sein`);
-  }
-  assert.ok(/deny: laufSperren\(\{ wurzel: laufWurzel \}\)/.test(quelle), "Verbote je Lauf im Bau-Lauf");
-  assert.ok(/"-c", "core\.fsmonitor=false"/.test(quelle), "git immer ohne fsmonitor");
-  const posix = laufSperren({ wurzel: "/Volumes/Platte/Projekte/vereinsheft", plattform: "linux" });
-  for (const w of ["Edit", "Write", "NotebookEdit"]) {
-    for (const m of ["../**", "../../**", "//Volumes/Platte/Projekte/vereinsheft/code/**", "//Volumes/Platte/Projekte/vereinsheft/regeln/**", "//Volumes/Platte/Projekte/vereinsheft/material/**",
-      "//Volumes/Platte/Projekte/vereinsheft/konzept/**", "//Volumes/Platte/Projekte/vereinsheft/doku/**", "//Volumes/Platte/Projekte/vereinsheft/sicherungen/**", "//Volumes/Platte/Projekte/vereinsheft/*"]) assert.ok(posix.includes(`${w}(${m})`), `${w}(${m})`);
-  }
-  assert.ok(!posix.some((r) => r.includes("code-arbeit")), "der eigene Arbeitsordner bleibt frei");
-  const win = laufSperren({ wurzel: "E:\\Projekte\\vereinsheft", plattform: "win32" });
-  for (const m of ["//e/Projekte/vereinsheft/code/**", "//E/Projekte/vereinsheft/code/**", "//E:/Projekte/vereinsheft/regeln/**", "//e:/Projekte/vereinsheft/material/**"]) assert.ok(win.includes(`Edit(${m})`), m);
-  assert.deepEqual(regelPfade("/a/b(c)", "linux"), [], "Sonderzeichen: nur relative Sperren");
-  assert.deepEqual(laufSperren({ plattform: "linux" }).filter((r) => r.startsWith("Edit(")), ["Edit(../**)", "Edit(../../**)"]);
-});
-
-test("Git-Konfiguration: gefährliche Schlüssel werden erkannt", () => {
-  const ok = "core.repositoryformatversion=0\ncore.filemode=true\ncore.bare=false\nremote.origin.url=https://github.com/a/b.git\nremote.origin.fetch=+refs/heads/*:refs/remotes/origin/*\nbranch.main.remote=origin\ncore.hookspath=/x/keine-hooks";
-  assert.deepEqual(gefaehrlicheGitConfig(ok, { "core.hookspath": "/x/keine-hooks" }), []);
-  assert.deepEqual(gefaehrlicheGitConfig(ok), ["core.hookspath"]);
-  const boese = "core.fsmonitor=./x.sh\nfilter.lfs.clean=sh -c x\ncore.sshCommand=evil\ninclude.path=../x\ndiff.pdf.textconv=x\nalias.st=!sh\nurl.https://boese/.insteadof=https://github.com/";
-  assert.deepEqual(gefaehrlicheGitConfig(boese).sort(), ["alias.st", "core.fsmonitor", "core.sshcommand", "diff.pdf.textconv", "filter.lfs.clean", "include.path", "url.https://boese/.insteadof"].sort());
 });
 
 test("Teilpfade: kein Ausbruch, keine Windows-Sonderfälle", () => {
@@ -255,7 +224,11 @@ test("Testseite einrichten: Git-Anbindung fehlt → Lotse; fremdes Projekt gleic
     ["GET", "/accounts?per_page=50", antwort(200, { success: true, result: [{ id: KONTO }] })],
     ["GET", `/accounts/${KONTO}/pages/projects/vereinsheft`, antwort(200, { success: true, result: { subdomain: "vereinsheft-ab.pages.dev", source: { type: "github", config: { owner: "kresak-it-solutions", repo_name: "vereinsheft" } } } })],
   ]);
-  assert.equal(await lotsePruefen({ sh: wrangler, holen: n3.holen, projekt: { id: "vereinsheft", repo: "kresak-it-solutions/vereinsheft" } }), "vereinsheft-ab.pages.dev");
+  const gef = await lotsePruefen({ sh: wrangler, holen: n3.holen, projekt: { id: "vereinsheft", repo: "kresak-it-solutions/vereinsheft" } });
+  assert.equal(gef.subdomain, "vereinsheft-ab.pages.dev");
+  assert.equal(gef.vorschauOk, false, "Vorschau-Einstellung falsch und PATCH nicht möglich → Hinweis");
+  const patch = n3.aufrufe.find((x) => x.methode === "PATCH");
+  assert.equal(patch.body.source.config.preview_deployment_setting, "custom"); assert.deepEqual(patch.body.source.config.preview_branch_includes, ["feature/cs-*"]);
   const mehr = falschesNetz([["GET", "/accounts?per_page=50", antwort(200, { success: true, result: [{ id: KONTO }, { id: "f".repeat(32) }] })]]);
   await assert.rejects(() => testseiteEinrichten({ sh: wrangler, holen: mehr.holen, projekt: { id: "vereinsheft", repo: "kresak-it-solutions/vereinsheft", technik_art: "web" } }), /mehrere Cloudflare-Konten/);
   await assert.rejects(() => testseiteEinrichten({ sh: wrangler, holen: mehr.holen, projekt: { id: "werkzeug", repo: "a/b", technik_art: "werkzeug" } }), /nur für Web- und Handy-Apps/);

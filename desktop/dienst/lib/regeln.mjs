@@ -44,13 +44,17 @@ const MUSTER = [
 ];
 const VERNEINUNG = /(?:^|[^\p{L}])(?:nie|niemals|nicht|nichts|keine?[nmrs]?|verboten|untersagt|never|not|no|don't|darf\s+nicht)(?=[^\p{L}]|$)/iu;
 
+/** Unsichtbare Format-Zeichen (\p{Cf}: weiches Trennzeichen, Null-Breite-Zeichen, Richtungszeichen) entfernen, Sonder-Leerzeichen und
+ *  Kompatibilitäts-Zeichen vereinheitlichen – sonst ließe sich „ohne Prüf\u00ADung“ an der Erkennung vorbeischreiben (Nachprüfung M1c). */
+export const normalisieren = (t) => String(t).normalize("NFKC").replace(/\p{Cf}/gu, "").replace(/[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000\t]/g, " ");
+
 /**
  * Konflikte zwischen Projektregeln und den festen Sicherheitsregeln finden. text = Inhalt der REGELN.md.
  * Ergebnis: [{ zeile, thema, regel, auszug }] (höchstens 20). Code-Blöcke (```) werden übersprungen.
  */
 export function konflikteFinden(text) {
   const r = []; let block = false;
-  const zeilen = String(text || "").slice(0, 200000).split(/\r?\n/);
+  const zeilen = normalisieren(String(text || "").slice(0, 200000)).split(/\r?\n/);
   for (let i = 0; i < zeilen.length && r.length < 20; i++) {
     const z = zeilen[i];
     if (/^\s*(```|~~~)/.test(z)) { block = !block; continue; }
@@ -63,7 +67,7 @@ export function konflikteFinden(text) {
         // Verneinung zählt nur, wenn sie unmittelbar davor steht (höchstens drei Wörter, kein „:“, „,“ oder „;“ dazwischen: „nie ohne Prüfung“)
         // oder im Treffer selbst vor dem Verb („Passwörter nie im Code speichern“). Was danach kommt („… ist nicht erlaubt“), zählt nicht –
         // im Zweifel lieber ein Hinweis zu viel (Prüfung 02.11.2026, M1). Die Sicherheitsregeln gelten ohnehin fest.
-        const davor = z.slice(0, t.index).split(/[,:;.!?]/).pop().trim().split(/\s+/).slice(-3).join(" ");
+        const davor = z.slice(0, t.index).split(/[,:;.!?]/).pop().trim().split(/\s+/).slice(-1).join(" ");   // nur das Wort direkt davor (Nachprüfung)
         const imTreffer = t[0].split(/[,:;]/).pop();
         if (VERNEINUNG.test(davor) || VERNEINUNG.test(imTreffer)) continue;
       }

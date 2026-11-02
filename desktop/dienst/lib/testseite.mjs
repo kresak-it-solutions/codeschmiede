@@ -77,9 +77,19 @@ export function projektDaten({ name, repo, art, fehlerWerte = null }) {
       // Vorschau NICHT für alle Zweige (Prüfung 02.11.2026, N2): nur die Werkstatt-Zweige feature/cs-*, weil die Sicherheitsprüfung auf genau
       // diesen Cloud-Bau wartet (cloudBau). „none“ würde das Tor vor dem Zusammenführen brechen. Die Adressen sind öffentlich – darum zeigt die
       // Oberfläche „öffentlich“ an, und Zweig-Vorschauen öffnet die Codeschmiede nur mit dem Hinweis „nicht anmelden“ (Befund S5).
-      production_deployments_enabled: true, preview_deployment_setting: "custom", preview_branch_includes: ["feature/cs-*"], preview_branch_excludes: ["main", "live"] } },
+      production_deployments_enabled: true, ...VORSCHAU } },
     ...(env ? { deployment_configs: { production: { env_vars: env }, preview: { env_vars: env } } } : {}),
   };
+}
+// Vorschau nur für Werkstatt-Zweige (N2) – gilt beim Anlegen und wird bei vorhandenen Projekten geprüft und nachgezogen
+export const VORSCHAU = { preview_deployment_setting: "custom", preview_branch_includes: ["feature/cs-*"], preview_branch_excludes: ["main", "live"] };
+export const vorschauRichtig = (c = {}) => c.preview_deployment_setting === "custom" && JSON.stringify(c.preview_branch_includes || []) === JSON.stringify(VORSCHAU.preview_branch_includes);
+/** Vorschau-Einstellung eines vorhandenen Pages-Projekts prüfen und ggf. per PATCH setzen. true = stimmt (jetzt). */
+export async function vorschauAngleichen(holen, token, konto, p) {
+  const c = p?.source?.config || {};
+  if (vorschauRichtig(c)) return true;
+  try { await cf(holen, token, "PATCH", `/accounts/${konto}/pages/projects/${p.name}`, { source: { type: "github", config: { ...c, ...VORSCHAU } } }); return true; }
+  catch { return false; }
 }
 const fehlerOk = (w) => !!w && /^https:\/\/[a-z0-9]{20}\.supabase\.co$/.test(w.url || "") && typeof w.anon === "string" && w.anon.length > 20 && w.anon.length < 2000 && /^csf_[0-9a-f]{32}$/.test(w.schluessel || "");
 
@@ -116,6 +126,8 @@ export async function testseiteEinrichten({ sh, holen = fetch, projekt, fehlerWe
         throw e;
       }
     }
+    // Vorhandenes Projekt: Vorschau-Einstellung auf Werkstatt-Zweige ziehen (sonst Hinweis)
+    const vorschauOk = p.source?.config ? await vorschauAngleichen(holen, token, konto, { ...p, name }) : true;
     let fehlerGesetzt = false;
     if (fw) {
       try {
@@ -128,8 +140,8 @@ export async function testseiteEinrichten({ sh, holen = fetch, projekt, fehlerWe
     let gebaut = true;
     try { await cf(holen, token, "POST", `/accounts/${konto}/pages/projects/${name}/deployments`); } catch { gebaut = false; }
     const subdomain = SUBDOMAIN.test(p?.subdomain || "") ? p.subdomain : `${name}.pages.dev`;
-    return { art: "fertig", subdomain, fehlerGesetzt,
-      hinweis: `Testseite eingerichtet: https://${subdomain} (öffentlich) · Werkstatt-Zweige als <zweig>.${subdomain}${gebaut ? " · erster Bau läuft" : " · Bau startet beim nächsten Push"}${fw ? (fehlerGesetzt ? " · Fehler-Melder eingetragen" : " · Fehler-Melder bitte von Hand eintragen") : ""}` };
+    return { art: "fertig", subdomain, fehlerGesetzt, vorschauOk,
+      hinweis: `Testseite eingerichtet: https://${subdomain} (öffentlich) · Werkstatt-Zweige als <zweig>.${subdomain}${gebaut ? " · erster Bau läuft" : " · Bau startet beim nächsten Push"}${fw ? (fehlerGesetzt ? " · Fehler-Melder eingetragen" : " · Fehler-Melder bitte von Hand eintragen") : ""}${vorschauOk ? "" : " · Vorschau bitte in Cloudflare auf Zweige feature/cs-* begrenzen"}` };
   } finally { token = null; }
 }
 
@@ -142,6 +154,8 @@ export async function lotsePruefen({ sh, holen = fetch, projekt }) {
     const p = await cf(holen, token, "GET", `/accounts/${konto}/pages/projects/${projekt.id}`).catch(() => null);
     const c = p?.source?.config || {};
     if (!p || p.source?.type !== "github" || `${c.owner}/${c.repo_name}`.toLowerCase() !== String(projekt.repo || "").toLowerCase()) return null;
-    return SUBDOMAIN.test(p.subdomain || "") ? p.subdomain : null;
+    if (!SUBDOMAIN.test(p.subdomain || "")) return null;
+    const vorschauOk = await vorschauAngleichen(holen, token, konto, { ...p, name: projekt.id });
+    return { subdomain: p.subdomain, vorschauOk };
   } catch { return null; } finally { token = null; }
 }

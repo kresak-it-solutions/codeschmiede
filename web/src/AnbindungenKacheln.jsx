@@ -23,14 +23,19 @@ function Lampe({ stand, titel, text, children }) {
     </li>);
 }
 
-/** Gemeldete und bestätigte REGELN.md (ws_regeln_stand, Datenbank 0055). */
+/** Gemeldete REGELN.md je PC (ws_regeln_stand) und bestätigte Prüfsummen (ws_regeln_freigaben), Datenbank 0055. */
 function useRegelnStand(projektId) {
-  const [z, setZ] = useState(null);
+  const [z, setZ] = useState({ zeilen: [], frei: [] });
   useEffect(() => {
     let aus = false;
-    const holen = () => supabase.from("ws_regeln_stand").select("*").eq("projekt_id", projektId).maybeSingle().then(({ data, error }) => { if (!aus && !error) setZ(data || null); });
+    const holen = async () => {
+      const [a, b] = await Promise.all([supabase.from("ws_regeln_stand").select("pc_id, sha, text, konflikte, gemeldet").eq("projekt_id", projektId),
+        supabase.from("ws_regeln_freigaben").select("sha, am").eq("projekt_id", projektId).order("am", { ascending: false })]);
+      if (!aus && !a.error && !b.error) setZ({ zeilen: a.data || [], frei: b.data || [] });
+    };
     holen();
-    const ch = supabase.channel(`regeln-${projektId}-${Math.random()}`).on("postgres_changes", { event: "*", schema: "public", table: "ws_regeln_stand" }, holen).subscribe();
+    const ch = supabase.channel(`regeln-${projektId}-${Math.random()}`).on("postgres_changes", { event: "*", schema: "public", table: "ws_regeln_stand" }, holen)
+      .on("postgres_changes", { event: "*", schema: "public", table: "ws_regeln_freigaben" }, holen).subscribe();
     return () => { aus = true; supabase.removeChannel(ch); };
   }, [projektId]);
   return z;
@@ -42,10 +47,13 @@ export default function AnbindungenKacheln({ projekt, d, admin, toast }) {
   const dbStand = useOrdnerStandDb(projekt.id);
   const bestaetigen = useBestaetigen();
   const regeln = useRegelnStand(projekt.id);
-  const regelnOffen = !!regeln?.sha && regeln.sha !== regeln.bestaetigt_sha;
-  const regelnBestaetigen = async () => {
-    setBusy("regeln");
-    try { const { error } = await supabase.rpc("ws_regeln_bestaetigen", { p_projekt: projekt.id, p_sha: regeln.sha }); if (error) throw error; toast("Projektregeln bestätigt – ab dem nächsten Auftrag gilt diese Fassung"); }
+  const freiSha = new Set(regeln.frei.map((f) => f.sha));
+  const letzteFreigabe = regeln.frei[0]?.am || null;
+  // Je Prüfsumme einmal anzeigen, mit den PCs, die sie melden (Bestätigung gilt für alle PCs mit genau diesem Inhalt)
+  const offen = Object.values(regeln.zeilen.filter((z) => !freiSha.has(z.sha)).reduce((m, z) => { (m[z.sha] ||= { ...z, pcs: [] }).pcs.push(z.pc_id); return m; }, {}));
+  const regelnBestaetigen = async (sha) => {
+    setBusy(`regeln-${sha}`);
+    try { const { error } = await supabase.rpc("ws_regeln_bestaetigen", { p_projekt: projekt.id, p_sha: sha }); if (error) throw error; toast("Projektregeln bestätigt – ab dem nächsten Auftrag gilt diese Fassung (auf allen PCs mit genau diesem Inhalt)"); }
     catch (e) { toast(fehler(e)); } finally { setBusy(""); }
   };
   const [busy, setBusy] = useState("");
@@ -102,15 +110,16 @@ export default function AnbindungenKacheln({ projekt, d, admin, toast }) {
         <b>Regel-Konflikt:</b> {regelnRot}. Die Sicherheitsregel der Codeschmiede gilt – bitte <span className="font-mono">regeln\REGELN.md</span> im Projektordner anpassen.
         <span className="block text-xs mt-1">Die Erkennung ist nur ein Hinweis – die Sicherheitsregeln gelten fest, auch wenn hier nichts rot ist.</span>
         {konflikte.length > 0 && <span className="block text-xs mt-1">Gemeldet von: {konflikte.map((z) => pcName(z.pc_id)).join(", ")}</span>}</p>}
-      {regelnOffen && (
-        <div className="rounded-xl border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 p-3.5 flex flex-col gap-2 text-sm text-amber-950 dark:text-amber-100" aria-label="Projektregeln bestätigen">
-          <b className="flex items-center gap-1.5"><ShieldCheck className="w-4 h-4" aria-hidden="true" />{regeln.bestaetigt_sha ? "REGELN.md geändert – bestätigen" : "REGELN.md bestätigen"}</b>
-          <span>Die Werkstatt nutzt nur die zuletzt von dir bestätigte Fassung{regeln.bestaetigt_am ? ` (vom ${new Date(regeln.bestaetigt_am).toLocaleString("de-AT", { dateStyle: "short", timeStyle: "short" })})` : " – bisher keine, es gelten die Projektregeln aus AGENTS.md"}. Prüfe den Text und bestätige ihn, wenn er von dir stammt.{regeln.konflikte > 0 ? ` Achtung: ${regeln.konflikte} Stelle(n) widersprechen der Sicherheit – dort gilt trotzdem die Sicherheitsregel.` : ""}</span>
-          <details className="rounded-lg bg-white/70 dark:bg-slate-900/60 border border-amber-200 dark:border-amber-900"><summary className="cursor-pointer px-3 py-1.5 text-xs font-semibold">Text ansehen (Prüfsumme {regeln.sha.slice(0, 12)})</summary>
-            <pre className="px-3 pb-3 text-xs whitespace-pre-wrap break-words max-h-80 overflow-auto font-mono text-slate-800 dark:text-slate-200">{regeln.text || ""}</pre></details>
-          {admin ? <button type="button" className={`${btn} self-start`} disabled={!!busy} onClick={regelnBestaetigen}>{busy === "regeln" ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}Diese Fassung bestätigen</button>
+      {offen.map((r) => (
+        <div key={r.sha} className="rounded-xl border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 p-3.5 flex flex-col gap-2 text-sm text-amber-950 dark:text-amber-100" aria-label="Projektregeln bestätigen">
+          <b className="flex items-center gap-1.5"><ShieldCheck className="w-4 h-4" aria-hidden="true" />{letzteFreigabe ? "REGELN.md geändert – bestätigen" : "REGELN.md bestätigen"}</b>
+          <span>Gemeldet von: {r.pcs.map(pcName).join(", ")}. Die Werkstatt nutzt nur die zuletzt von dir bestätigte Fassung{letzteFreigabe ? ` (zuletzt bestätigt ${new Date(letzteFreigabe).toLocaleString("de-AT", { dateStyle: "short", timeStyle: "short" })})` : " – bisher keine, es gelten die Projektregeln aus AGENTS.md"}. Prüfe den Text und bestätige ihn, wenn er von dir stammt.{r.konflikte > 0 ? ` Achtung: ${r.konflikte} Stelle(n) widersprechen der Sicherheit – dort gilt trotzdem die Sicherheitsregel.` : ""}</span>
+          <details className="rounded-lg bg-white/70 dark:bg-slate-900/60 border border-amber-200 dark:border-amber-900"><summary className="cursor-pointer px-3 py-1.5 text-xs font-semibold">Text ansehen (Prüfsumme {r.sha.slice(0, 12)})</summary>
+            <pre className="px-3 pb-3 text-xs whitespace-pre-wrap break-words max-h-80 overflow-auto font-mono text-slate-800 dark:text-slate-200">{r.text || ""}</pre></details>
+          {admin ? <button type="button" className={`${btn} self-start`} disabled={!!busy} onClick={() => regelnBestaetigen(r.sha)}>{busy === `regeln-${r.sha}` ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}Diese Fassung bestätigen</button>
             : <span className="text-xs">Bestätigen kann nur der Admin.</span>}
-        </div>)}
+        </div>))}
+      {regeln.zeilen.length > 0 && <p className="text-xs text-slate-500">REGELN.md je PC: {regeln.zeilen.map((z) => `${pcName(z.pc_id)} ${freiSha.has(z.sha) ? "bestätigt" : "offen"} (${z.sha.slice(0, 8)})`).join(" · ")}</p>}
       <ul className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
         <Lampe stand={po[0]} titel="Projektordner" text={po[1]} />
         <Lampe stand={ampel.github?.stand || (projekt.repo ? "grau" : "rot")} titel="GitHub" text={ampel.github?.text ? `${projekt.repo || ""} · ${ampel.github.text}` : projekt.repo || "Noch kein Repository – unter „Projekte verwalten“ anlegen"} />
