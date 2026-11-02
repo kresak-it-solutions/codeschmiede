@@ -1,12 +1,15 @@
 // LiveVorschau – aus App.jsx ausgelagert (Befund B1 vom 01.11.2026, kein Verhaltenswechsel).
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowLeft, ExternalLink, Eye, Monitor, MousePointerClick, Pin, RefreshCw, ShieldAlert, Smartphone, Tablet, Trash2, Undo2, X } from "lucide-react";
-import { ABGESCHLOSSEN, card, fehler, ghost, input, merke, mitCs, oeffneExtern, seiteOk, vorschauUrl } from "../bausteine/grund";
+import { ArrowLeft, ArrowRightLeft, CircleCheck, ExternalLink, Eye, Info, Monitor, MousePointerClick, Pin, RefreshCw, ShieldAlert, Smartphone, Tablet, Trash2, Undo2, X } from "lucide-react";
+import { ABGESCHLOSSEN, btn, card, fehler, ghost, input, merke, mitCs, oeffneExtern, seiteOk, vorschauUrl } from "../bausteine/grund";
+import { pfadNorm, zuordnung } from "../bausteine/vorschauZuordnung";
 import { AuftragsChat } from "./Zentrale";
 import GeraeteRahmen from "../GeraeteRahmen";
 import { supabase } from "../supabase";
 
 // ---------------- Live-Vorschau (Menüpunkt): aktuelle App + „Zeigen & kommentieren“ → Auftrag an Gruppe/Feature ----------------
+// Seit 0.13.2 (Entwurf „links folgt der Chat der Seite“, freigegeben von Gerhard 02.11.2026): Wechselt rechts die Seite, öffnet sich links
+// das Feature, dessen gemerkte Seite passt (Zuordnung: bausteine/vorschauZuordnung.js). Nur hier, nicht im Feature-Arbeitsplatz.
 export function LiveVorschauSeite({ d, ich, toast }) {
   const projekt = d.projekte.find((p) => p.id === d.projektId);
   const rolle = ich.rolle === "admin" ? "admin" : d.mitglieder.find((m) => m.projekt_id === d.projektId && m.benutzer_id === ich.id)?.rolle;
@@ -16,16 +19,46 @@ export function LiveVorschauSeite({ d, ich, toast }) {
   const gruppen = d.gruppen.filter((g) => darf(g.bereich_id, "auftraege"))
     .sort((a, b) => (!!d.bereiche.find((x) => x.id === a.bereich_id)?.global - !!d.bereiche.find((x) => x.id === b.bereich_id)?.global) || a.name.localeCompare(b.name, "de"));
   const [gid, setGid] = useState(() => merke.lies("cs-vorschau-gruppe") || "");
-  const [fid, setFid] = useState("");
+  const [fid, setFidRoh] = useState(() => merke.lies("cs-vorschau-feature") || "");   // seit 0.13.2 gemerkt: der eigene Startpfad löst dann keinen Wechsel aus
+  const setFid = (v) => { setFidRoh(v); merke.schreib("cs-vorschau-feature", v); };
   const [baustein, setBaustein] = useState(null);
   const g = gruppen.find((x) => x.id === gid) || null;
   const feats = g ? d.features.filter((f) => f.gruppe_id === g.id && !f.ausgebaut && !f.ausgeblendet) : [];
   const f = feats.find((x) => x.id === fid) || null;
-  const waehleGruppe = (v) => { setGid(v); setFid(""); merke.schreib("cs-vorschau-gruppe", v); };
+  // Folgen: Hinweis links, ungesendeter Entwurf, „Nein“ je Pfad (nur solange die Seite offen ist), eben gemerkte Seiten bis zum nächsten Laden
+  const [hinweis, setHinweis] = useState(null);
+  const entwurf = useRef(false);
+  const onEntwurf = useCallback((b) => { entwurf.current = b; }, []);
+  const entwuerfe = useRef(new Map()).current;
+  const nein = useRef(new Set()).current;
+  const [lokalGemerkt, setLokalGemerkt] = useState({});
+  const alleFeatures = d.features.map((x) => (x.id in lokalGemerkt ? { ...x, vorschau_pfad: lokalGemerkt[x.id] } : x));
+  const waehleGruppe = (v) => { setGid(v); setFid(""); merke.schreib("cs-vorschau-gruppe", v); setHinweis(null); };
+  const oeffne = (x) => { setGid(x.gruppe_id); setFid(x.id); merke.schreib("cs-vorschau-gruppe", x.gruppe_id); };
+  const gruppeVon = (x) => d.gruppen.find((y) => y.id === x?.gruppe_id);
+  const darfMerken = (x) => !!x && darf(gruppeVon(x)?.bereich_id, "auftraege");
+  const onSeite = (pfad) => {
+    const z = zuordnung({ pfad, features: alleFeatures, gruppen, gruppeId: g?.id || null, featureId: f?.id || null });
+    if (z.art === "wechsel") {
+      if (entwurf.current) setHinweis({ art: "tippen", pfad, feature: z.feature });
+      else { oeffne(z.feature); setHinweis({ art: "geoeffnet", feature: z.feature }); }
+    } else if ((z.art === "auswahl" || z.art === "vorschlag") && !nein.has(pfadNorm(pfad))) setHinweis({ ...z, pfad });
+    else setHinweis(null);
+  };
+  const merkenUndOeffnen = async (x, pfad) => {
+    const { error } = await supabase.rpc("ws_feature_vorschau_setzen", { p_feature: x.id, p_pfad: pfad });
+    if (error) { toast(fehler(error)); return; }
+    setLokalGemerkt((m) => ({ ...m, [x.id]: pfad })); oeffne(x);
+    setHinweis({ art: "gemerkt", feature: x, pfad }); d.holen?.();
+  };
+  useEffect(() => {
+    if (!hinweis || !["geoeffnet", "gemerkt"].includes(hinweis.art)) return undefined;
+    const t = setTimeout(() => setHinweis((h) => (h === hinweis ? null : h)), 4000); return () => clearTimeout(t);
+  }, [hinweis]);
   return (
     <section className="flex flex-col gap-3" aria-label="Live-Vorschau">
       <div><h2 className="font-display font-bold text-xl leading-tight">Live-Vorschau</h2>
-        <p className="text-sm text-slate-500">Die aktuelle App. Mit <b>Zeigen & kommentieren</b> klickst du auf ein Element, wählst Gruppe (und Feature) und schreibst, was sich ändern soll – daraus wird ein Auftrag.</p></div>
+        <p className="text-sm text-slate-500">Die aktuelle App. Wechselst du rechts die Seite, öffnet sich links der Chat des passenden Features. Mit <b>Zeigen & kommentieren</b> klickst du auf ein Element, wählst Gruppe (und Feature) und schreibst, was sich ändern soll – daraus wird ein Auftrag.</p></div>
       <div className="grid gap-3 grid-cols-[minmax(0,1fr)] lg:grid-cols-[minmax(320px,38%)_minmax(0,1fr)] lg:h-[calc(100vh-210px)] min-h-[560px]">
         <div className={`${card} flex flex-col min-h-0 overflow-hidden`}>
           <div className="p-3 border-b border-slate-200 dark:border-slate-800 grid gap-2">
@@ -35,18 +68,63 @@ export function LiveVorschauSeite({ d, ich, toast }) {
                 {gruppen.map((x) => <option key={x.id} value={x.id}>{x.name} · {bereichName(x.bereich_id)}</option>)}
               </select></label>
             {g && <label className="flex flex-col gap-1 text-xs text-slate-500">Feature (optional)
-              <select className={input} value={f?.id || ""} onChange={(e) => setFid(e.target.value)}>
+              <select className={input} value={f?.id || ""} onChange={(e) => { setFid(e.target.value); setHinweis(null); }}>
                 <option value="">Ganze Gruppe</option>
                 {feats.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
               </select></label>}
             {!gruppen.length && <p className="text-xs text-slate-500">Du darfst in diesem Projekt keine Aufträge geben – die Vorschau kannst du trotzdem ansehen.</p>}
           </div>
-          {g ? <div className="flex-1 min-h-0 flex flex-col"><AuftragsChat key={`${g.id}-${f?.id || ""}`} g={g} f={f} d={d} ich={ich} darf={darf} toast={toast} eingebettet baustein={baustein} onBausteinFertig={() => setBaustein(null)} /></div>
-            : <div className="flex-1 grid place-items-center p-6 text-sm text-slate-500 text-center"><span><MousePointerClick className="w-5 h-5 mx-auto mb-2 text-orange-500" />Zuerst eine Gruppe wählen, dann rechts auf „Zeigen & kommentieren“ und auf das Element klicken.</span></div>}
+          {hinweis && <FolgeHinweis key={`${hinweis.art}|${hinweis.pfad || ""}|${hinweis.feature?.id || ""}`} h={hinweis} gruppen={gruppen} gruppeVon={gruppeVon} darfMerken={darfMerken}
+            onOeffnen={(x) => { oeffne(x); setHinweis(null); }} onMerken={merkenUndOeffnen}
+            onNein={() => { if (hinweis.pfad) nein.add(pfadNorm(hinweis.pfad)); setHinweis(null); }} onZu={() => setHinweis(null)} />}
+          {g ? <div className="flex-1 min-h-0 flex flex-col"><AuftragsChat key={`${g.id}-${f?.id || ""}`} g={g} f={f} d={d} ich={ich} darf={darf} toast={toast} eingebettet baustein={baustein} onBausteinFertig={() => setBaustein(null)} onEntwurf={onEntwurf} entwurfSpeicher={entwuerfe} /></div>
+            : <div className="flex-1 grid place-items-center p-6 text-sm text-slate-500 text-center"><span><MousePointerClick className="w-5 h-5 mx-auto mb-2 text-orange-500" />Zuerst eine Gruppe wählen oder rechts eine Seite öffnen, dann auf „Zeigen & kommentieren“ und auf das Element klicken.</span></div>}
         </div>
-        <LiveVorschau projekt={projekt} a={null} toast={toast} onBaustein={setBaustein} baustein={baustein} />
+        <LiveVorschau projekt={projekt} a={null} toast={toast} onBaustein={setBaustein} baustein={baustein} onSeite={onSeite} />
       </div>
     </section>);
+}
+
+// Hinweis über dem Chat (Entwurf 0.13.2): orange = du entscheidest, smaragd = erledigt (verschwindet nach 4 Sekunden)
+const HINWEIS_O = "mx-3 mt-3 rounded-xl border border-orange-400 bg-orange-50 dark:bg-orange-950/40 dark:border-orange-800 px-3 py-2.5 text-sm flex flex-wrap items-center gap-2";
+const HINWEIS_G = "mx-3 mt-3 rounded-xl border border-emerald-600 bg-emerald-50 dark:bg-emerald-950/40 dark:border-emerald-800 px-3 py-2.5 text-sm flex flex-wrap items-center gap-2";
+const KNOPF = `${btn} h-8 px-3 text-sm`;
+const KNOPF2 = `${ghost} h-8 px-3`;
+function FolgeHinweis({ h, gruppen, gruppeVon, darfMerken, onOeffnen, onMerken, onNein, onZu }) {
+  const liste = h.art === "auswahl" ? h.kandidaten : h.art === "vorschlag" ? h.auswahl : [];
+  const [wahl, setWahl] = useState(() => (h.art === "vorschlag" ? h.vorschlag?.id : h.kandidaten?.[0]?.id) || "");
+  const [busy, setBusy] = useState(false);
+  const x = liste.find((y) => y.id === wahl) || null;
+  if (h.art === "geoeffnet" || h.art === "gemerkt") return (
+    <div role="status" className={HINWEIS_G}><CircleCheck className="w-4 h-4 shrink-0 text-emerald-700 dark:text-emerald-400" aria-hidden="true" />
+      {h.art === "geoeffnet" ? <span>Links geöffnet: <b>{h.feature.name}</b></span> : <span>Gemerkt: <b>{h.feature.name}</b> gehört zu <span className="font-mono">{h.pfad}</span>.</span>}</div>);
+  if (h.art === "tippen") return (
+    <div role="status" className={HINWEIS_O}><Info className="w-4 h-4 shrink-0 text-orange-600" aria-hidden="true" />
+      <span className="flex-1 min-w-[180px]">Du tippst gerade. Rechts ist jetzt <b>{h.feature.name}</b> offen.</span>
+      <button type="button" className={KNOPF} onClick={() => onOeffnen(h.feature)}><ArrowRightLeft className="w-4 h-4" aria-hidden="true" />Zu {h.feature.name} wechseln</button>
+      <button type="button" className="p-1 rounded text-slate-500 hover:text-slate-800 dark:hover:text-slate-200" onClick={onZu} aria-label="Hinweis schließen"><X className="w-4 h-4" /></button></div>);
+  // Auswahl nach Gruppen geordnet (Reihenfolge wie oben im Feld „Gruppe“); beim Vorschlag zuerst die besten Treffer
+  const nachGruppe = gruppen.map((gr) => [gr, liste.filter((y) => y.gruppe_id === gr.id).sort((a, b) => a.name.localeCompare(b.name, "de"))]).filter(([, l]) => l.length);
+  const merken = h.art === "vorschlag" && darfMerken(x);
+  const los = async () => { if (!x) return; if (!merken) { onOeffnen(x); return; } setBusy(true); try { await onMerken(x, h.pfad); } finally { setBusy(false); } };
+  return (
+    <div role="status" className={`${HINWEIS_O} flex-col items-stretch`}>
+      <div className="flex items-start gap-2"><Info className="w-4 h-4 mt-0.5 shrink-0 text-orange-600" aria-hidden="true" />
+        <span>{h.art === "auswahl" ? <>Zu <span className="font-mono">{h.pfad}</span> passen mehrere Features. Welches willst du links öffnen?</>
+          : <>Für <span className="font-mono">{h.pfad}</span> ist noch kein Feature gemerkt.{" "}
+            {h.vorschlag ? <>Vorschlag: <b>{h.vorschlag.name}</b> (Gruppe {gruppeVon(h.vorschlag)?.name || h.vorschlag.gruppe_id})</> : "Wähle das passende Feature."}</>}</span></div>
+      <label className="flex flex-col gap-1 text-xs text-slate-500">{h.art === "auswahl" ? "Feature" : "Anderes Feature wählen"}
+        <select className={`${input} py-1.5 text-sm`} value={wahl} onChange={(e) => setWahl(e.target.value)}>
+          {!wahl && <option value="">– Feature wählen –</option>}
+          {h.art === "vorschlag" && h.vorschlag && <option value={h.vorschlag.id}>Vorschlag: {h.vorschlag.name}</option>}
+          {nachGruppe.map(([gr, l]) => <optgroup key={gr.id} label={gr.name}>{l.filter((y) => !(h.art === "vorschlag" && y.id === h.vorschlag?.id)).map((y) => <option key={y.id} value={y.id}>{y.name} · {y.id}</option>)}</optgroup>)}
+        </select></label>
+      <div className="flex flex-wrap gap-2">
+        <button type="button" className={KNOPF} disabled={!x || busy} onClick={los} title={merken ? `Öffnet ${x?.name || "das Feature"} und merkt ${h.pfad} als seine Seite` : undefined}>
+          {merken ? <Pin className="w-4 h-4" aria-hidden="true" /> : <ArrowRightLeft className="w-4 h-4" aria-hidden="true" />}{merken ? "Öffnen und merken" : "Öffnen"}</button>
+        <button type="button" className={KNOPF2} disabled={busy} onClick={onNein} title="Für diese Seite nicht mehr fragen, solange die Live-Vorschau offen ist">Nein</button>
+      </div>
+    </div>);
 }
 
 // ---------------- Feature-Arbeitsplatz (Doppelklick): Chat links, Live-Vorschau rechts ----------------
@@ -82,8 +160,10 @@ export function FeatureArbeitsplatz({ f, g, d, ich, darf, toast, onZurueck, onLo
 }
 
 // Live-Vorschau: echte Testseite des Auftrags (Cloudflare), meldet neue Stände, „Zeigen & kommentieren“ über den Vorschau-Helfer der App
-export function LiveVorschau({ projekt, a, f, darfMerken, toast, onBaustein, baustein }) {
+// onSeite(pfad) (optional, 0.13.2): meldet jeden Seitenwechsel der Testseite nach oben – nur der Menüpunkt Live-Vorschau nutzt es.
+export function LiveVorschau({ projekt, a, f, darfMerken, toast, onBaustein, baustein, onSeite }) {
   const url = vorschauUrl(projekt, a);
+  const onSeiteRef = useRef(onSeite); onSeiteRef.current = onSeite;
   // Befund S5 (01.11.2026): Zweig-Testseiten zeigen ungeprüften KI-Code und sprechen (Trainer to go) mit der echten Datenbank.
   // Erst nach ausdrücklichem Klick laden, dauerhaft warnen: hier nicht anmelden.
   const istZweig = !!(a?.zweig && projekt?.vorschau_domain && !ABGESCHLOSSEN.includes(a.stand));
@@ -140,7 +220,7 @@ export function LiveVorschau({ projekt, a, f, darfMerken, toast, onBaustein, bau
         const ent = designWahl.startsWith("e:") ? entwuerfe.find((x) => `e:${x.id}` === designWahl) : null;
         if (w && ent?.werte && typeof ent.werte === "object") w.postMessage({ cs: "design", werte: ent.werte }, herkunft);
       }
-      if (e.data.cs === "seite" && seiteOk(e.data.pfad)) setJetztSeite(e.data.pfad);
+      if (e.data.cs === "seite" && seiteOk(e.data.pfad)) { setJetztSeite(e.data.pfad); onSeiteRef.current?.(e.data.pfad); }
       if (e.data.cs === "baustein") {
         // Befund S4: nie den sichtbaren Text des Elements übernehmen (kann Namen von Kindern/Mitgliedern enthalten) – nur Name, Seite, Pfad
         // Review M1: Name nur als Baustein-Kennung (data-ds/data-cs bzw. Komponentenname), Seite nur der Pfad, Pfad nur Selektor-Zeichen

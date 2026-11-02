@@ -207,11 +207,19 @@ export function Zentrale({ d: alle, ich, toast, nurGlobal = false, onDesigner, s
   );
 }
 
-export function AuftragsChat({ g, f, d, ich, darf, toast, onLoeschen, kanal = "codeschmiede", baustein, onBausteinFertig, eingebettet, onKonzept }) {
+// onEntwurf(boolean): meldet, ob im Eingabefeld gerade ungesendeter Text steht (Live-Vorschau 0.13.2: dann wird links nicht gewechselt).
+// entwurfSpeicher (optional, Map im Speicher der Seite): Entwurf je Gruppe/Feature – bleibt beim Wechseln erhalten, solange die Seite offen ist.
+export function AuftragsChat({ g, f, d, ich, darf, toast, onLoeschen, kanal = "codeschmiede", baustein, onBausteinFertig, eingebettet, onKonzept, onEntwurf, entwurfSpeicher }) {
   const auftraege = d.auftraege.filter((a) => (f ? a.feature_id === f.id : a.gruppe_id === g.id));   // je Feature: Verlauf bleibt beim Verschieben
   const ids = auftraege.map((a) => a.id);
   const { nachrichten, log, erlaubnisse } = useAuftragDetails(ids);
-  const [text, setText] = useState(""); const [busy, setBusy] = useState(false); const [tab, setTab] = useState("gespraech");
+  const entwurfSchluessel = `${g.id}|${f?.id || ""}`;
+  const [text, setTextRoh] = useState(() => entwurfSpeicher?.get(entwurfSchluessel) || ""); const [busy, setBusy] = useState(false); const [tab, setTab] = useState("gespraech");
+  const setText = useCallback((t) => { setTextRoh(t); if (entwurfSpeicher) { if (String(t || "").trim()) entwurfSpeicher.set(entwurfSchluessel, t); else entwurfSpeicher.delete(entwurfSchluessel); } }, [entwurfSpeicher, entwurfSchluessel]);
+  const tippt = !!text.trim();
+  const onEntwurfRef = useRef(onEntwurf); onEntwurfRef.current = onEntwurf;
+  useEffect(() => { onEntwurfRef.current?.(tippt); }, [tippt]);
+  useEffect(() => () => { onEntwurfRef.current?.(false); }, []);
   const laufend = auftraege.find((a) => a.stand === "laeuft");
   const frage = auftraege.find((a) => a.stand === "frage");
   const kannAuftrag = darf(g.bereich_id, "auftraege");
