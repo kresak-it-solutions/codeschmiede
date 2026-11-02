@@ -57,6 +57,8 @@ Zusammengeführt wird nur auf Gerhards Wort (in der Codeschmiede: Knopf „Freig
   `docs/KONZEPT.md` (Web-Push, braucht Edge Function) – bis dahin bleibt die Regel offen.
   Bedienung (0.10.3): keine Schrift unter 12 px; Dialoge nur über `Dialog`/`useFokusfalle`, Bestätigungen über `useBestaetigen` (nie `window.confirm`);
   neue Seiten der Oberfläche in `web/src/seiten/`, Grundbausteine in `web/src/bausteine/grund.jsx`, Daten in `web/src/daten/` – `App.jsx` bleibt der Rahmen.
+  Seit 0.11.1 (B4/B9): Chats nur mit `web/src/bausteine/chat.jsx` (Bezug als Chip, Begriffe „Besprechen“ · „Als Auftrag“ · „Antworten“ nur für Rückfragen);
+  Laden/Leer/Fehler nur mit `web/src/bausteine/zustand.jsx` (Skeleton, eine Aktion, „Erneut versuchen“) – kein Spinner als Seiteninhalt, Ladefehler nie nur als Toast.
 - **2026-10-27 08:18/08:27 – Oberfläche 2.0 & Chat (Entwurf 1.1 frei, `docs/KONZEPT-OBERFLAECHE-2.md`):** Chat wie bei Claude mit eigenen Unterhaltungen,
   @Feature/#Gruppe und Anhängen; Oberfläche gruppiert und aufgeräumt; Limits per Knopf „Jetzt aktualisieren“ (kostenloser Abruf wie „/usage“, keine offizielle
   Schnittstelle – bricht er, Mini-Anfrage und sichtbarer Hinweis; Anmeldung nur im Speicher). Gebaut wird künftig nur noch über die Codeschmiede;

@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Scale, Loader2, Send, Search, FileText, Info } from "lucide-react";
+import { Scale, Loader2, Send, Search, FileText, Info, Hammer } from "lucide-react";
 import { supabase } from "./supabase";
 import { Markdown } from "./Markdown";
+import { Laden, Leerzustand, Fehlerzustand } from "./bausteine/zustand";
 
 // Regelwerk (Entwurf „Regelwerk in der Codeschmiede“ 2026-10-22, „fertig machen“ Gerhard 2026-10-23 15:53):
 // Alle Regeldateien des Projekts lesen, mit Claude darüber sprechen (Chat-Spalte rechts) und ändern – Änderungen laufen wie jeder
@@ -24,17 +25,20 @@ const art = (pfad) => REGELN.find(([r]) => r.test(pfad))?.[1];
 export default function Regelwerk({ d, ich, toast }) {
   const [liste, setListe] = useState(null); const [pfad, setPfad] = useState(null); const [inhalt, setInhalt] = useState(null);
   const [q, setQ] = useState(""); const [wunsch, setWunsch] = useState(""); const [busy, setBusy] = useState(false);
+  const [ladeFehler, setLadeFehler] = useState(null); const [inhaltFehler, setInhaltFehler] = useState(null); const [neu, setNeu] = useState(0);   // Befund B9
   const projekt = d.projekte.find((p) => p.id === d.projektId);
   useEffect(() => {
-    supabase.from("ws_dokumente").select("pfad, aktualisiert").eq("projekt_id", d.projektId).order("pfad").then(({ data }) => {
+    supabase.from("ws_dokumente").select("pfad, aktualisiert").eq("projekt_id", d.projektId).order("pfad").then(({ data, error }) => {
+      if (error) { setLadeFehler(error); return; }
+      setLadeFehler(null);
       const l = (data || []).filter((x) => art(x.pfad)).sort((a, b) => REGELN.findIndex(([r]) => r.test(a.pfad)) - REGELN.findIndex(([r]) => r.test(b.pfad)) || a.pfad.localeCompare(b.pfad));
       setListe(l); setPfad((p) => p || l[0]?.pfad || null);
     });
-  }, [d.projektId]);
+  }, [d.projektId, neu]);
   useEffect(() => {
-    if (!pfad) return; setInhalt(null);
-    supabase.from("ws_dokumente").select("inhalt, aktualisiert").eq("projekt_id", d.projektId).eq("pfad", pfad).maybeSingle().then(({ data }) => setInhalt(data || { inhalt: "" }));
-  }, [pfad, d.projektId]);
+    if (!pfad) return; setInhalt(null); setInhaltFehler(null);
+    supabase.from("ws_dokumente").select("inhalt, aktualisiert").eq("projekt_id", d.projektId).eq("pfad", pfad).maybeSingle().then(({ data, error }) => { if (error) setInhaltFehler(error); else setInhalt(data || { inhalt: "" }); });
+  }, [pfad, d.projektId, neu]);
   const kapitel = useMemo(() => (inhalt?.inhalt || "").split("\n").filter((z) => /^#{1,3}\s/.test(z)).map((z) => z.replace(/^#+\s*/, "")).slice(0, 40), [inhalt]);
   // Regel-Änderungen gehören in die globale Gruppe (gilt für das ganze Projekt); sonst die erste Gruppe mit Auftragsrecht
   const rolle = ich.rolle === "admin" ? "admin" : d.mitglieder.find((m) => m.projekt_id === d.projektId && m.benutzer_id === ich.id)?.rolle;
@@ -62,7 +66,8 @@ export default function Regelwerk({ d, ich, toast }) {
       <div className="grid gap-3 grid-cols-[minmax(0,1fr)] lg:grid-cols-[260px_minmax(0,1fr)]">
         <div className={`${card} p-2 flex flex-col gap-1 max-h-[70vh] overflow-auto`}>
           <label className="relative mb-1"><Search className="w-4 h-4 absolute left-2.5 top-2.5 text-slate-400" /><input className={`${input} pl-8`} placeholder="Regeldatei suchen" value={q} onChange={(e) => setQ(e.target.value)} /></label>
-          {!liste ? <Loader2 className="w-5 h-5 animate-spin text-emerald-700 m-3" /> : !gefiltert.length ? <p className="text-sm text-slate-500 p-2">Keine Regeldateien – der Abgleich läuft über die Werkstatt (alle 10 Minuten).</p>
+          {ladeFehler ? <Fehlerzustand klein titel="Regeldateien nicht geladen" fehler={ladeFehler} onErneut={() => setNeu((n) => n + 1)} />
+            : !liste ? <Laden zeilen={5} klein text="Regeldateien werden geladen" /> : !gefiltert.length ? <Leerzustand klein Symbol={FileText} titel={q ? "Keine Datei gefunden" : "Noch keine Regeldateien"} text={q ? "Anderer Suchbegriff?" : "Der Abgleich läuft über die Werkstatt (alle 10 Minuten)."} aktion={q ? { text: "Suche leeren", onClick: () => setQ("") } : null} />
             : gefiltert.map((x) => (
               <button key={x.pfad} type="button" aria-current={pfad === x.pfad} onClick={() => setPfad(x.pfad)} className={`text-left px-2.5 py-1.5 rounded-lg ${pfad === x.pfad ? "bg-emerald-50 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300" : "hover:bg-slate-50 dark:hover:bg-slate-800"}`}>
                 <div className="text-sm font-semibold break-all flex items-center gap-1.5"><FileText className="w-3.5 h-3.5 shrink-0" />{x.pfad}</div>
@@ -70,12 +75,12 @@ export default function Regelwerk({ d, ich, toast }) {
         </div>
         <div className="flex flex-col gap-3 min-w-0">
           {kapitel.length > 2 && <div className={`${card} p-3`}><div className="text-xs font-semibold text-slate-500 mb-1">Inhalt</div><div className="flex flex-wrap gap-1.5">{kapitel.map((k, i) => <span key={i} className="text-xs rounded-full bg-slate-100 dark:bg-slate-800 px-2 py-0.5">{k}</span>)}</div></div>}
-          <div className={`${card} p-4 sm:p-6 min-w-0`}>{!pfad ? <p className="text-sm text-slate-500">Links eine Datei wählen.</p> : !inhalt ? <Loader2 className="w-5 h-5 animate-spin text-emerald-700" /> : <Markdown text={inhalt.inhalt} />}</div>
+          <div className={`${card} p-4 sm:p-6 min-w-0`}>{!pfad ? <p className="text-sm text-slate-500">Links eine Datei wählen.</p> : inhaltFehler ? <Fehlerzustand titel="Datei nicht geladen" fehler={inhaltFehler} onErneut={() => setNeu((n) => n + 1)} /> : !inhalt ? <Laden art="text" zeilen={8} /> : <Markdown text={inhalt.inhalt} />}</div>
           {pfad && <div className={`${card} p-4 flex flex-col gap-2`}>
             <label htmlFor="cs-regel" className="text-sm font-semibold">Regel ändern oder ergänzen ({pfad})</label>
             <textarea id="cs-regel" className={`${input} min-h-[72px]`} value={wunsch} onChange={(e) => setWunsch(e.target.value)} placeholder="z. B. „Jede neue Seite braucht einen Handbuch-Eintrag“" />
             <div className="flex flex-wrap items-center gap-2"><span className="text-xs text-slate-500 flex-1">{zielGruppe ? `Wird Auftrag in „${zielGruppe.name}“ – die Werkstatt ändert die Datei auf einem eigenen Zweig.` : "Du hast in diesem Projekt kein Auftragsrecht."}</span>
-              <button type="button" className={btn} disabled={busy || !wunsch.trim() || !zielGruppe} onClick={senden}>{busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}Als Auftrag senden</button></div>
+              <button type="button" className={btn} disabled={busy || !wunsch.trim() || !zielGruppe} onClick={senden}>{busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Hammer className="w-4 h-4" />}Als Auftrag</button></div>
           </div>}
         </div>
       </div>

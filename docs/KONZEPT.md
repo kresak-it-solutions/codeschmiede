@@ -1,6 +1,6 @@
 # Codeschmiede – Konzept
 
-**Stand:** 2026-11-01 (zuletzt: Befunde Sicherheit/Logik/Bedienung, `docs/BEFUNDE-2026-11-01.md`) · angelegt 2026-10-22 · Wer: Gerhard Kresak (Anweisungen und Freigaben 2026-10-22 12:06–13:39), Claude (Konzept, Umsetzung)
+**Stand:** 2026-11-02 (zuletzt: Chat-Baustein, Zustände, Push, Design-Kennungen, Vorhaben – Rest der Befunde vom 01.11.) · angelegt 2026-10-22 · Wer: Gerhard Kresak (Anweisungen und Freigaben 2026-10-22 12:06–13:39), Claude (Konzept, Umsetzung)
 **Herkunft:** entstanden als „Trainer-to-go Programmierumgebung“ im Repo `trainer-to-go` (Zweig `feature/auftrags-zentrale`, Entwurf 0.4 freigegeben 12:37);
 seit 13:16 eigenes Programm für alle Projekte. Entwurf: `docs/entwurf-0.4.html`.
 
@@ -174,8 +174,27 @@ dem Klick „Verstanden, Vorschau anzeigen“ und zeigen dauerhaft „hier nicht
 ## Aufbau der Oberfläche im Code (seit 0.10.3, Befund B1)
 `web/src/App.jsx` = Rahmen, Kopfzeile, Navigation, Ansichten-Weiche · `web/src/seiten/*.jsx` = Seiten (Zentrale, Zu erledigen & Live, Live-Vorschau,
 Verwaltung, Verbrauch, Werkstatt, Anmelden, Kopfzeile) · `web/src/bausteine/grund.jsx` = Knopf-Klassen, Hilfen, `Badge`, `Toast`, `Dialog` (mit
-Fokusfalle), `BestaetigenRahmen`/`useBestaetigen`, `useFokusfalle` · `web/src/daten/werkstattDaten.js` = Live-Daten und Rechte. Übrige Bereiche
+Fokusfalle), `BestaetigenRahmen`/`useBestaetigen`, `useFokusfalle` · `web/src/bausteine/chat.jsx` = **ein Chat-Baustein** für alle Chats (seit 0.11.1, B4) ·
+`web/src/bausteine/zustand.jsx` = Lade-, Leer- und Fehlerzustand (seit 0.11.1, B9) · `web/src/daten/werkstattDaten.js` = Live-Daten und Rechte. Übrige Bereiche
 (Chat, Aufgaben, Designer …) haben wie bisher eigene Dateien.
+
+### Ein Chat-Baustein (seit 0.11.1, Befund B4)
+| Ort | Bezug-Chip | Knöpfe | Wohin |
+|---|---|---|---|
+| Menü „Chat“ | Projekt bzw. Konzept | Besprechen | `ws_claude_chat` (Unterhaltung), Anhänge `ws-chat` |
+| Konzept-Chat | Projekt · Konzept | Besprechen | `ws_claude_chat` ohne Unterhaltung |
+| Gruppen-/Feature-Chat (Zentrale, Live-Vorschau) | Gruppe bzw. Feature (+ Baustein) | Besprechen · Antworten (offene Rückfrage) · Als Auftrag (nur mit Baustein aus „Zeigen & kommentieren“) | Konzept-Chat · `ws_nachrichten` · `ws_auftraege` |
+| Design-Chat | Projekt · Design/Marke/Bausteine | Besprechen (Entwurf oben „Als Auftrag“) | `ws_design_chat` |
+| Baustein-Chat (Inspektor) | Baustein | Besprechen | `ws_design_chat` mit `[Baustein …]` |
+| Umdesign | Symbol bzw. Baustein | Besprechen (Entwurf unten „Als Auftrag …“) | `ws_design_chat` mit `[Umdesign …]` |
+| Chat zur Kachel | Kachel | Als Auftrag (Bestätigung in der Codeschmiede) | `ws_design_auftrag` |
+Begriffe fest: **Besprechen** = die KI antwortet, gebaut wird nichts; **Als Auftrag** = geht an die Werkstatt mit Freigabe und Prüfungen;
+**Antworten** = nur auf eine Rückfrage eines laufenden Auftrags. Enter = Hauptknopf, Umschalt+Enter = neue Zeile. Neue Chats nur mit diesem Baustein.
+
+### Lade-, Leer- und Fehlerzustand (seit 0.11.1, Befund B9)
+`Laden` (Skeleton, erst nach 300 ms) · `Leerzustand` (Symbol, ein Satz, höchstens eine Aktion) · `Fehlerzustand` (Meldung und „Erneut versuchen“).
+Beim ersten Laden ersetzt der Fehlerzustand den Inhalt; scheitert ein späteres Neuladen, bleibt der letzte Stand mit Hinweis stehen. Meldungen unten
+(Toast) nur noch für Ergebnisse von Klicks, nicht für Ladefehler.
 
 ## Offene Punkte aus den Befunden vom 01.11.2026 (`docs/BEFUNDE-2026-11-01.md`)
 - **L3 Push-Nachricht aufs Handy (Pflichtregel AGENTS.md, noch nicht gebaut).** Ohne neue Infrastruktur nicht sinnvoll machbar: Jede Push-Nachricht
@@ -193,7 +212,7 @@ Fokusfalle), `BestaetigenRahmen`/`useBestaetigen`, `useFokusfalle` · `web/src/d
   nimmt jeder PC der Person, die den Auftrag gestellt hat): eigenes Konzept mit Entwurf.
 - **L2 Schutzregel auf GitHub:** Die Codeschmiede wartet jetzt selbst auf alle Prüfläufe. Zusätzlich empfohlen: Schutzregel für `main` mit
   Pflicht-Prüflauf „Prüfung“ (Einstellung in GitHub, macht Gerhard bzw. der zusammenführende Chat).
-- **B4 ein Chat-Baustein** für alle Orte (Chat, Konzept, Feature, Design, Baustein, Kachel) mit Bezug als Chip, Begriffe „Besprechen“/„Als Auftrag“ –
-  zusammen mit dem Umbau des App-Designers (eigener Chat). **B9** Leer-/Lade-/Fehlerzustand als Bausteine mit „Erneut versuchen“.
+- ~~B4 ein Chat-Baustein~~ und ~~B9 Lade-/Leer-/Fehlerzustand~~: erledigt in 0.11.1. Rest: der Chat zur Kachel ist Oberfläche von Trainer to go
+  (`src/components/design/KachelChat.jsx`) – dort „Besprechen“/„Als Auftrag“ nachziehen (Auftrag im Projekt Trainer to go).
 - **L9 geprüft:** Der Kopplungs-Abgleich macht keine Mini-Anfragen (nur `--version`, `auth status`/`login status`, Limits von Codex ohne Anfrage).
 

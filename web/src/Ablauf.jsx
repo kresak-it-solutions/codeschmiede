@@ -6,6 +6,7 @@ import { supabase } from "./supabase";
 import { KiProtokoll } from "./KiAnbieter";
 import { Markdown } from "./Markdown";
 import { KonzeptWissen } from "./Konzept";
+import { Laden, Leerzustand, Fehlerzustand } from "./bausteine/zustand";
 
 // Ablauf & Dokumentation (Anweisung Gerhard 2026-10-23 14:11 „Mache einfach alles fertig“):
 // Zweige & Versionen, Prüfstand, Wissensdatenbank, Änderungsprotokoll, Dokumentation.
@@ -29,8 +30,11 @@ function useAbgleich(projektId, mitInhalt = false) {
         supabase.from("ws_dokumente").select(mitInhalt ? "pfad, sha, aktualisiert, inhalt" : "pfad, sha, aktualisiert").eq("projekt_id", projektId).order("pfad"),
         supabase.from("ws_abgleich").select("*").eq("projekt_id", projektId).maybeSingle(),
       ]);
-      if (!aus) setSt({ laden: false, zweige: z.data || [], dokumente: dk.data || [], abgleich: ab.data || null, fehlt: !!(z.error && /does not exist|schema cache/i.test(z.error.message)) });
-    })();
+      const fehlt = !!(z.error && /does not exist|schema cache/i.test(z.error.message));
+      // Befund B9: andere Fehler sichtbar mit „Erneut versuchen“
+      const fehler = fehlt ? null : z.error || dk.error || ab.error || null;
+      if (!aus) setSt({ laden: false, zweige: z.data || [], dokumente: dk.data || [], abgleich: ab.data || null, fehlt, fehler, neu: () => setTick((t) => t + 1) });
+    })().catch((e) => { if (!aus) setSt((s) => ({ ...s, laden: false, fehler: e, neu: () => setTick((t) => t + 1) })); });
     const kanal = supabase.channel(`abgleich-${projektId}-${Math.random()}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "ws_abgleich", filter: `projekt_id=eq.${projektId}` }, () => setTick((t) => t + 1)).subscribe();
     return () => { aus = true; supabase.removeChannel(kanal); };
@@ -39,6 +43,7 @@ function useAbgleich(projektId, mitInhalt = false) {
 }
 
 function AbgleichHinweis({ st }) {
+  if (st.fehler) return <Fehlerzustand klein titel="Stand aus GitHub nicht geladen" fehler={st.fehler} onErneut={st.neu} />;
   if (st.fehlt) return <p className="text-xs text-amber-700 dark:text-amber-300">Die Datenbank-Erweiterung 0011 (Projekt-Abgleich) ist noch nicht eingespielt.</p>;
   if (!st.abgleich) return <p className="text-xs text-slate-500 flex items-center gap-1.5"><Info className="w-3.5 h-3.5" />Noch kein Abgleich – sobald eine Werkstatt (Admin oder Entwickler) eingeschaltet ist, kommt der Stand innerhalb weniger Minuten.</p>;
   return <p className="text-xs text-slate-500 flex items-center gap-1.5"><RefreshCw className="w-3.5 h-3.5" />Stand aus GitHub: {fmt(st.abgleich.zeit)} · main <span className="font-mono">{st.abgleich.main_sha?.slice(0, 7)}</span> · alle 10 Minuten automatisch</p>;
@@ -75,8 +80,8 @@ export function ZweigeVersionen({ d }) {
           {[["arbeit", "Arbeitszweige"], ["version", "Versionen"], ["alle", "Alle"]].map(([k, t]) => <button key={k} type="button" aria-pressed={filter === k} onClick={() => setFilter(k)} className={`h-8 px-3 rounded-lg text-sm font-semibold border ${filter === k ? "border-emerald-600 bg-emerald-50 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300" : "border-slate-200 dark:border-slate-800"}`}>{t}</button>)}
           <label className="relative ml-auto w-full sm:w-64"><Search className="w-4 h-4 absolute left-2.5 top-2.5 text-slate-400" /><input className={`${input} pl-8`} placeholder="Zweig suchen" value={q} onChange={(e) => setQ(e.target.value)} /></label>
         </div>
-        {st.laden ? <div className="grid place-items-center py-10"><Loader2 className="w-5 h-5 animate-spin text-emerald-700" /></div>
-          : !liste.length ? <p className="p-6 text-sm text-slate-500">Keine Zweige in dieser Auswahl.</p>
+        {st.laden ? <Laden zeilen={5} text="Zweige werden geladen" />
+          : !liste.length ? <Leerzustand klein Symbol={GitBranch} titel="Keine Zweige in dieser Auswahl" text={q ? "Anderer Suchbegriff?" : "Mit „Alle“ siehst du jeden Zweig."} aktion={q ? { text: "Suche leeren", onClick: () => setQ("") } : filter !== "alle" ? { text: "Alle zeigen", onClick: () => setFilter("alle") } : null} />
           : <div className="overflow-x-auto"><table className="w-full text-sm">
             <thead className="bg-slate-50 dark:bg-slate-950 text-xs text-slate-500"><tr><th className="text-left px-3 py-2">Zweig</th><th className="text-left px-3 py-2">Letzter Stand</th><th className="text-left px-3 py-2 whitespace-nowrap">Zu main</th><th className="text-left px-3 py-2">Auftrag</th><th /></tr></thead>
             <tbody>{liste.map((z) => {
@@ -142,15 +147,15 @@ export function Pruefstand({ d }) {
 
 // ---------- Dokumente (Wissensdatenbank, Änderungsprotokoll, Dokumentation) ----------
 function useDokument(projektId, pfad) {
-  const [st, setSt] = useState({ laden: true, inhalt: "" });
+  const [st, setSt] = useState({ laden: true, inhalt: "" }); const [tick, setTick] = useState(0);
   useEffect(() => {
     let aus = false; setSt({ laden: true, inhalt: "" });
     if (!pfad) { setSt({ laden: false, inhalt: "" }); return undefined; }
     supabase.from("ws_dokumente").select("inhalt, aktualisiert, sha").eq("projekt_id", projektId).eq("pfad", pfad).maybeSingle()
-      .then(({ data }) => { if (!aus) setSt({ laden: false, inhalt: data?.inhalt || "", da: !!data, aktualisiert: data?.aktualisiert }); });
+      .then(({ data, error }) => { if (!aus) setSt(error ? { laden: false, inhalt: "", fehler: error } : { laden: false, inhalt: data?.inhalt || "", da: !!data, aktualisiert: data?.aktualisiert }); });
     return () => { aus = true; };
-  }, [projektId, pfad]);
-  return st;
+  }, [projektId, pfad, tick]);
+  return { ...st, neu: () => setTick((t) => t + 1) };
 }
 const speichern = (name, text) => {
   const url = URL.createObjectURL(new Blob([text], { type: "text/markdown;charset=utf-8" }));
@@ -172,7 +177,7 @@ function DokAnsicht({ d, pfad, icon, titel, text, leer, extra }) {
       <AbgleichHinweis st={st} />
       {extra}
       <div className={`${card} p-4 sm:p-6 min-w-0`}>
-        {dok.laden ? <Loader2 className="w-5 h-5 animate-spin text-emerald-700" /> : dok.da ? <Markdown text={dok.inhalt} suche={q} /> : <p className="text-sm text-slate-500">{leer}</p>}
+        {dok.laden ? <Laden art="text" zeilen={8} /> : dok.fehler ? <Fehlerzustand fehler={dok.fehler} onErneut={dok.neu} /> : dok.da ? <Markdown text={dok.inhalt} suche={q} /> : <Leerzustand klein Symbol={icon} titel="Noch nichts da" text={leer} />}
       </div>
     </section>);
 }
@@ -193,13 +198,14 @@ export function Wissensdatenbank({ d }) {
 
 export function Aenderungsprotokoll({ d }) {
   const [quelle, setQuelle] = useState("projekt");
-  const [cs, setCs] = useState({ laden: false, inhalt: "" });
+  const [cs, setCs] = useState({ laden: false, inhalt: "" }); const [csTick, setCsTick] = useState(0);
   useEffect(() => {
     if (quelle !== "codeschmiede" || cs.inhalt) return undefined;
     setCs({ laden: true, inhalt: "" });
     fetch("https://raw.githubusercontent.com/kresak-it-solutions/codeschmiede/main/docs/CHANGELOG.md", { cache: "no-store" })
-      .then((r) => (r.ok ? r.text() : "")).then((t) => setCs({ laden: false, inhalt: t })).catch(() => setCs({ laden: false, inhalt: "" }));
-  }, [quelle, cs.inhalt]);
+      .then((r) => { if (!r.ok) throw new Error(`GitHub antwortet mit ${r.status}`); return r.text(); })
+      .then((t) => setCs({ laden: false, inhalt: t })).catch((e) => setCs({ laden: false, inhalt: "", fehler: e }));
+  }, [quelle, cs.inhalt, csTick]);
   const schalter = (
     <div className="flex gap-2">{[["projekt", "Projekt"], ["codeschmiede", "Codeschmiede"], ["ki", "KI-Protokoll"]].map(([k, t]) => <button key={k} type="button" aria-pressed={quelle === k} onClick={() => setQuelle(k)} className={`h-8 px-3 rounded-lg text-sm font-semibold border ${quelle === k ? "border-emerald-600 bg-emerald-50 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300" : "border-slate-200 dark:border-slate-800"}`}>{t}</button>)}</div>);
   if (quelle === "projekt") return <DokAnsicht d={d} pfad="docs/CHANGELOG.md" icon={History} titel="Änderungsprotokoll" extra={schalter}
@@ -214,7 +220,7 @@ export function Aenderungsprotokoll({ d }) {
     <section className="flex flex-col gap-3" aria-label="Änderungsprotokoll Codeschmiede">
       <Kopf icon={History} titel="Änderungsprotokoll" text="Änderungen an der Codeschmiede selbst." />
       {schalter}
-      <div className={`${card} p-4 sm:p-6 min-w-0`}>{cs.laden ? <Loader2 className="w-5 h-5 animate-spin text-emerald-700" /> : cs.inhalt ? <Markdown text={cs.inhalt} /> : <p className="text-sm text-slate-500">Konnte nicht geladen werden.</p>}</div>
+      <div className={`${card} p-4 sm:p-6 min-w-0`}>{cs.laden ? <Laden art="text" zeilen={8} /> : cs.inhalt ? <Markdown text={cs.inhalt} /> : <Fehlerzustand fehler={cs.fehler || "Leere Antwort"} onErneut={() => setCsTick((t) => t + 1)} />}</div>
     </section>);
 }
 
@@ -240,11 +246,11 @@ export function Dokumentation({ d }) {
       <div className="grid gap-3 grid-cols-[minmax(0,1fr)] lg:grid-cols-[280px_minmax(0,1fr)]">
         <div className={`${card} p-2 flex flex-col gap-1 max-h-[70vh] overflow-auto`}>
           <label className="relative mb-1"><Search className="w-4 h-4 absolute left-2.5 top-2.5 text-slate-400" /><input className={`${input} pl-8`} placeholder="Datei suchen" value={q} onChange={(e) => setQ(e.target.value)} /></label>
-          {st.laden ? <Loader2 className="w-5 h-5 animate-spin text-emerald-700 m-3" /> : !liste.length ? <p className="text-sm text-slate-500 p-2">Keine Dokumente.</p>
+          {st.laden ? <Laden zeilen={5} klein /> : !liste.length ? <Leerzustand klein Symbol={FileText} titel={q ? "Keine Datei gefunden" : "Keine Dokumente"} text={q ? "Anderer Suchbegriff?" : "Der Abgleich holt sie aus main."} aktion={q ? { text: "Suche leeren", onClick: () => setQ("") } : null} />
             : liste.map((x) => <button key={x.pfad} type="button" aria-current={pfad === x.pfad} onClick={() => setPfad(x.pfad)} className={`text-left px-2.5 py-1.5 rounded-lg text-sm break-all ${pfad === x.pfad ? "bg-emerald-50 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 font-semibold" : "hover:bg-slate-50 dark:hover:bg-slate-800"}`}>{x.pfad}</button>)}
         </div>
         <div className={`${card} p-4 sm:p-6 min-w-0`}>
-          {!pfad ? <p className="text-sm text-slate-500">Links eine Datei wählen.</p> : dok.laden ? <Loader2 className="w-5 h-5 animate-spin text-emerald-700" />
+          {!pfad ? <p className="text-sm text-slate-500">Links eine Datei wählen.</p> : dok.laden ? <Laden art="text" zeilen={8} /> : dok.fehler ? <Fehlerzustand fehler={dok.fehler} onErneut={dok.neu} />
             : <><div className="flex items-center gap-2 mb-3"><span className="font-mono text-xs text-slate-500 break-all flex-1">{pfad} · {fmt(dok.aktualisiert)}</span><button type="button" className={ghost} onClick={() => speichern(pfad.split("/").pop(), dok.inhalt)}><Download className="w-4 h-4" />Datei</button></div><Markdown text={dok.inhalt} /></>}
         </div>
       </div>

@@ -1,5 +1,5 @@
 import React, { Suspense, lazy, useCallback, useEffect, useState } from "react";
-import { AlertTriangle, Bell, BookOpen, ChevronDown, ClipboardList, Code2, Cpu, Download, Eye, Gauge, GitBranch, Globe, History, Inbox, KeyRound, Layers, ListChecks, Loader2, Menu, MessageSquare, Palette, Plug, Scale, Search, Settings, ShieldCheck, Wrench } from "lucide-react";
+import { AlertTriangle, Bell, BookOpen, ChevronDown, ClipboardList, Code2, Cpu, Download, Eye, Gauge, GitBranch, Globe, History, Inbox, KeyRound, Layers, ListChecks, Menu, MessageSquare, Palette, Plug, Plus, Scale, Search, Settings, ShieldCheck, Wrench } from "lucide-react";
 import { Aenderungsprotokoll, Dokumentation, Pruefstand, Wissensdatenbank, ZweigeVersionen } from "./Ablauf";
 import Anbindungen, { NeuesProjektAssistent } from "./ProjektArten";
 import { Anmelden } from "./seiten/Anmelden";
@@ -18,6 +18,7 @@ import { KonzeptAuto } from "./Konzept";
 import { LiveVorschauSeite } from "./seiten/LiveVorschau";
 import Regelwerk from "./Regelwerk";
 import { Toast, card, merke, BestaetigenRahmen } from "./bausteine/grund";
+import { Laden, Leerzustand, Fehlerzustand } from "./bausteine/zustand";
 import { Verbrauch, VerbrauchKurz } from "./seiten/Verbrauch";
 import { WS_ICON } from "./config";
 import { Zentrale } from "./seiten/Zentrale";
@@ -62,7 +63,7 @@ export default function App() {
     const t = (e) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") { e.preventDefault(); setSucheOffen(true); } };
     window.addEventListener("keydown", t); return () => window.removeEventListener("keydown", t);
   }, []);
-  if (sitzung === undefined || (sitzung && ich === undefined)) return <Zentriert><Loader2 className="w-6 h-6 animate-spin text-emerald-700" /></Zentriert>;
+  if (sitzung === undefined || (sitzung && ich === undefined)) return <Zentriert><div className="w-full max-w-sm"><Laden zeilen={3} text="Codeschmiede startet" /></div></Zentriert>;
   if (!sitzung) return <Anmelden />;
   if (!ich) return <EinladungAnnehmen sitzung={sitzung} onFertig={ladeIch} />;
 
@@ -139,8 +140,10 @@ export default function App() {
               {daten.live === "an" ? "Live synchronisiert" : daten.live === "getrennt" ? "Live-Verbindung getrennt" : "Verbinde …"}</span>
           </div>}
           {aboOffen && <Suspense fallback={null}><AboLimits d={daten} ich={ich} toast={setToast} onSchliessen={() => setAboOffen(false)} onVerbrauch={() => { setAboOffen(false); geh("verbrauch"); }} /></Suspense>}
-          {daten.laden ? <div className="grid place-items-center py-20"><Loader2 className="w-6 h-6 animate-spin text-emerald-700" /></div>
-            : !daten.projektId ? <div className={`${card} p-8 text-slate-500`}>Du bist noch keinem Projekt zugeordnet. Der Admin nimmt dich in ein Projekt auf.</div>
+          {daten.ladeFehler && !daten.geladen ? <Fehlerzustand titel="Die Daten der Codeschmiede konnten nicht geladen werden" fehler={daten.ladeFehler} onErneut={daten.holen} />
+            : daten.laden ? <Laden zeilen={5} text="Daten der Codeschmiede werden geladen" />
+            : !daten.projektId ? <div className={card}><Leerzustand titel="Noch kein Projekt" text="Du bist noch keinem Projekt zugeordnet. Der Admin nimmt dich in ein Projekt auf."
+                aktion={ich.rolle === "admin" ? { text: "Neues Projekt", Symbol: Plus, onClick: () => setNeuesProjekt(true) } : null} /></div>
             : ansicht === "chat" ? <Chat key={daten.projektId} d={daten} ich={ich} toast={setToast} start={chatStart} onFeature={(f) => { setOeffne({ f: f.id, g: f.gruppe_id, n: Date.now() }); geh("zentrale"); }} />
             : ansicht === "zentrale" ? <><Kennzahlen d={daten} onChat={() => geh("chat")} onErledigen={() => geh("erledigen")} /><Zentrale key={daten.projektId} d={daten} ich={ich} toast={setToast} onDesigner={() => geh("designer")} start={oeffne} /></>
             : ansicht === "erledigen" ? <ZuErledigen key={daten.projektId} d={daten} ich={ich} toast={setToast} onOeffne={(a) => { setOeffne({ f: a.feature_id, g: a.gruppe_id, n: Date.now() }); geh("zentrale"); }} />
@@ -153,8 +156,8 @@ export default function App() {
             : ansicht === "wissen" ? <Wissensdatenbank key={daten.projektId} d={daten} />
             : ansicht === "log" ? <Aenderungsprotokoll key={daten.projektId} d={daten} />
             : ansicht === "doku" ? <Dokumentation key={daten.projektId} d={daten} />
-            : ansicht === "fehler" ? <Fehler key={daten.projektId} d={daten} ich={ich} toast={setToast} onAuftrag={() => geh("zentrale")} />
-            : ansicht === "code" ? <CodeEditor key={daten.projektId} d={daten} ich={ich} toast={setToast} onAuftrag={() => geh("zentrale")} />
+            : ansicht === "fehler" ? <Fehler key={daten.projektId} d={daten} ich={ich} toast={setToast} onAuftrag={() => geh("zentrale")} onAnbindungen={() => geh("anbindungen")} />
+            : ansicht === "code" ? <CodeEditor key={daten.projektId} d={daten} ich={ich} toast={setToast} onAuftrag={() => geh("zentrale")} onAnbindungen={() => geh("anbindungen")} />
             : ansicht === "anbindungen" ? <Anbindungen key={daten.projektId} d={daten} ich={ich} toast={setToast} onVorschau={() => geh("vorschau")} />
             : ansicht === "vorschau" ? <LiveVorschauSeite key={daten.projektId} d={daten} ich={ich} toast={setToast} />
             : ansicht === "designer" ? <Designer key={daten.projektId} d={daten} ich={ich} toast={setToast} />

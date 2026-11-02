@@ -1,11 +1,9 @@
 import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Palette, Shapes, Stamp, Save, Send, Copy, Plus, Trash2, Undo2, Redo2, History, GitCompareArrows, Monitor, Tablet, Smartphone,
-  Sun, Moon, LayoutGrid, CheckCheck, CircleCheck, CircleAlert, TriangleAlert, Loader2, Bot, ShieldCheck, Sparkles, Check, X, ExternalLink, LayoutTemplate, Home, Users, Calendar, Trophy, Settings, Bell, Search, Menu,
-} from "lucide-react";
+  Sun, Moon, LayoutGrid, CheckCheck, CircleCheck, CircleAlert, TriangleAlert, Loader2, Bot, ShieldCheck, Sparkles, Check, X, ExternalLink, LayoutTemplate, Home, Users, Calendar, Trophy, Settings, Bell, Search, Menu, Hammer } from "lucide-react";
 import { supabase } from "./supabase";
 import { useKiName } from "./kiName";
-import { useAutoHoehe } from "./autoHoehe";
 import { BausteineModus, MarkeModus, BAUSTEIN_BASIS, bausteinWerteBereinigen } from "./DesignerBausteine";
 import { MARKE_BASIS, Logo as MarkeLogo, LogoZeichen } from "./Logo";
 import GeraeteRahmen, { geraetVonBreite } from "./GeraeteRahmen";
@@ -15,9 +13,11 @@ const Uebernehmen = lazy(() => import("./Uebernehmen"));   // App-Designer 2.0 �
 const AppDesigner3 = lazy(() => import("./designer/AppDesigner3"));   // App-Designer 3.0 (Design-Entwurf 2.0, 01.11.2026)
 import { useDesignSystem } from "./designer/useDesignSystem";
 import { useBestaetigen, useFokusfalle, useEscape } from "./bausteine/grund";
+import { ChatRahmen, ChatKopf, ChatVerlauf, ChatNachricht, ChatWartet, ChatEingabe } from "./bausteine/chat";
 import { useBausteinDesigner, BausteinInspektor } from "./BausteinInspektor";
 import { designFrageBeantworten } from "./designFrage";
 import { APP_ARTEN, ART_BASIS, ArtEinstellungen, ArtMuster, beispieleBereinigen, beispieleFuer, menueSymbol } from "./DesignerArten";
+import { Laden } from "./bausteine/zustand";
 
 // App-Designer · Etappe 1 (Entwurf 0.9, freigegeben von Gerhard 2026-10-22 22:40) · Etappe 2: Chat mit Claude + erweiterte Prüfungen (2026-10-23)
 // Ein Grunddesign je Projekt (nicht je Rolle). Ändern → Entwurf speichern (jede Fassung bleibt) → vergleichen → als Auftrag senden.
@@ -317,17 +317,17 @@ export default function Designer({ d, ich, toast }) {
           {aktiv && bearbeitbar && <button type="button" className={ghost} title="Entwurf verwerfen" onClick={verwerfen}><Trash2 className="w-4 h-4" /></button>}
           {bearbeitbar && <button type="button" className={ghost} onClick={speichern} disabled={arbeit || (!!aktiv && !geaendert)}><Save className="w-4 h-4" />Speichern</button>}
           {aktiv && bearbeitbar && <button type="button" className={btn} disabled={arbeit || geaendert} title={geaendert ? "Erst speichern" : ""}
-            onClick={() => setDialog({ art: "senden" })}><Send className="w-4 h-4" />Als Auftrag senden</button>}
+            onClick={() => setDialog({ art: "senden" })}><Hammer className="w-4 h-4" />Als Auftrag</button>}
         </div></>}
       </div>
       {!neu3 && !laden && !aktiv && !live && <p className="text-sm text-slate-600 dark:text-slate-300">Noch kein Grunddesign {entwuerfe.some((e) => e.stand === "gesendet") ? "umgesetzt (ein Entwurf ist als Auftrag unterwegs)" : "gesendet"} – der Editor zeigt die Ausgangswerte der Codeschmiede, nicht unbedingt das, was die App heute zeigt.</p>}
       {!darf && <p className="text-sm text-slate-500">Nur ansehen: Gestalten dürfen Entwickler mit dem Recht „Aufträge geben“ im Bereich der Design-Gruppe.</p>}
       {!neu3 && fest && <p className="text-sm text-slate-600 dark:text-slate-300">Dieser Entwurf ist {STAND_TXT[aktiv.stand].toLowerCase()} und damit fest{aktiv.auftrag_id ? ` (Auftrag #${aktiv.auftrag_id})` : ""}. Für Änderungen eine Kopie anlegen.</p>}
 
-      {neu3 ? <Suspense fallback={<p className="text-sm text-slate-500 p-4">Lädt …</p>}><AppDesigner3 projekt={projekt} ds={ds} ansicht={modus} darf={darf} toast={toast} onFreigabe={() => setModus("uebernehmen")} /></Suspense>
-      : modus === "uebernehmen" ? <Suspense fallback={<p className="text-sm text-slate-500 p-4">Lädt …</p>}><Uebernehmen projekt={projekt} d={d} ich={ich} werte={werte} dunkel={dunkel} darf={darf} toast={toast}
+      {neu3 ? <Suspense fallback={<Laden art="flaeche" />}><AppDesigner3 projekt={projekt} ds={ds} ansicht={modus} darf={darf} toast={toast} onFreigabe={() => setModus("uebernehmen")} /></Suspense>
+      : modus === "uebernehmen" ? <Suspense fallback={<Laden zeilen={4} />}><Uebernehmen projekt={projekt} d={d} ich={ich} werte={werte} dunkel={dunkel} darf={darf} toast={toast}
           entwuerfe={entwuerfe} sofortAnzahl={sofortAnzahl} onFreigabeOffen={setSofortAnzahl} onGrunddesign={(e) => { setModus("grund"); oeffne(e); }} /></Suspense>
-      : modus === "seiten" ? <Suspense fallback={<p className="text-sm text-slate-500 p-4">Lädt …</p>}><SeitenModus key={seitenTab || "start"} tab={seitenTab} projekt={projekt} d={d} ich={ich} werte={werte} dunkel={dunkel} darf={darf} toast={toast} /></Suspense> : (
+      : modus === "seiten" ? <Suspense fallback={<Laden art="flaeche" />}><SeitenModus key={seitenTab || "start"} tab={seitenTab} projekt={projekt} d={d} ich={ich} werte={werte} dunkel={dunkel} darf={darf} toast={toast} /></Suspense> : (
         <div className="grid gap-3 grid-cols-[minmax(0,1fr)] xl:grid-cols-[320px_minmax(0,1fr)_280px] lg:grid-cols-[300px_minmax(0,1fr)]">
           {modus === "bausteine" ? <BausteineModus w={werte} aendere={aendere} bearbeitbar={bearbeitbar} darf={darf} projekt={projekt} d={d} ich={ich} toast={toast} dunkel={dunkel} Testseite={Testseite} breite={GERAETE[geraet][0]} onChat={zumChat} bausteinEntwurf={bausteinEntwurf} setBausteinEntwurf={setBausteinEntwurf} bs={bs} />
             : modus === "marke" ? <MarkeModus w={werte} aendere={aendere} bearbeitbar={bearbeitbar} projekt={projekt} ich={ich} toast={toast} />
@@ -367,7 +367,7 @@ export default function Designer({ d, ich, toast }) {
           </aside>
         </div>)}
 
-      {laden && <Loader2 className="w-5 h-5 animate-spin text-emerald-700" />}
+      {laden && <Laden zeilen={3} klein text="Design wird geladen" />}
       {dialog?.art === "neu" && <NeuDialog vorschlag={aktiv ? `${aktiv.name} – Kopie` : ""} onClose={() => setDialog(null)} onOk={(n) => { setDialog(null); neu(n, dialog.von); }} />}
       {dialog?.art === "versionen" && aktiv && <Versionen entwurf={aktiv} onClose={() => setDialog(null)} onHolen={(w, nr) => {
         if (!bearbeitbar) { toast("Entwurf ist fest – lege eine Kopie an"); return; }
@@ -580,7 +580,7 @@ function NeuDialog({ vorschlag, onClose, onOk }) {
 function Versionen({ entwurf, onClose, onHolen }) {
   const [v, setV] = useState(null);
   useEffect(() => { supabase.from("ws_design_versionen").select("*").eq("entwurf_id", entwurf.id).order("nr", { ascending: false }).then(({ data }) => setV(data || [])); }, [entwurf.id]);
-  return <Hulle titel={`Versionen · ${entwurf.name}`} onClose={onClose}>{!v ? <Loader2 className="w-5 h-5 animate-spin" /> : (
+  return <Hulle titel={`Versionen · ${entwurf.name}`} onClose={onClose}>{!v ? <Laden zeilen={4} klein text="Versionen werden geladen" /> : (
     <ul className="divide-y divide-slate-200 dark:divide-slate-800">
       {v.map((x) => <li key={x.id} className="py-2 flex items-center gap-3 text-sm"><b>Version {x.nr}</b><span className="text-slate-500">{fmt(x.erstellt)}</span><button type="button" className={`${ghost} ml-auto`} onClick={() => onHolen(x.werte, x.nr)}>Zurückholen</button></li>)}
     </ul>)}<div className="flex justify-end mt-3"><button type="button" className={ghost} onClick={onClose}>Schließen</button></div></Hulle>;
@@ -609,7 +609,7 @@ function Pruefliste({ befunde, rot, hinweise, onFragen, kiName = "Claude" }) {
   return (
     <div className="p-3 overflow-auto space-y-3">
       <p className="text-sm">{rot ? <b className="text-red-700 dark:text-red-300">{rot} Pflicht-Prüfung{rot === 1 ? "" : "en"} offen</b> : <b className="text-green-700 dark:text-green-400">Alle Pflicht-Prüfungen grün</b>}{hinweise ? <span className="text-amber-700 dark:text-amber-400"> · {hinweise} Hinweis{hinweise === 1 ? "" : "e"}</span> : null}</p>
-      {(rot > 0 || hinweise > 0) && <button type="button" className={`${ghost} w-full`} onClick={onFragen}><Sparkles className="w-4 h-4" />{kiName} um eine Lösung bitten</button>}
+      {(rot > 0 || hinweise > 0) && <button type="button" className={`${ghost} w-full`} onClick={onFragen}><Sparkles className="w-4 h-4" />Lösung besprechen</button>}
       {gruppen.map((g) => (
         <section key={g}><h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">{g}</h4>
           <ul className="space-y-1.5 text-sm">{befunde.filter((b) => b.gruppe === g).map((b) => (
@@ -630,10 +630,8 @@ const IDEEN_START = ["Lass uns das Design von Grund auf planen", "Schlag mir 3 G
 const IDEEN = ["Mach die Knöpfe besser lesbar", "Wärmer und freundlicher, aber seriös", "Moderner Dunkelmodus", "Löse die offenen Prüfungen", "Passt das für Dorf- und Profivereine?"];
 function DesignChat({ d, ich, projekt, entwurf, werte, befunde, darf, toast, onUebernehmen, modus = "grund", text, setText, start = false }) {
   const ki = useKiName(projekt.id, "design");
-  const chatFeld = useRef(null); useAutoHoehe(chatFeld, text);
   const [liste, setListe] = useState([]);
   const [senden, setSenden] = useState(false);
-  const ende = React.useRef(null);
   const holen = useCallback(async () => {
     let q = supabase.from("ws_design_chat").select("*").eq("projekt_id", projekt.id).order("id", { ascending: false }).limit(200);
     q = entwurf ? q.eq("entwurf_id", entwurf.id) : q.is("entwurf_id", null);
@@ -648,7 +646,6 @@ function DesignChat({ d, ich, projekt, entwurf, werte, befunde, darf, toast, onU
     const ch = supabase.channel(`cs-design-chat-${projekt.id}-${entwurf?.id || "ohne"}`).on("postgres_changes", { event: "*", schema: "public", table: "ws_design_chat" }, holen).subscribe();
     return () => { supabase.removeChannel(ch); };
   }, [holen, projekt.id, entwurf]);
-  useEffect(() => { ende.current?.scrollIntoView({ block: "end" }); }, [liste.length]);
   const werkstattAn = d.pcs.some((p) => p.benutzer_id === ich.id && p.an);
   const wartet = liste.filter((m) => !m.frage_id && m.von === ich.id && ["offen", "laeuft"].includes(m.stand));
   const schicke = async (t) => {
@@ -669,41 +666,33 @@ function DesignChat({ d, ich, projekt, entwurf, werte, befunde, darf, toast, onU
     if (error) toast(fehler(error)); else toast(e === "uebernommen" ? "Vorschlag übernommen – zum Behalten speichern" : "Vorschlag abgelehnt");
   };
   const fragen = Object.fromEntries(liste.filter((m) => !m.frage_id).map((m) => [m.id, m]));
+  const bezug = [{ art: "projekt", name: projekt.name }, modus === "bausteine" ? { art: "baustein", name: "alle" } : { art: "design", name: entwurf ? entwurf.name : modus === "marke" ? "Marke" : "Grunddesign" }];
   return (
-    <div className="flex flex-col flex-1 min-h-0">
-      <div className="flex-1 overflow-auto p-3 space-y-2.5 text-sm">
+    <ChatRahmen className="flex-1" label={`Design-Chat mit ${ki.name}`}>
+      <ChatKopf bezug={bezug} />
+      <ChatVerlauf anzahl={liste.length}>
         {!liste.length && (start
-          ? <div className="rounded-xl border border-emerald-200 dark:border-emerald-900 bg-emerald-50/60 dark:bg-emerald-950/30 p-3 space-y-1.5 text-slate-700 dark:text-slate-200">
+          ? <div className="rounded-xl border border-emerald-200 dark:border-emerald-900 bg-emerald-50/60 dark:bg-emerald-950/30 p-3 space-y-1.5 text-sm text-slate-700 dark:text-slate-200">
               <p className="font-display font-bold text-[15px] flex items-center gap-1.5"><Sparkles className="w-4 h-4 text-emerald-700" />Design von Anfang an planen</p>
               <p>Für {projekt.name} gibt es noch kein Design – genau richtig, um damit anzufangen. Erzähl, für wen die App ist und wie sie wirken soll. {ki.name} stellt ein paar Fragen und schlägt dann ein komplettes Grunddesign vor (Farben, Schrift, Formen, Menü), das du mit einem Klick übernimmst.</p>
               <p className="text-xs text-slate-500">Nichts geht live, bevor du einen Entwurf als Auftrag sendest.</p></div>
-          : <div className="text-slate-500 space-y-2"><p>Frag {ki.name} zum Design{entwurf ? ` von „${entwurf.name}“` : ""}. {ki.name} erklärt und schlägt Werte vor – übernommen wird nur, was du anklickst.</p></div>)}
+          : <p className="text-sm text-slate-500">Frag {ki.name} zum Design{entwurf ? ` von „${entwurf.name}“` : ""}. {ki.name} erklärt und schlägt Werte vor – übernommen wird nur, was du anklickst.</p>)}
         {liste.map((m) => m.frage_id ? (
-          <div key={m.id} className="rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 p-2.5 max-w-[95%]">
-            <div className="text-xs font-bold text-slate-500 flex items-center gap-1"><Bot className="w-3.5 h-3.5" />{ki.von(m.ki)}{fragen[m.frage_id] && fragen[m.frage_id].von !== ich.id ? ` · über die Werkstatt von ${d.benutzer.find((u) => u.id === fragen[m.frage_id].von)?.name || "Mitglied"}` : ""}</div>
+          <ChatNachricht key={m.id} seite="ki" kopf={<>{ki.von(m.ki)}{fragen[m.frage_id] && fragen[m.frage_id].von !== ich.id ? ` · über die Werkstatt von ${d.benutzer.find((u) => u.id === fragen[m.frage_id].von)?.name || "Mitglied"}` : ""}</>}>
             <Markdown text={m.text} klein />
             {m.werte && <Vorschlag m={m} werte={werte} kann={fragen[m.frage_id]?.von === ich.id && darf} onEntscheid={(e) => entscheide(m, e)} />}
-          </div>
+          </ChatNachricht>
         ) : (
-          <div key={m.id} className="ml-auto rounded-xl bg-emerald-50 dark:bg-emerald-950/50 p-2.5 max-w-[90%]">
-            <div className="text-xs font-bold text-slate-500">{m.von === ich.id ? "Du" : d.benutzer.find((u) => u.id === m.von)?.name || "Mitglied"} · {fmt(m.erstellt)}</div>
+          <ChatNachricht key={m.id} seite="ich" ton={m.stand === "fehler" ? "fehler" : undefined} kopf={<>{m.von === ich.id ? "Du" : d.benutzer.find((u) => u.id === m.von)?.name || "Mitglied"} · {fmt(m.erstellt)}</>}>
             <Markdown text={m.text} klein />
-            {m.stand === "fehler" && <p className="text-xs text-red-600 mt-1">Nicht beantwortet</p>}
-          </div>))}
-        {wartet.length > 0 && <div className="flex items-center gap-2 text-slate-500">{werkstattAn ? <><Loader2 className="w-4 h-4 animate-spin" />{ki.name} denkt nach … (über deine Werkstatt, ca. 20–60 Sek.)</> : <span className="text-amber-700 dark:text-amber-400">Deine Werkstatt ist aus – schalte sie oben ein, dann antwortet Claude.</span>}</div>}
-        <div ref={ende} />
-      </div>
-      {darf ? (
-        <form className="border-t border-slate-200 dark:border-slate-800 p-2.5 space-y-2" onSubmit={(e) => { e.preventDefault(); schicke(); }}>
-          <div className="flex flex-wrap gap-1">{(start && !liste.length ? IDEEN_START : IDEEN).map((i) => <button key={i} type="button" disabled={senden} onClick={() => schicke(i)} className="text-xs rounded-full border border-slate-300 dark:border-slate-700 px-2 py-0.5 hover:bg-slate-50 dark:hover:bg-slate-800">{i}</button>)}</div>
-          <div className="flex gap-1.5">
-            <textarea ref={chatFeld} value={text} onChange={(e) => setText(e.target.value)} rows={4} maxLength={4000} placeholder="Was soll sich am Design ändern?" className={`${input} resize-none`}
-              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); schicke(); } }} />
-            <button className={`${btn} self-end`} disabled={senden || !text.trim()} title="Senden"><Send className="w-4 h-4" /></button>
-          </div>
-          {!werkstattAn && <p className="text-xs text-amber-700 dark:text-amber-400">{ki.name} antwortet über deine Werkstatt – sie ist gerade aus.</p>}
-        </form>) : <p className="border-t border-slate-200 dark:border-slate-800 p-3 text-xs text-slate-500">Mitlesen möglich – fragen dürfen Entwickler mit Design-Recht.</p>}
-    </div>);
+          </ChatNachricht>))}
+        {wartet.length > 0 && <ChatWartet an={werkstattAn} ki={ki.name} text={`${ki.name} denkt nach … (über deine Werkstatt, ca. 20–60 Sek.)`} aus="Deine Werkstatt ist aus – schalte sie oben ein, dann antwortet Claude." />}
+      </ChatVerlauf>
+      <ChatEingabe value={text} onChange={setText} busy={senden} aktionen={{ besprechen: () => schicke() }} maxLength={4000} platzhalter="Was soll sich am Design ändern?"
+        gesperrt={darf ? null : "Mitlesen möglich – fragen dürfen Entwickler mit Design-Recht."}
+        ideen={start && !liste.length ? IDEEN_START : IDEEN} onIdee={(i) => schicke(i)}
+        hinweis={!werkstattAn ? `${ki.name} antwortet über deine Werkstatt – sie ist gerade aus.` : "Besprechen: Vorschläge übernimmst du mit einem Klick; als Auftrag geht erst der Entwurf (oben „Als Auftrag senden“)."} />
+    </ChatRahmen>);
 }
 
 function Vorschlag({ m, werte, kann, onEntscheid }) {

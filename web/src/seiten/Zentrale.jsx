@@ -13,6 +13,8 @@ import { Markdown } from "../Markdown";
 import { WS_ICON } from "../config";
 import { supabase } from "../supabase";
 import { useAuftragDetails } from "../daten/werkstattDaten";
+import { ChatKopf, ChatNachricht, ChatEingabe } from "../bausteine/chat";
+import { Leerzustand } from "../bausteine/zustand";
 
 // ---------------- Zentrale ----------------
 // nurGlobal: Ansicht „Globale Einstellungen“ (Anweisung Gerhard 2026-10-23 10:20) – Bereich, der in der App nie als eigener Bereich erscheint;
@@ -269,16 +271,15 @@ export function AuftragsChat({ g, f, d, ich, darf, toast, onLoeschen, kanal = "c
 
   return (
     <aside className={`${card} flex flex-col min-h-0 ${eingebettet ? "h-full" : "lg:col-span-2 xl:col-span-1 xl:sticky xl:top-3 xl:max-h-[calc(100vh-24px)]"}`} aria-label="Auftrags-Chat">
-      <div className="p-4 border-b border-slate-200 dark:border-slate-800">
-        <div className="flex items-center gap-2 font-display font-bold text-lg">{f ? <Layers className="w-5 h-5" /> : <MessageSquare className="w-5 h-5" />}{f ? f.name : g.name}</div>
-        <div className="text-sm text-slate-500 mt-0.5 flex gap-2 items-center flex-wrap"><span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">{f ? "Feature" : "Ganze Gruppe"}</span>geht an Werkstatt {g.name}</div>
-        <div className="flex gap-2 flex-wrap mt-2">
-          {laufend && <div className="inline-flex rounded-lg border border-slate-300 dark:border-slate-700 overflow-hidden text-sm">
-            {[["gespraech", "Gespräch"], ["live", "Live mitsehen"]].map(([k, t]) => <button key={k} type="button" aria-pressed={tab === k} onClick={() => setTab(k)} className={`px-3 py-1.5 inline-flex items-center gap-1.5 ${tab === k ? "bg-emerald-50 text-emerald-700 font-semibold dark:bg-emerald-950" : ""}`}>{k === "live" && <i className="w-2 h-2 rounded-full bg-blue-600 animate-pulse" />}{t}</button>)}
-          </div>}
-          {f && onLoeschen && darf(g.bereich_id, "loeschen") && <button type="button" className={`${ghost} h-8 text-xs`} onClick={onLoeschen}><Trash2 className="w-3.5 h-3.5" />{f.ausgeblendet ? "Wieder einblenden" : "Feature löschen …"}</button>}
-        </div>
-      </div>
+      <ChatKopf bezug={[f ? { art: "feature", name: f.name } : { art: "gruppe", name: g.name }, ...(baustein ? [{ art: "baustein", name: baustein.name }] : [])]}
+        unten={<>
+          <span className="text-xs text-slate-500">{f ? `in der Gruppe ${g.name} · ` : ""}geht an Werkstatt {g.name}</span>
+          {(laufend || (f && onLoeschen && darf(g.bereich_id, "loeschen"))) && <div className="flex gap-2 flex-wrap">
+            {laufend && <div className="inline-flex rounded-lg border border-slate-300 dark:border-slate-700 overflow-hidden text-sm">
+              {[["gespraech", "Gespräch"], ["live", "Live mitsehen"]].map(([k, t]) => <button key={k} type="button" aria-pressed={tab === k} onClick={() => setTab(k)} className={`px-3 py-1.5 inline-flex items-center gap-1.5 ${tab === k ? "bg-emerald-50 text-emerald-700 font-semibold dark:bg-emerald-950" : ""}`}>{k === "live" && <i className="w-2 h-2 rounded-full bg-blue-600 animate-pulse" />}{t}</button>)}
+            </div>}
+            {f && onLoeschen && darf(g.bereich_id, "loeschen") && <button type="button" className={`${ghost} h-8 text-xs`} onClick={onLoeschen}><Trash2 className="w-3.5 h-3.5" />{f.ausgeblendet ? "Wieder einblenden" : "Feature löschen …"}</button>}
+          </div>}</>} />
       {tab === "live" && laufend ? (
         <div ref={verlaufRef} className="flex-1 overflow-y-auto p-4 flex flex-col gap-2 text-[13px] min-h-[240px]" aria-live="polite">
           {log.filter((l) => l.auftrag_id === laufend.id).map((l) => (
@@ -287,9 +288,9 @@ export function AuftragsChat({ g, f, d, ich, darf, toast, onLoeschen, kanal = "c
           {offeneErl.filter((e) => e.auftrag_id === laufend.id).map((e) => <ErlaubnisKarte key={e.id} e={e} g={g} kann={kannFrei} onEntscheid={erlauben} />)}
         </div>
       ) : (
-        <div ref={verlaufRef} className="flex-1 overflow-y-auto p-4 flex flex-col gap-2.5 min-h-[220px]" aria-live="polite">
+        <div ref={verlaufRef} className="flex-1 overflow-y-auto p-4 flex flex-col gap-3 min-h-[220px]" aria-live="polite">
           {zahlBeantwortet > 0 && <button type="button" onClick={() => setAlleFragen(!alleFragen)} className="self-center text-xs text-slate-500 underline underline-offset-2">{alleFragen ? "Beantwortete Rückfragen ausblenden" : `${zahlBeantwortet} beantwortete Rückfrage${zahlBeantwortet > 1 ? "n" : ""} (abgeschlossen) anzeigen`}</button>}
-          {auftraege.length === 0 && <div className="text-sm text-slate-500 text-center py-8">{f ? `Noch kein Auftrag zu „${f.name}“.` : `Noch kein Auftrag für ${g.name}.`} Beschreibe unten, was sich ändern soll.<br /><span className="text-xs">Bitte keine Daten von Vereinsmitgliedern hineinschreiben.</span></div>}
+          {auftraege.length === 0 && <Leerzustand klein Symbol={MessageSquare} titel={f ? `Noch nichts zu „${f.name}“` : `Noch nichts zu ${g.name}`} text="Beschreibe unten, was sich ändern soll – zuerst wird besprochen. Bitte keine Daten von Vereinsmitgliedern hineinschreiben." />}
           {auftraege.map((a) => (
             <React.Fragment key={a.id}>
               <div className="self-center text-xs text-slate-500 text-center flex items-center gap-2 flex-wrap justify-center">Auftrag #{a.id}: {a.titel}{ABGESCHLOSSEN.includes(a.stand) && <span className="inline-flex items-center gap-1 font-semibold text-green-700 dark:text-green-400"><CircleCheck className="w-3.5 h-3.5" />abgeschlossen</span>}
@@ -297,16 +298,17 @@ export function AuftragsChat({ g, f, d, ich, darf, toast, onLoeschen, kanal = "c
               <Schritte a={a} />
               {nachrichten.filter((m) => m.auftrag_id === a.id && (alleFragen || !beantwortet(m))).map((m) => {
                 const zu = beantwortet(m);
+                if (m.art === "system") return <ChatNachricht key={m.id} seite="system"><Markdown text={m.text} klein /></ChatNachricht>;
                 return (
-                <div key={m.id} className={`max-w-[88%] rounded-xl px-3 py-2 text-sm ${m.von ? "self-end bg-emerald-50 dark:bg-emerald-950/50" : m.art === "frage" && !zu ? "self-start bg-amber-50 border border-amber-400 dark:bg-amber-950/40" : m.art === "system" ? "self-center bg-transparent text-slate-500 text-xs" : "self-start bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800"} ${zu ? "opacity-75" : ""}`}>
-                  {m.art !== "system" && <div className="text-xs font-semibold text-slate-500 flex items-center gap-1.5 flex-wrap">{m.von ? name(m.von) : `Werkstatt ${g.name}`} · {fmt(m.erstellt)}{m.art === "frage" ? " · Rückfrage" : ""}
+                <ChatNachricht key={m.id} seite={m.von ? "ich" : "andere"} ton={zu ? "blass" : m.art === "frage" ? "frage" : undefined}
+                  kopf={<>{m.von ? (m.von === ich.id ? "Du" : name(m.von)) : `Werkstatt ${g.name}`} · {fmt(m.erstellt)}{m.art === "frage" ? " · Rückfrage" : ""}
                     {m.kanal === "gruppe" && f && <span className="px-1.5 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">aus Gruppe</span>}
                     {m.kanal === "claude-chat" && <span className="px-1.5 rounded-full bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300">aus Claude-Chat</span>}
                     {m.daten?.aufgabe && m.von && <AufgabePlakette m={m} erste={ersteId[m.auftrag_id] === m.id} />}
-                    {zu && <span className="text-green-700 dark:text-green-400 inline-flex items-center gap-1"><CircleCheck className="w-3 h-3" />abgeschlossen</span>}</div>}
+                    {zu && <span className="text-green-700 dark:text-green-400 inline-flex items-center gap-1"><CircleCheck className="w-3 h-3" />abgeschlossen</span>}</>}>
                   {m.daten?.aufgabe && m.von ? <p className="whitespace-pre-wrap break-words">{m.text}</p> : <Markdown text={m.text} klein />}
                   {m.daten?.aufgabe && m.von && <AufgabeBeilagen m={m} erste={ersteId[m.auftrag_id] === m.id} toast={toast} />}
-                </div>); })}
+                </ChatNachricht>); })}
               <PruefBefunde a={a} />
               {offeneErl.filter((e) => e.auftrag_id === a.id).map((e) => <ErlaubnisKarte key={e.id} e={e} g={g} kann={kannFrei} onEntscheid={erlauben} />)}
               {["freigabe", "zusammen"].includes(a.stand) && (
@@ -320,14 +322,16 @@ export function AuftragsChat({ g, f, d, ich, darf, toast, onLoeschen, kanal = "c
           <AufgabenImChat g={g} f={f} d={d} ich={ich} kannAuftrag={kannAuftrag} toast={toast} />
         </div>
       )}
-      {kannAuftrag ? (
-        <div className="border-t border-slate-200 dark:border-slate-800 p-4 flex flex-col gap-2">
-          <MitErwaehnung id="ws-auftrag" className={`${input} min-h-[72px]`} value={text} onChange={setText} features={d.features.filter((x) => !x.ausgebaut)} placeholder={frage ? "Antwort auf die Rückfrage …" : f ? `Frage oder Änderung zu „${f.name}“ … (@ verweist auf ein Feature als Vorlage)` : `Frage oder Änderung zu ${g.name} …`} aria-label="Nachricht" />
-          <div className="flex items-center justify-between gap-2 flex-wrap"><span className="text-xs text-slate-500">{frage ? "Antwort geht an den laufenden Auftrag" : istFrage ? "Wird zuerst im Konzept-Chat besprochen – gebaut wird erst, wenn alles geklärt ist" : "Wird vom nächsten freien Werkstatt-PC übernommen"}</span>
-            {istFrage ? <button type="button" className={btn} disabled={busy || !text.trim()} onClick={fragen} title="Die eingestellte KI antwortet im Konzept-Chat und legt Aufträge erst an, wenn alles geklärt ist">{busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <MessageSquare className="w-4 h-4" />}Besprechen</button>
-              : <button type="button" className={btn} disabled={busy || !text.trim()} onClick={senden}>{busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}{frage ? "Antworten" : "Senden"}</button>}</div>
-        </div>
-      ) : <div className="border-t border-slate-200 dark:border-slate-800 p-4 text-xs text-slate-500">Für diesen Bereich hast du kein Recht, Aufträge zu geben.</div>}
+      {/* Ein Chat-Baustein (B4): „Besprechen“ (Standard) geht in den Konzept-Chat; „Antworten“ nur auf eine offene Rückfrage;
+          „Als Auftrag“ nur mit einem Baustein aus „Zeigen & kommentieren“ (wie bisher „Senden“). Regel 26.10.2026 09:11: erst besprechen. */}
+      <ChatEingabe value={text} onChange={setText} busy={busy} id="ws-auftrag"
+        gesperrt={kannAuftrag ? null : "Für diesen Bereich hast du kein Recht, Aufträge zu geben."}
+        aktionen={frage ? { antworten: senden } : baustein ? { auftrag: senden } : { besprechen: fragen }}
+        titel={{ besprechen: "Die eingestellte KI antwortet im Konzept-Chat und legt Aufträge erst an, wenn alles geklärt ist", auftrag: "Auftrag mit diesem Baustein an die Werkstatt", antworten: "Antwort an den laufenden Auftrag" }}
+        hinweis={frage ? "Antwort geht an den laufenden Auftrag" : istFrage ? "Wird zuerst im Konzept-Chat besprochen – gebaut wird erst, wenn alles geklärt ist. Bitte keine Daten von Vereinsmitgliedern." : "Wird vom nächsten freien Werkstatt-PC übernommen"}
+        feld={({ los }) => <MitErwaehnung id="ws-auftrag" className="w-full resize-none bg-transparent px-3 pt-2.5 pb-1 text-[15px] min-h-[72px] focus:outline-none" value={text} onChange={setText} features={d.features.filter((x) => !x.ausgebaut)}
+          placeholder={frage ? "Antwort auf die Rückfrage …" : f ? `Frage oder Änderung zu „${f.name}“ … (@ verweist auf ein Feature als Vorlage)` : `Frage oder Änderung zu ${g.name} …`} aria-label="Nachricht"
+          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); los(); } }} />} />
     </aside>
   );
 }

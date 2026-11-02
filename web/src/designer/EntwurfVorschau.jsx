@@ -7,6 +7,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 import GeraeteRahmen from "../GeraeteRahmen";
+import { Laden } from "../bausteine/zustand";
 
 const NAME = /^[\p{L}\p{N} ·/()„“&+-]{1,80}$/u;
 const SEITE = /^[a-z][a-z0-9_-]{0,40}$/;
@@ -83,7 +84,7 @@ export default function EntwurfVorschau({ html: roh, leiste, seite, tokens, mark
   if (!html) return <p className="p-4 text-sm text-slate-500">Der eingebettete Entwurf ist unvollständig (kein &lt;head&gt;) – nicht angezeigt.</p>;
   return (
     <div className="relative min-w-0">
-      {!bereit && <div className="absolute inset-0 z-10 grid place-items-center text-sm text-slate-500"><span className="inline-flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" />Entwurf lädt …</span></div>}
+      {!bereit && <div className="absolute inset-0 z-10 bg-white/70 dark:bg-slate-950/70"><Laden art="flaeche" text="Entwurf lädt" /></div>}
       {handy
         ? <div className="mx-auto rounded-xl overflow-hidden ring-1 ring-black/10" style={{ width: 440, height: 900, maxWidth: "100%" }}>{iframe}</div>
         : <GeraeteRahmen geraet="pc" hoehe={900} text="Design-Entwurf 2.0 in PC-Breite">{iframe}</GeraeteRahmen>}

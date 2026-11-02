@@ -7,6 +7,8 @@ import { kiFarbe } from "./kiFarbe";
 import { MitErwaehnung, erwaehnte, erwaehnteGruppen } from "./Bezuege";
 import { Vorschlag, ORT_NAME } from "./KonzeptChat";
 import CodeschmiedeZeichen from "./Zeichen";
+import { BezugChip, ChatNachricht, ChatWartet, ChatEingabe } from "./bausteine/chat";
+import { Laden } from "./bausteine/zustand";
 
 // Chat wie bei Claude (Entwurf 1.1 „Oberfläche 2.0 & Chat“, freigegeben von Gerhard 2026-10-27 08:27):
 // links die eigenen Unterhaltungen des Projekts (Konzept immer angeheftet oben), in der Mitte das Gespräch, unten die Eingabe mit
@@ -182,6 +184,7 @@ function Gespraech({ d, ich, toast, unterhaltung, titel, onAngelegt, bezuegeAn, 
   const fragen = Object.fromEntries(msgs.filter((m) => !m.frage_id).map((m) => [m.id, m]));
   const features = useMemo(() => d.features.filter((x) => !x.ausgebaut), [d.features]);
   const konzeptGruppe = d.projekte.find((p) => p.id === d.projektId)?.konzept_gruppe_id;
+  const projektName = d.projekte.find((p) => p.id === d.projektId)?.name;
   const gruppen = useMemo(() => d.gruppen.filter((g) => g.id !== konzeptGruppe).map((g) => ({ id: g.id, name: g.name, bereich: d.bereiche.find((b) => b.id === g.bereich_id)?.name })), [d.gruppen, d.bereiche, konzeptGruppe]);
 
   // Senden: bei „Neuer Chat“ legt die erste Nachricht die Unterhaltung an (wie bei Claude)
@@ -207,35 +210,26 @@ function Gespraech({ d, ich, toast, unterhaltung, titel, onAngelegt, bezuegeAn, 
         <div className="flex items-center gap-2.5 px-4 md:px-6 py-3 border-b border-slate-200 dark:border-slate-800 bg-white/60 dark:bg-slate-900/60">
           <button type="button" onClick={onListe} className="lg:hidden p-1.5 rounded-lg border border-slate-200 dark:border-slate-700" aria-label="Unterhaltungen zeigen"><MessageSquare className="w-4 h-4" /></button>
           <h2 className="font-display font-bold text-lg truncate min-w-0" style={{ textWrap: "balance" }}>{titel}</h2>
+          <span className="hidden sm:inline-flex min-w-0"><BezugChip art={unterhaltung === KONZEPT ? "konzept" : "projekt"} name={projektName} /></span>
           <button type="button" onClick={onBezuege} aria-pressed={bezuegeAn} title="Bezüge ein- oder ausblenden"
             className={`ml-auto hidden xl:inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg border text-xs font-semibold ${bezuegeAn ? "border-emerald-600 bg-emerald-50 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-200" : "border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300"}`}>
             <PanelRight className="w-4 h-4" />Bezüge</button>
         </div>
         <div className="overflow-y-auto px-4 md:px-6 py-5" aria-live="polite">
           <div className="max-w-[760px] mx-auto flex flex-col gap-5">
+            {!geladen && <Laden zeilen={3} text="Gespräch wird geladen" />}
             {geladen && !msgs.length && <Leer konzept={unterhaltung === KONZEPT} ki={ki.name} onIdee={(t) => senden(t, [])} />}
             {msgs.map((m) => m.frage_id ? (
-              <div key={m.id} className="flex gap-3">
-                <span className="w-8 h-8 shrink-0 rounded-[9px] bg-[#0f2a22] grid place-items-center"><CodeschmiedeZeichen groesse={22} /></span>
-                <div className="min-w-0 flex-1">
-                  <div className="text-xs text-slate-500 mb-1 flex items-center gap-1.5"><span className={`w-2 h-2 rounded-full ${kiFarbe(String(m.ki || "claude").split("/")[0]).punkt}`} aria-hidden="true" />{ki.von(m.ki)} · {zeit(m.erstellt)}</div>
-                  <div className="text-[15px] leading-relaxed"><Markdown text={m.text} /></div>
-                  {m.vorschlag && <Vorschlag m={m} d={d} ich={ich} kann={fragen[m.frage_id]?.von === ich.id} toast={toast} onAntwort={(t) => senden(t, [])} sperre={wartet} />}
-                </div>
-              </div>
+              <ChatNachricht key={m.id} seite="ki" gross kopf={<><span className={`w-2 h-2 rounded-full ${kiFarbe(String(m.ki || "claude").split("/")[0]).punkt}`} aria-hidden="true" />{ki.von(m.ki)} · {zeit(m.erstellt)}</>}>
+                <Markdown text={m.text} />
+                {m.vorschlag && <Vorschlag m={m} d={d} ich={ich} kann={fragen[m.frage_id]?.von === ich.id} toast={toast} onAntwort={(t) => senden(t, [])} sperre={wartet} />}
+              </ChatNachricht>
             ) : (
-              <div key={m.id} className="flex gap-3">
-                <span className="w-8 h-8 shrink-0 rounded-full bg-emerald-600 text-white grid place-items-center text-xs font-bold">{ich.name.split(" ").map((s) => s[0]).join("").slice(0, 2)}</span>
-                <div className="min-w-0 flex-1">
-                  <div className="text-xs text-slate-500 mb-1">Du{m.ort !== "konzept" ? ` · aus ${ORT_NAME(m.ort)}` : ""} · {zeit(m.erstellt)}</div>
-                  <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 py-2.5 text-[15px]">
-                    <MitMarken text={m.text} features={features} gruppen={gruppen} onFeature={onFeature} />
-                    {Array.isArray(m.anhaenge) && <AnhangListe liste={m.anhaenge} m={m} toast={toast} />}
-                  </div>
-                  {m.stand === "fehler" && <p className="text-xs text-red-600 mt-1">Nicht beantwortet</p>}
-                </div>
-              </div>))}
-            {wartet && <div className="flex items-center gap-2 text-sm text-slate-500 pl-11">{werkstattAn ? <><Loader2 className="w-4 h-4 animate-spin" />{ki.name} liest nach und antwortet …</> : <span className="text-amber-700 dark:text-amber-400">Deine Werkstatt ist aus – sie startet mit dem Programm; dann kommt die Antwort.</span>}</div>}
+              <ChatNachricht key={m.id} seite="ich" gross ton={m.stand === "fehler" ? "fehler" : undefined} kopf={<>Du{m.ort !== "konzept" ? ` · aus ${ORT_NAME(m.ort)}` : ""} · {zeit(m.erstellt)}</>}>
+                <MitMarken text={m.text} features={features} gruppen={gruppen} onFeature={onFeature} />
+                {Array.isArray(m.anhaenge) && <AnhangListe liste={m.anhaenge} m={m} toast={toast} />}
+              </ChatNachricht>))}
+            {wartet && <ChatWartet an={werkstattAn} ki={ki.name} text={`${ki.name} liest nach und antwortet …`} />}
             <div ref={ende} />
           </div>
         </div>
@@ -341,30 +335,30 @@ function Eingabe({ d, ich, toast, features, gruppen, ki, onSenden }) {
       if (hoch.length) await supabase.storage.from("ws-chat").remove(hoch.map((x) => x.pfad));
     } finally { setBusy(false); }
   };
+  const dateiListe = dateien.length > 0 && <div className="flex flex-wrap gap-1.5 px-3 pt-3">{dateien.map((x, i) => (
+    <span key={i} className="inline-flex items-center gap-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 pl-2 pr-1 py-1 text-xs max-w-[220px]">
+      {x.typ.startsWith("image/") ? <Bild className="w-3.5 h-3.5 shrink-0" /> : <FileText className="w-3.5 h-3.5 shrink-0" />}<span className="truncate">{x.f.name}</span>
+      <button type="button" onClick={() => setDateien(dateien.filter((_, j) => j !== i))} className="p-0.5 rounded hover:bg-white dark:hover:bg-slate-700" aria-label={`${x.f.name} entfernen`}><X className="w-3 h-3" /></button></span>))}</div>;
+  // Ein Chat-Baustein (B4): gleiche Eingabe wie überall, Hauptknopf „Besprechen“ – Anhänge auch ohne Text
   return (
-    <div className="px-4 md:px-6 pb-4 pt-1">
-      <div className="max-w-[760px] mx-auto rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-[0_6px_24px_rgba(15,42,34,0.08)]"
+    <div className="px-4 md:px-6 pb-3 pt-1">
+      <div className="max-w-[760px] mx-auto [&>div]:border-t-0 [&>div]:px-0"
         onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); hinzu([...e.dataTransfer.files]); }}
         onPaste={(e) => { const f = [...(e.clipboardData?.files || [])]; if (f.length) { e.preventDefault(); hinzu(f); } }}>
-        {dateien.length > 0 && <div className="flex flex-wrap gap-1.5 px-3 pt-3">{dateien.map((x, i) => (
-          <span key={i} className="inline-flex items-center gap-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 pl-2 pr-1 py-1 text-xs max-w-[220px]">
-            {x.typ.startsWith("image/") ? <Bild className="w-3.5 h-3.5 shrink-0" /> : <FileText className="w-3.5 h-3.5 shrink-0" />}<span className="truncate">{x.f.name}</span>
-            <button type="button" onClick={() => setDateien(dateien.filter((_, j) => j !== i))} className="p-0.5 rounded hover:bg-white dark:hover:bg-slate-700" aria-label={`${x.f.name} entfernen`}><X className="w-3 h-3" /></button></span>))}</div>}
-        <MitErwaehnung ref={feld} value={text} onChange={setText} features={features} gruppen={gruppen} minHoehe={56} rows={2} maxLength={8000} id="cs-chat-eingabe"
-          placeholder="Nachricht … mit @ ein Feature, mit # eine Gruppe einbeziehen" aria-label="Nachricht"
-          className="w-full bg-transparent px-4 pt-3 pb-1 text-[15px] focus:outline-none"
-          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); los(); } }} />
-        <div className="flex flex-wrap items-center gap-1 px-2 pb-2">
-          <input ref={wahl} type="file" multiple hidden accept="image/png,image/jpeg,image/webp,image/gif,application/pdf,.txt,.md,.csv,.json" onChange={(e) => { hinzu([...e.target.files]); e.target.value = ""; }} />
-          <Werkzeug onClick={() => wahl.current?.click()} titel="Bild oder Datei anhängen (auch Einfügen oder Hineinziehen)"><Paperclip className="w-4 h-4" />Anhang</Werkzeug>
-          <Werkzeug onClick={() => feld.current?.zeichen("@")} titel="Feature einbeziehen"><b className="font-mono">@</b>Feature</Werkzeug>
-          <Werkzeug onClick={() => feld.current?.zeichen("#")} titel="Gruppe einbeziehen"><b className="font-mono">#</b>Gruppe</Werkzeug>
-          <span className="ml-auto text-xs text-slate-500 hidden sm:inline-flex items-center gap-1.5" title="Eingestellt unter Verwaltung › KI-Anbieter"><i className={`w-2 h-2 rounded-full ${kiFarbe(ki.toLowerCase()).punkt}`} aria-hidden="true" />{ki}</span>
-          <button type="button" onClick={los} disabled={busy || (!text.trim() && !dateien.length)} aria-label="Senden" title="Senden (Enter)"
-            className="ml-2 w-9 h-9 rounded-xl bg-emerald-700 hover:bg-emerald-800 disabled:opacity-40 text-white grid place-items-center">{busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}</button>
-        </div>
+        <input ref={wahl} type="file" multiple hidden accept="image/png,image/jpeg,image/webp,image/gif,application/pdf,.txt,.md,.csv,.json" onChange={(e) => { hinzu([...e.target.files]); e.target.value = ""; }} />
+        <ChatEingabe value={text} kannSenden={!!text.trim() || dateien.length > 0} onChange={setText} busy={busy} aktionen={{ besprechen: los }} oben={dateiListe}
+          hinweis="Gebaut wird erst, wenn alles geklärt ist und du freigibst. Keine Fotos von Kindern oder Mitgliederdaten anhängen."
+          feld={({ los: enter }) => <MitErwaehnung ref={feld} value={text} onChange={setText} features={features} gruppen={gruppen} minHoehe={56} rows={2} maxLength={8000} id="cs-chat-eingabe"
+            placeholder="Nachricht … mit @ ein Feature, mit # eine Gruppe einbeziehen" aria-label="Nachricht"
+            className="w-full bg-transparent px-4 pt-3 pb-1 text-[15px] focus:outline-none"
+            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); enter(); } }} />}
+          werkzeuge={<>
+            <Werkzeug onClick={() => wahl.current?.click()} titel="Bild oder Datei anhängen (auch Einfügen oder Hineinziehen)"><Paperclip className="w-4 h-4" />Anhang</Werkzeug>
+            <Werkzeug onClick={() => feld.current?.zeichen("@")} titel="Feature einbeziehen"><b className="font-mono">@</b>Feature</Werkzeug>
+            <Werkzeug onClick={() => feld.current?.zeichen("#")} titel="Gruppe einbeziehen"><b className="font-mono">#</b>Gruppe</Werkzeug>
+            <span className="ml-2 text-xs text-slate-500 hidden sm:inline-flex items-center gap-1.5" title="Eingestellt unter Verwaltung › KI-Anbieter"><i className={`w-2 h-2 rounded-full ${kiFarbe(ki.toLowerCase()).punkt}`} aria-hidden="true" />{ki}</span>
+          </>} />
       </div>
-      <p className="max-w-[760px] mx-auto mt-1.5 text-center text-xs text-slate-500">Gebaut wird erst, wenn alles geklärt ist und du freigibst. Keine Fotos von Kindern oder Mitgliederdaten anhängen.</p>
     </div>);
 }
 

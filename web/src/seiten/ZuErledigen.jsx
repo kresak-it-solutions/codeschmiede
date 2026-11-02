@@ -7,6 +7,7 @@ import { Markdown } from "../Markdown";
 import { STEPS, STEP_IDX, btn, card, fehler, fmt, ghost, input } from "../bausteine/grund";
 import { supabase } from "../supabase";
 import { useRechte } from "../daten/werkstattDaten";
+import { Leerzustand } from "../bausteine/zustand";
 
 export function aufgabenListe(d, darf) {
   const bereich = (a) => d.gruppen.find((g) => g.id === a.gruppe_id)?.bereich_id;
@@ -50,7 +51,7 @@ export function ZuErledigen({ d, ich, toast, onOeffne }) {
               return <button key={k} type="button" role="tab" aria-selected={filter === k} onClick={() => setFilter(k)} className={`rounded-full border px-3 py-1 text-sm font-semibold ${filter === k ? "border-emerald-600 bg-emerald-50 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-200" : "border-slate-200 dark:border-slate-700"}`}>{t} <span className="tabular-nums text-slate-500">{z}</span></button>;
             })}
           </div>
-          {gezeigt.length === 0 && <div className="text-sm text-slate-500 border border-dashed border-slate-300 dark:border-slate-700 rounded-xl p-5 text-center"><CircleCheck className="w-5 h-5 mx-auto mb-1 text-green-600" />Hier wartet gerade nichts auf dich.</div>}
+          {gezeigt.length === 0 && <div className="border border-dashed border-slate-300 dark:border-slate-700 rounded-xl"><Leerzustand klein Symbol={CircleCheck} titel="Alles erledigt" text="Hier wartet gerade nichts auf dich." /></div>}
           {gezeigt.map(({ art, a, e }) => (
             <article key={`${art}-${e?.id || a.id}`} className="rounded-xl border border-slate-200 dark:border-slate-800 p-3 flex flex-wrap gap-3 items-start justify-between">
               <div className="min-w-0 flex-1 basis-[260px] flex flex-col gap-1">

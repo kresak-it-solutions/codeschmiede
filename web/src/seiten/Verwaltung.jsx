@@ -5,6 +5,7 @@ import { BEREICH_RECHTE, ROLLEN, WS_ICON } from "../config";
 import { Dialog, btn, card, fehler, fmt, ghost, input } from "../bausteine/grund";
 import { LogoZeichen } from "../Logo";
 import { supabase } from "../supabase";
+import { Laden } from "../bausteine/zustand";
 
 export function NeuesFeature({ g, ich, texter, toast, onClose, onFertig }) {
   const [name, setName] = useState(""); const [besch, setBesch] = useState(""); const [auftrag, setAuftrag] = useState(true); const [busy, setBusy] = useState(false);
@@ -205,7 +206,7 @@ export function ProjekteVerwalten({ toast, aktiv, onClose, onWeg }) {
       {umfang ? <ul className="text-sm grid grid-cols-2 gap-1 rounded-lg bg-slate-50 dark:bg-slate-950 p-3">
         <li>{umfang.gruppen} Gruppen</li><li>{umfang.features} Features</li><li>{umfang.auftraege} Aufträge</li><li>{umfang.mitglieder} Mitglieder</li>
         {umfang.laufend > 0 && <li className="col-span-2 text-red-600 font-semibold">{umfang.laufend} Auftrag/Prüfung läuft – erst abschließen oder abbrechen.</li>}
-      </ul> : <Loader2 className="w-5 h-5 animate-spin text-emerald-700" />}
+      </ul> : <Laden zeilen={2} klein text="Umfang wird gezählt" />}
       <label className="flex flex-col gap-1 text-sm text-slate-500">Zur Bestätigung den Projektnamen eingeben: <b className="text-slate-800 dark:text-slate-100">{weg.name}</b>
         <input id="ws-projekt-loeschen" className={input} value={name} onChange={(e) => setName(e.target.value)} autoFocus /></label>
       <div className="flex justify-end gap-2"><button type="button" className={ghost} onClick={() => setWeg(null)}>Abbrechen</button>
@@ -213,7 +214,7 @@ export function ProjekteVerwalten({ toast, aktiv, onClose, onWeg }) {
     </Dialog>);
   return (
     <Dialog title="Projekte verwalten" onClose={onClose}>
-      {!liste ? <Loader2 className="w-5 h-5 animate-spin text-emerald-700" /> : (
+      {!liste ? <Laden zeilen={4} text="Projekte werden geladen" /> : (
         <div className="flex flex-col divide-y divide-slate-100 dark:divide-slate-800">
           {liste.map((p) => (
             <div key={p.id} className="py-2.5 flex flex-wrap items-center gap-2">
