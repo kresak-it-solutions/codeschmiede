@@ -91,8 +91,10 @@ export async function installieren(id, { daten, plattform = process.platform, ru
     await writeFile(path.join(tmp, "package.json"), JSON.stringify({ name: `codeschmiede-werkzeug-${id}`, private: true, version: "0.0.0", dependencies: { [w.paket]: w.version } }, null, 2));
     await writeFile(path.join(tmp, "package-lock.json"), JSON.stringify(lock, null, 2));
     // Leere Benutzer- UND globale npm-Konfiguration (B8): keine umgelenkten Quellen, keine Skripte, keine fremden Einstellungen
-    const leer = path.join(tmp, ".npmrc-leer"); await writeFile(leer, "");
-    const r = await run(process.execPath, [npm, "ci", "--ignore-scripts", "--no-audit", "--no-fund", "--omit=dev", "--no-update-notifier", `--registry=${REGISTRY}`, `--userconfig=${leer}`, `--globalconfig=${leer}`],
+    // npm verlangt zwei verschiedene Dateien (sonst „double-loading config“)
+    const leer = path.join(tmp, ".npmrc-leer-benutzer"); const leerGlobal = path.join(tmp, ".npmrc-leer-global");
+    await writeFile(leer, ""); await writeFile(leerGlobal, "");
+    const r = await run(process.execPath, [npm, "ci", "--ignore-scripts", "--no-audit", "--no-fund", "--omit=dev", "--no-update-notifier", `--registry=${REGISTRY}`, `--userconfig=${leer}`, `--globalconfig=${leerGlobal}`],
       { cwd: tmp, env: minimaleUmgebung({ npm_config_cache: path.join(daten, "werkzeuge", ".npm-cache") }), minuten: 15 });
     if (r.code !== 0) throw new Error(`Installation fehlgeschlagen: ${String(r.err || r.aus).trim().split(/\r?\n/).slice(-3).join(" ").slice(0, 300)}`);
     await rm(leer, { force: true });

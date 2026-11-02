@@ -1,5 +1,5 @@
 // Lock-Dateien der Programmier-Werkzeuge erzeugen (0.14.0, docs/KONZEPT-WERKZEUGE.md).
-// Läuft NUR von Hand auf einem PC mit Zugang zu registry.npmjs.org, nach jeder Änderung der festen Version in desktop/dienst/lib/werkzeuge.mjs:
+// Läuft über den Ablauf .github/workflows/werkzeug-lock.yml (oder von Hand auf einem PC mit Zugang zu registry.npmjs.org), nach jeder Änderung der festen Version in desktop/dienst/lib/werkzeuge.mjs:
 //   node tools/werkzeug-lock.mjs
 // Legt je Werkzeug desktop/dienst/werkzeuge/<id>/package-lock.json an (npm install --package-lock-only --ignore-scripts – lädt nur die
 // Paket-Angaben, führt nichts aus) und prüft sie mit derselben Regel wie die Werkstatt (nur registry.npmjs.org, sha512, genau die Version).
@@ -22,8 +22,8 @@ for (const id of FREMDE) {
   const tmp = mkdtempSync(path.join(os.tmpdir(), `cs-lock-${id}-`));
   try {
     writeFileSync(path.join(tmp, "package.json"), JSON.stringify({ name: `codeschmiede-werkzeug-${id}`, private: true, version: "0.0.0", dependencies: { [w.paket]: w.version } }, null, 2));
-    writeFileSync(path.join(tmp, ".npmrc-leer"), "");
-    execFileSync(process.execPath, [npm, "install", "--package-lock-only", "--ignore-scripts", "--no-audit", "--no-fund", "--save-exact", `--registry=${REGISTRY}`, `--userconfig=${path.join(tmp, ".npmrc-leer")}`, `--globalconfig=${path.join(tmp, ".npmrc-leer")}`], { cwd: tmp, stdio: "inherit" });
+    writeFileSync(path.join(tmp, ".npmrc-leer-benutzer"), ""); writeFileSync(path.join(tmp, ".npmrc-leer-global"), "");   // zwei Dateien, sonst „double-loading config“
+    execFileSync(process.execPath, [npm, "install", "--package-lock-only", "--ignore-scripts", "--no-audit", "--no-fund", "--save-exact", `--registry=${REGISTRY}`, `--userconfig=${path.join(tmp, ".npmrc-leer-benutzer")}`, `--globalconfig=${path.join(tmp, ".npmrc-leer-global")}`], { cwd: tmp, stdio: "inherit" });
     const lock = JSON.parse(readFileSync(path.join(tmp, "package-lock.json"), "utf8"));
     const p = lockPruefen(id, lock);
     if (!p.ok) { console.error(`${id}: ${p.grund}`); fehler++; continue; }
