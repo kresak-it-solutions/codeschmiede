@@ -77,7 +77,38 @@ select ws_push_test();
 :E2
 select ws_push_abo_speichern('https://fcm.googleapis.com/fcm/send/dX1:APA91bH-abc_DEF', :K1, :A1, 'Android') > 0 as ok;
 reset role; select b.name, count(*) from ws_push_abos a join ws_benutzer b on b.id = a.benutzer_id group by b.name; set role authenticated;
+\echo [20b] E1 will dasselbe Gerät mit anderen Schlüsseln übernehmen -> FEHLER (Review #60)
+:E1
+select ws_push_abo_speichern('https://fcm.googleapis.com/fcm/send/dX1:APA91bH-abc_DEF', :K1, 'AAAAAAAAAAAAAAAAAAAAAA', 'Android');
+:E2
 \echo [21] E2 entfernt das eigene Gerät -> 0
 select ws_push_abo_loeschen('https://fcm.googleapis.com/fcm/send/dX1:APA91bH-abc_DEF');
 select count(*) from ws_push_abos;
 reset role;
+\echo [22] Rolle im Projekt (Review #60): E1 hat Recht „freigeben“, ist im Projekt aber nur Texter -> keine Meldung (0 neue Zeilen)
+set role authenticated;
+:E1
+select ws_push_abo_speichern('https://web.push.apple.com/E1-neu_1', :K1, :A1, 'iPhone') > 0 as ok;
+reset role;
+update ws_projekt_mitglieder set rolle = 'texter' where benutzer_id = '00000000-0000-0000-0000-0000000000e1' and projekt_id = 'trainer-to-go';
+select count(*) into temp vorher22 from ws_push_warteschlange;
+insert into ws_erlaubnisse(auftrag_id, werkzeug, eingabe) values ((select id from ws_auftraege where titel='S-T1'), 'Bash', 'whoami');
+select (select count(*) from ws_push_warteschlange) - (select count from vorher22) as neu;
+\echo [23] wieder Entwickler im Projekt -> 1 neue Zeile
+update ws_projekt_mitglieder set rolle = 'entwickler' where benutzer_id = '00000000-0000-0000-0000-0000000000e1' and projekt_id = 'trainer-to-go';
+delete from ws_push_warteschlange where tag like 'erlaubnis-%';
+insert into ws_erlaubnisse(auftrag_id, werkzeug, eingabe) values ((select id from ws_auftraege where titel='S-T1'), 'Bash', 'id');
+select count(*) neu from ws_push_warteschlange where tag like 'erlaubnis-%';
+\echo [24] E1 deaktiviert: Abholen liefert die Zeile ohne Geräte -> 0
+update ws_benutzer set aktiv = false where id = '00000000-0000-0000-0000-0000000000e1';
+select jsonb_array_length(abos) geraete from ws_push_abholen(50);
+update ws_benutzer set aktiv = true where id = '00000000-0000-0000-0000-0000000000e1';
+\echo [25] Bremse: erster Lauf 0, sofort danach > 0
+update ws_push_lauf set zuletzt = 'epoch';
+select ws_push_bremse() = 0 as erster, ws_push_bremse() > 0 as zweiter_wartet;
+\echo [26] E2 ruft die Bremse -> FEHLER
+set role authenticated;
+:E2
+select ws_push_bremse();
+reset role;
+

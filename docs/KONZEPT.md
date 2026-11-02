@@ -130,7 +130,7 @@ höchstens alle 2 Minuten. Nicht: Rückfragen der KI im Konzept-Chat (dort sitzt
 **Weg:** Trigger → `ws_push_warteschlange` → `pg_net` stößt die Edge Function `push-senden` an (ohne Inhalt) → die Funktion holt die Zeilen
 mit dem Dienst-Schlüssel (`ws_push_abholen`), verschlüsselt Ende-zu-Ende (RFC 8291) mit dem VAPID-Schlüssel und gibt sie dem Push-Dienst
 des Geräts → `ws_push_ergebnis` (404/410 = Gerät entfernt). Ohne `pg_net` oder ohne Funktion bleibt alles liegen und geht beim nächsten
-Anstoß raus (nur Meldungen der letzten Stunde). Der Anstoß braucht keine Anmeldung, kann aber nur die vorhandene Warteschlange abarbeiten.
+Anstoß raus (nur Meldungen der letzten Stunde). Der Anstoß braucht keine Anmeldung, kann aber nur die vorhandene Warteschlange abarbeiten; höchstens ein Lauf je 2 Sekunden (`ws_push_bremse`), Antwort nur `{ok:true}`. Empfänger von Erlaubnis/Freigabe/Station: Admin und wer im Bereich „freigeben“ darf **und im Projekt Entwickler** ist (wie `ws_darf`). Ein Gerät, das schon einer anderen Person gehört, lässt sich nur mit denselben Geräteschlüsseln übernehmen.
 **Geheimnisse:** `VAPID_PRIVATE_KEY` nur als Supabase-Secret (Ablauf „Web-Push-Schlüssel erzeugen“), nie im Repository, in der Datenbank oder im Log.
 Der öffentliche Schlüssel kommt von der Funktion (`GET …/push-senden?schluessel=1`).
 **Kosten:** keine – Supabase-Gratis-Kontingent (Edge Functions, `pg_net`), Push-Dienste der Browser kostenlos.

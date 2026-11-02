@@ -27,7 +27,7 @@ jobs:
     steps:
       - uses: supabase/setup-cli@v1
         with:
-          version: latest
+          version: 2.54.11   # fest (Review #60), geprüft: Release vorhanden
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -39,7 +39,11 @@ jobs:
           set -euo pipefail
           trap 'echo "::error title=Abbruch in Zeile $LINENO::siehe vorige Hinweise"' ERR
           test -n "$SUPABASE_ACCESS_TOKEN" || { echo "::error::Geheimnis SUPABASE_ACCESS_TOKEN fehlt (Repository-Einstellungen → Secrets)"; exit 1; }
-          if supabase secrets list --project-ref "$SUPABASE_PROJECT_REF" 2>/dev/null | grep -q "VAPID_PRIVATE_KEY"; then
+          # Review #60: Liste einzeln abrufen – scheitert sie, abbrechen (sonst würden vorhandene Schlüssel unbemerkt ersetzt)
+          if ! supabase secrets list --project-ref "$SUPABASE_PROJECT_REF" >/tmp/liste.txt 2>/tmp/liste.err; then
+            tail -5 /tmp/liste.err | while IFS= read -r l; do echo "::error title=supabase secrets list::$l"; done; exit 1
+          fi
+          if grep -q "VAPID_PRIVATE_KEY" /tmp/liste.txt; then
             if [ "$UEBERSCHREIBEN" != "true" ]; then echo "::notice title=Schon eingerichtet::VAPID-Schlüssel sind schon gespeichert – nichts geändert."; exit 0; fi
           fi
           KEYS=$(npx --yes web-push@3.6.7 generate-vapid-keys --json 2>/tmp/npx.err) || { tail -5 /tmp/npx.err | while IFS= read -r l; do echo "::error title=npx::$l"; done; exit 1; }
