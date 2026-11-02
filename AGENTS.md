@@ -53,8 +53,8 @@ Zusammengeführt wird nur auf Gerhards Wort (in der Codeschmiede: Knopf „Freig
   `ws_werkstatt_nachricht`; „Immer erlauben“ prüft auch die Datenbank; Limits-Knopf **ohne** Auslesen der Claude-Anmeldung (Statuszeile oder
   Mini-Anfrage – ersetzt den „kostenlosen Abruf wie /usage“ vom 27.10.); neue Repositories standardmäßig privat. Datenbank 0051.
   Logik (0.10.2): Stationen nach Fehlern mit Pause (1/5/30 Min.) und Obergrenze, dann „angehalten“ mit „Erneut versuchen“ (Datenbank 0052);
-  alle GitHub-Prüfläufe sind ein Tor vor Prüfung und Zusammenführen; Modellwahl nach Risikostufe statt Gruppenname. Push aufs Handy: Plan in
-  `docs/KONZEPT.md` (Web-Push, braucht Edge Function) – bis dahin bleibt die Regel offen.
+  alle GitHub-Prüfläufe sind ein Tor vor Prüfung und Zusammenführen; Modellwahl nach Risikostufe statt Gruppenname. Push aufs Handy: seit 0.12.0 gebaut
+  (Web-Push, Datenbank 0053, Edge Function `push-senden`, `docs/KONZEPT.md` › Push aufs Handy) – Push-Texte nie mit Personendaten, Titeln oder Befehlen.
   Bedienung (0.10.3): keine Schrift unter 12 px; Dialoge nur über `Dialog`/`useFokusfalle`, Bestätigungen über `useBestaetigen` (nie `window.confirm`);
   neue Seiten der Oberfläche in `web/src/seiten/`, Grundbausteine in `web/src/bausteine/grund.jsx`, Daten in `web/src/daten/` – `App.jsx` bleibt der Rahmen.
   Seit 0.11.1 (B4/B9): Chats nur mit `web/src/bausteine/chat.jsx` (Bezug als Chip, Begriffe „Besprechen“ · „Als Auftrag“ · „Antworten“ nur für Rückfragen);

@@ -1,11 +1,12 @@
 // Kopfzeile – aus App.jsx ausgelagert (Befund B1 vom 01.11.2026, kein Verhaltenswechsel).
 import { useEffect, useState } from "react";
-import { Check, ChevronDown, ClipboardList, FolderCog, FolderPlus, Info, Layers, Loader2, MessageSquare, Power, Search } from "lucide-react";
+import { BellRing, Check, ChevronDown, ClipboardList, FolderCog, FolderPlus, Info, Layers, Loader2, MessageSquare, Power, Search } from "lucide-react";
 import CodeschmiedeZeichen from "../Zeichen";
 import { LogoZeichen } from "../Logo";
 import { ROLLEN, WS_ICON } from "../config";
 import { btn, card, fehler, input, useFokusfalle } from "../bausteine/grund";
 import { supabase } from "../supabase";
+import { PushEinstellung } from "../Push";
 
 // ---------------- Kopfzeile (Entwurf 1.1) ----------------
 export function ProjektWahl({ projekte, aktuell, PIcon, admin, onWahl, onNeu, onVerwalten }) {
@@ -30,8 +31,8 @@ export function ProjektWahl({ projekte, aktuell, PIcon, admin, onWahl, onNeu, on
     </div>);
 }
 
-export function Benutzermenue({ ich }) {
-  const [offen, setOffen] = useState(false);
+export function Benutzermenue({ ich, toast }) {
+  const [offen, setOffen] = useState(false); const [push, setPush] = useState(false);
   const kurz = ich.name.split(" ").map((s) => s[0]).join("").slice(0, 2);
   return (
     <div className="relative">
@@ -40,8 +41,10 @@ export function Benutzermenue({ ich }) {
         <div className="fixed inset-0 z-40" onClick={() => setOffen(false)} aria-hidden="true" />
         <div role="menu" className="absolute z-50 right-0 mt-1.5 w-56 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-xl p-1.5 text-sm">
           <div className="px-2.5 py-2"><b className="block truncate">{ich.name}</b><span className="text-xs text-slate-500">{ROLLEN[ich.rolle]}</span></div>
+          <button role="menuitem" type="button" onClick={() => { setOffen(false); setPush(true); }} className="w-full flex items-center gap-2 rounded-lg px-2.5 py-2 hover:bg-slate-50 dark:hover:bg-slate-800"><BellRing className="w-4 h-4" />Push aufs Handy</button>
           <button role="menuitem" type="button" onClick={() => supabase.auth.signOut()} className="w-full flex items-center gap-2 rounded-lg px-2.5 py-2 hover:bg-slate-50 dark:hover:bg-slate-800"><Power className="w-4 h-4" />Abmelden</button>
         </div></>}
+      {push && <PushEinstellung toast={toast || (() => {})} onClose={() => setPush(false)} />}
     </div>);
 }
 

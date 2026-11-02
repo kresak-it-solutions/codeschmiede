@@ -1,0 +1,57 @@
+name: Web-Push-Schlüssel erzeugen
+
+# Einmalig von Hand starten (Actions › „Web-Push-Schlüssel erzeugen“ › Run workflow, Zweig main): erzeugt ein VAPID-Schlüsselpaar für die
+# Push-Nachrichten aufs Handy (Befund L3, Datenbank 0053) und legt es als Supabase-Secrets der Codeschmiede-Datenbank ab
+# (VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY). Der private Schlüssel erscheint nirgends im Klartext (im Log maskiert, nie im Repository).
+# Gibt es schon Schlüssel, bricht der Ablauf ab – außer „ueberschreiben“ ist an (dann müssen alle Geräte Push neu erlauben).
+# Vorlage: trainer-to-go/.github/workflows/vapid-keys.yml. Claude, Anweisung Gerhard 01.11.2026 22:18/22:38, gebaut 02.11.2026.
+on:
+  workflow_dispatch:
+    inputs:
+      ueberschreiben:
+        description: "Vorhandene Schlüssel ersetzen (alle Geräte müssen Push danach neu erlauben)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+env:
+  SUPABASE_PROJECT_REF: mvzlbpijdvsjnemubofy   # codeschmiede (EU, eu-west-1) – fest eingetragen
+
+jobs:
+  vapid:
+    if: github.ref == 'refs/heads/main'   # nur vom geprüften Stand
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.54.11   # fest (Review #60), geprüft: Release vorhanden
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Schlüssel erzeugen und speichern
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          UEBERSCHREIBEN: ${{ inputs.ueberschreiben }}
+        run: |
+          set -euo pipefail
+          trap 'echo "::error title=Abbruch in Zeile $LINENO::siehe vorige Hinweise"' ERR
+          test -n "$SUPABASE_ACCESS_TOKEN" || { echo "::error::Geheimnis SUPABASE_ACCESS_TOKEN fehlt (Repository-Einstellungen → Secrets)"; exit 1; }
+          # Review #60: Liste einzeln abrufen – scheitert sie, abbrechen (sonst würden vorhandene Schlüssel unbemerkt ersetzt)
+          if ! supabase secrets list --project-ref "$SUPABASE_PROJECT_REF" >/tmp/liste.txt 2>/tmp/liste.err; then
+            tail -5 /tmp/liste.err | while IFS= read -r l; do echo "::error title=supabase secrets list::$l"; done; exit 1
+          fi
+          if grep -q "VAPID_PRIVATE_KEY" /tmp/liste.txt; then
+            if [ "$UEBERSCHREIBEN" != "true" ]; then echo "::notice title=Schon eingerichtet::VAPID-Schlüssel sind schon gespeichert – nichts geändert."; exit 0; fi
+          fi
+          KEYS=$(npx --yes web-push@3.6.7 generate-vapid-keys --json 2>/tmp/npx.err) || { tail -5 /tmp/npx.err | while IFS= read -r l; do echo "::error title=npx::$l"; done; exit 1; }
+          PUB=$(echo "$KEYS" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s).publicKey))')
+          PRIV=$(echo "$KEYS" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s).privateKey))')
+          echo "::add-mask::$PRIV"
+          if ! supabase secrets set --project-ref "$SUPABASE_PROJECT_REF" "VAPID_PUBLIC_KEY=$PUB" "VAPID_PRIVATE_KEY=$PRIV" >/tmp/sb.log 2>&1; then
+            tail -8 /tmp/sb.log | while IFS= read -r l; do echo "::error title=supabase::$l"; done
+            exit 1
+          fi
+          echo "::notice title=Fertig::VAPID-Schlüssel gespeichert. Öffentlicher Schlüssel (nicht geheim): $PUB"
