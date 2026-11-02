@@ -396,8 +396,10 @@ async function gitPruefen(repo, keineHooks, projekt, ordner = null) {
   const common = path.join(repo, ".git");
   // Alte Kopien (vor dem Umzug der Organisation am 25.10.2026) zeigen noch auf die alte Adresse – nur origin, nur gleicher Name, nur GitHub: auf die erwartete setzen
   const url = await git(repo, "config", "--local", "--get", "remote.origin.url").catch(() => "");
-  const name = String(projekt.repo || "").split("/")[1] || "";
-  if (url && name && new RegExp(`^https://github\\.com/[A-Za-z0-9-]+/${name.replace(/[.]/g, "\\.")}(\\.git)?$`, "i").test(url.trim()) && !url.toLowerCase().includes(projekt.repo.toLowerCase())) {
+  const roh = String(projekt.repo || "").split("/")[1] || "";
+  // Nur gültige Repo-Namen; alle Sonderzeichen für den regulären Ausdruck maskieren (CodeQL: unvollständiges Escaping)
+  const name = /^[A-Za-z0-9._-]{1,100}$/.test(roh) ? roh.replace(/[\\^$.*+?()[\]{}|-]/g, "\\$&") : "";
+  if (url && name && new RegExp(`^https://github\\.com/[A-Za-z0-9-]+/${name}(\\.git)?$`, "i").test(url.trim()) && !url.toLowerCase().includes(String(projekt.repo).toLowerCase())) {
     await git(repo, "remote", "set-url", "origin", `https://github.com/${projekt.repo}.git`);
   }
   const fehler = gefaehrlicheGitConfig(await git(repo, "config", "--local", "--list").catch(() => ""), { "core.hookspath": keineHooks }, projekt.repo);
