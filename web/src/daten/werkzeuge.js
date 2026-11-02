@@ -4,7 +4,7 @@ export const WERKZEUGE = {
   "claude-code": { name: "Claude Code", kurz: "Anthropic · dein Claude-Abo", konto: "Claude-Konto (dein Abo)", verbrauch: "5-Std.- und Wochenlimit wie bisher", standard: true },
   codex: { name: "OpenAI Codex CLI", kurz: "OpenAI · ChatGPT-Abo oder eigener Schlüssel", konto: "ChatGPT-Konto, getrennt vom Claude-Abo", verbrauch: "Anzeige, soweit Codex sie meldet (Tokens je Auftrag)", version: "0.166.0", paket: "@openai/codex" },
   "gemini-cli": { name: "Gemini CLI", kurz: "Google · Google-Konto · derzeit gesperrt", konto: "Google-Konto, getrennt vom Claude-Abo", verbrauch: "Anzeige, soweit Gemini sie meldet (Tokens je Auftrag)", version: "0.64.0", paket: "@google/gemini-cli" },
-  opencode: { name: "OpenCode", kurz: "Offen · nutzt einen deiner Anbieter", konto: "Konto des darin gewählten Anbieters", verbrauch: "Anzeige, soweit OpenCode sie meldet – sonst keine Anzeige", version: "2.2.5", paket: "opencode-ai" },
+  opencode: { name: "OpenCode", kurz: "Offen · nutzt einen deiner Anbieter", konto: "Konto des darin gewählten Anbieters", verbrauch: "Anzeige, soweit OpenCode sie meldet – sonst keine Anzeige", version: "2.2.5", paket: "@opencode/cli" },
 };
 export const werkzeugName = (w) => WERKZEUGE[w]?.name || "Claude Code";
 export const MODELL = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,59}$/;

@@ -23,8 +23,11 @@ export const WERKZEUGE = {
     quelle: "https://www.npmjs.com/package/@openai/codex", anmelden: ["login"], verbrauch: "Anzeige, soweit Codex sie meldet (Tokens je Auftrag)" },
   "gemini-cli": { name: "Gemini CLI", hersteller: "Google", paket: "@google/gemini-cli", version: "0.64.0", bin: "gemini",
     quelle: "https://www.npmjs.com/package/@google/gemini-cli", anmelden: [], verbrauch: "Anzeige, soweit Gemini sie meldet (Tokens je Auftrag)" },
-  opencode: { name: "OpenCode", hersteller: "Anomaly (OpenCode)", paket: "opencode-ai", version: "2.2.5", bin: "opencode",
-    quelle: "https://www.npmjs.com/package/opencode-ai", anmelden: ["auth", "login"], verbrauch: "Anzeige, soweit OpenCode sie meldet – sonst keine Anzeige" },
+  // OpenCode: offizielles Paket laut README von github.com/anomalyco/opencode („npm i -g @opencode/cli@latest“). Das Paket kopiert das Programm
+  // per postinstall aus dem Plattform-Paket @opencode/cli-<os>-<arch>[-baseline][-musl]; die Werkstatt installiert ohne Skripte und startet
+  // das native Programm <Plattform-Paket>/bin/opencode direkt (lib/werkzeugLauf.mjs › programmIn).
+  opencode: { name: "OpenCode", hersteller: "Anomaly (OpenCode)", paket: "@opencode/cli", version: "2.2.5", bin: "opencode",
+    quelle: "https://www.npmjs.com/package/@opencode/cli", anmelden: ["auth", "login"], verbrauch: "Anzeige, soweit OpenCode sie meldet – sonst keine Anzeige" },
 };
 export const WERKZEUG_IDS = Object.keys(WERKZEUGE);
 export const FREMDE = WERKZEUG_IDS.filter((w) => w !== "claude-code");

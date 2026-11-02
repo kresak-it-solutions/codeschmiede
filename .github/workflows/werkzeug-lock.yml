@@ -46,6 +46,21 @@ jobs:
       # alle Abläufe bauen mit Node 22 – hier genau 22.22.0
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020   # v4.4.0
         with: { node-version: "22.22.0" }
+      - name: Diagnose – gibt es die festen Versionen bei registry.npmjs.org?
+        run: |
+          leer_b=$(mktemp); leer_g=$(mktemp)
+          fehlt=0
+          for paar in $(node --input-type=module -e "import('./desktop/dienst/lib/werkzeuge.mjs').then(({ WERKZEUGE, FREMDE }) => console.log(FREMDE.map((w) => WERKZEUGE[w].paket + '@' + WERKZEUGE[w].version).join(' ')))"); do
+            echo "== ${paar}"
+            # Fehlt nur die Version, gibt npm oft nichts aus und endet mit 0 – darum auch auf leere Ausgabe prüfen
+            aus=$(npm view "${paar}" version dist.integrity --registry=https://registry.npmjs.org/ --userconfig="$leer_b" --globalconfig="$leer_g" 2>&1) || aus=""
+            echo "${aus}"
+            if ! printf '%s' "${aus}" | grep -q 'sha512-'; then
+              echo "::error::${paar} gibt es bei registry.npmjs.org nicht (oder ohne sha512) – Paket bzw. Version in desktop/dienst/lib/werkzeuge.mjs prüfen"
+              fehlt=1
+            fi
+          done
+          exit $fehlt
       - name: Lock-Dateien erzeugen
         run: |
           node --version

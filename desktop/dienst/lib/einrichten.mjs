@@ -23,7 +23,7 @@ export const KATALOG = {
   gemini: { name: "Gemini CLI", programme: ["gemini"], install: { npm: "@google/gemini-cli" }, art: "fenster", login: [],
     status: { datei: [".gemini", "oauth_creds.json"] } },
   copilot: { name: "GitHub Copilot", programme: ["copilot"], install: { npm: "@github/copilot" }, art: "browser", login: ["login"] },
-  opencode: { name: "OpenCode", programme: ["opencode"], install: { npm: "opencode-ai" }, art: "fenster", login: ["auth", "login"],
+  opencode: { name: "OpenCode", programme: ["opencode"], install: { npm: "@opencode/cli" }, art: "fenster", login: ["auth", "login"],
     status: { args: ["auth", "list"], ok: /\b(oauth|api)\b/i } },
   "cursor-agent": { name: "Cursor", programme: ["cursor-agent"], art: "browser", login: ["login"],
     install: { skript: { win: "irm 'https://cursor.com/install?win32=true' | iex", unix: "curl https://cursor.com/install -fsS | bash" } },

@@ -214,7 +214,7 @@ export function KiProtokoll() {
 // steht fest im Werkstatt-Programm (desktop/dienst/lib/einrichten.mjs), nie in der Datenbank.
 const EIN_KLICK = {
   codex: { art: "browser", install: "npm install -g @openai/codex" }, gemini: { art: "fenster", install: "npm install -g @google/gemini-cli" },
-  copilot: { art: "browser", install: "npm install -g @github/copilot" }, opencode: { art: "fenster", install: "npm install -g opencode-ai" },
+  copilot: { art: "browser", install: "npm install -g @github/copilot" }, opencode: { art: "fenster", install: "npm install -g @opencode/cli" },
   "cursor-agent": { art: "browser", install: "offizielle Installation von cursor.com" },
   grok: { art: "browser", install: "Offizielle Installation von x.ai läuft automatisch" }, agy: { art: "fenster", install: "Offizielle Installation von Google läuft automatisch (das Terminal-Programm agy – die Antigravity-App allein reicht nicht)" },
   vibe: { art: "fenster", install: "Offizielle Installation von Mistral läuft automatisch" },

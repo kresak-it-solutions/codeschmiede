@@ -22,7 +22,7 @@ test("Katalog: feste Versionen, offizielle npm-Pakete, Claude Code ist Standard"
   assert.deepEqual(FREMDE, ["codex", "gemini-cli", "opencode"]);
   assert.equal(WERKZEUGE.codex.paket, "@openai/codex");
   assert.equal(WERKZEUGE["gemini-cli"].paket, "@google/gemini-cli");
-  assert.equal(WERKZEUGE.opencode.paket, "opencode-ai");
+  assert.equal(WERKZEUGE.opencode.paket, "@opencode/cli");
   for (const w of FREMDE) assert.match(WERKZEUGE[w].version, /^\d+\.\d+\.\d+$/, "feste Version, kein Bereich");
 });
 test("sperrbar: Windows nie, Linux nie (B5), Admin-PC nie, Gemini nie (B2), macOS nur mit sandbox-exec", () => {
@@ -341,9 +341,13 @@ test("Programmsuche: natives Codex bzw. OpenCode (dann kein node in der Sperre),
   assert.equal(programmIn("codex", d, { plattform: "darwin", arch: "x64" }).nodeNoetig, true);   // kein natives Programm für x64 → Node-Rückfall
   const g = path.join(nm, "@google", "gemini-cli"); await mkdir(path.join(g, "dist"), { recursive: true }); await writeFile(path.join(g, "package.json"), '{"bin":{"gemini":"dist/index.js"}}'); await writeFile(path.join(g, "dist", "index.js"), "");
   assert.deepEqual(programmIn("gemini-cli", d), { befehl: process.execPath, vorne: [path.join(g, "dist", "index.js")], nodeNoetig: true, login: null });
-  const o = path.join(nm, "opencode-ai"); await mkdir(path.join(o, "bin"), { recursive: true }); await writeFile(path.join(o, "package.json"), '{"bin":{"opencode":"bin/opencode"}}'); await writeFile(path.join(o, "bin", "opencode"), "");
-  const on = path.join(nm, "opencode-darwin-arm64", "bin", "opencode"); await mkdir(path.dirname(on), { recursive: true }); await writeFile(on, "");
-  assert.equal(programmIn("opencode", d, { plattform: "darwin", arch: "arm64" }).befehl, on);
+  // OpenCode (@opencode/cli): Start-Link ist ohne postinstall nur ein Platzhalter → nur das Plattform-Paket zählt
+  const o = path.join(nm, "@opencode", "cli"); await mkdir(path.join(o, "bin"), { recursive: true }); await writeFile(path.join(o, "package.json"), '{"bin":{"opencode":"./bin/opencode.exe"}}'); await writeFile(path.join(o, "bin", "opencode.exe"), "echo Platzhalter");
+  assert.equal(programmIn("opencode", d, { plattform: "darwin", arch: "arm64" }), null, "kein Rückfall auf den Platzhalter");
+  const on = path.join(nm, "@opencode", "cli-darwin-arm64", "bin", "opencode"); await mkdir(path.dirname(on), { recursive: true }); await writeFile(on, "");
+  const ob = path.join(nm, "@opencode", "cli-darwin-x64-baseline", "bin", "opencode"); await mkdir(path.dirname(ob), { recursive: true }); await writeFile(ob, "");
+  assert.deepEqual(programmIn("opencode", d, { plattform: "darwin", arch: "arm64" }), { befehl: on, vorne: [], nodeNoetig: false, login: null });
+  assert.equal(programmIn("opencode", d, { plattform: "darwin", arch: "x64" }).befehl, ob);
   // Bin-Eintrag, der aus node_modules hinauszeigt → nicht genommen
   await writeFile(path.join(g, "package.json"), '{"bin":{"gemini":"../../../../x.js"}}'); await writeFile(path.join(d, "x.js"), "");
   assert.equal(programmIn("gemini-cli", d), null);

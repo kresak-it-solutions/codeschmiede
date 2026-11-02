@@ -213,13 +213,17 @@ export function programmIn(id, dir, { plattform = process.platform, arch = proce
     for (const k of kand) { const r = gibt(k) && drin(k); if (r) return { befehl: r, vorne: [], nodeNoetig: false, login }; }
   }
   if (id === "opencode") {
+    // Plattform-Pakete @opencode/cli-<os>-<arch>[-baseline][-musl] (wie bin/opencode.cjs im offiziellen Repo); zuerst das genaue, dann baseline/musl
     const os2 = plattform === "win32" ? "windows" : plattform;
+    const basis = `cli-${os2}-${arch}`;
     try {
-      for (const n of liste(nm)) {
-        if (!new RegExp(`^opencode-${os2}-${arch}(-baseline|-musl)?$`).test(n)) continue;
-        const k = path.join(nm, n, "bin", "opencode"); const r = gibt(k) && drin(k); if (r) return { befehl: r, vorne: [], nodeNoetig: false, login };
+      const vorhanden = new Set(liste(path.join(nm, "@opencode")));
+      for (const n of [basis, `${basis}-baseline`, `${basis}-musl`, `${basis}-baseline-musl`]) {
+        if (!vorhanden.has(n)) continue;
+        const k = path.join(nm, "@opencode", n, "bin", plattform === "win32" ? "opencode.exe" : "opencode"); const r = gibt(k) && drin(k); if (r) return { befehl: r, vorne: [], nodeNoetig: false, login };
       }
     } catch { /* keine */ }
+    return null;   // der Start-Link des Pakets ist ohne postinstall nur ein Platzhalter – kein Node-Rückfall
   }
   if (!wrapper) return null;
   // Rückfall: Node-Programm über den node des Dienstes (Gemini CLI ist immer ein Node-Programm)
