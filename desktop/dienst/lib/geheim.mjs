@@ -23,14 +23,14 @@ const URL_PASSWORT = /\b([a-z][a-z0-9+.-]*:\/\/[^\s:@\/]+:)[^\s@\/]+@/gi;
 // Go „:=“, Namen mit „_key“/„-key“ (SUPABASE_SERVICE_KEY, OPENAI_KEY), Werte in Backticks ohne „${“.
 const Z_NAME = String.raw`[A-Za-z0-9_-]{0,40}(?:pass(?:wort|word)?|pwd?(?![a-z])|secret|token|api[_-]?key|apikey|private[_-]?key|service[_-]?role[_-]?key|credential|(?:db|master|encryption|signing|secret|private)[_-]?key|app[_-]?secret|[_-]key(?![a-z]))[A-Za-z0-9_-]{0,120}`;
 const Z_TRENNER = String.raw`((?:\s*:\s*[A-Za-z_][\w.]{0,40}(?:<[^<>\n]{0,40}>)?(?:\[\])?\??)?\s*(?::=|[:=])\s*)`;
-const ZUWEISUNG = new RegExp(String.raw`((?:\\?["'])?)(${Z_NAME})\1${Z_TRENNER}(\\?"[^"\n]{4,}"|\\?'[^'\n]{4,}'|` + "`(?:(?!\\$\\{)[^`\\n]){4,}`" + String.raw`|[^\s"'&` + "`" + String.raw`]{4,})`, "gi");
+const ZUWEISUNG = new RegExp(String.raw`((?:\\?["'])?)(${Z_NAME})\1${Z_TRENNER}(\\?"[^"\n]{4,}"|\\?'[^'\n]{4,}'|` + "`(?:(?!\\$\\{)[^`\\n]){4,}`" + String.raw`|\$\{(?:[^{}\n]|\$\{[^{}\n]*\})*\}|[^\s"'&` + "`" + String.raw`]{4,})`, "gi");
 // Fest eingetragener Ersatzwert: process.env.PW || "…", env.KEY ?? '…', $x ?: "…" (N1)
 const ERSATZWERT = new RegExp(String.raw`((?:\\?["'])?)(${Z_NAME})\1${Z_TRENNER}([^\n;]{0,160}?(?:\|\||\?\?|\?:|\sor\s)\s*)(["'` + "`" + String.raw`])([^"'` + "`" + String.raw`\n]{4,})\5`, "gi");
 // … auch, wenn der Name rechts steht: process.env.DB_PASSWORD ?? "…", config["api_key"] || '…'
 const ERSATZ_NACH = new RegExp(String.raw`(?<![A-Za-z0-9])(${Z_NAME})["'\])]{0,2}\s*(?:\|\||\?\?|\?:|\sor\s)\s*(["'` + "`" + String.raw`])([^"'` + "`" + String.raw`\n]{4,})\2`, "gi");
 // Standardwert beim Lesen einer Umgebungsvariablen (3. Nachprüfung B2): getenv("X", "…"), os.getenv, os.environ.get, PHP env("X", "…"),
 // Ruby ENV.fetch("X", "…") – geprüft wird der Standardwert unter dem Namen der Zuweisung bzw. der Variablen
-const ENV_STANDARD = new RegExp(String.raw`(?:(?<![A-Za-z0-9])(${Z_NAME})["'\]]{0,2}${Z_TRENNER})?(?:os\.getenv|getenv|os\.environ\.get|ENV\.fetch|env)\(\s*(["'])([A-Za-z_][\w.-]{0,80})\3\s*,\s*(["'` + "`" + String.raw`])([^"'` + "`" + String.raw`\n]{1,200})\5`, "gi");
+const ENV_STANDARD = new RegExp(String.raw`(?:(?<![A-Za-z0-9])(${Z_NAME})["'\]]{0,2}${Z_TRENNER})?(?:os\.getenv|getenv|os\.environ\.get|ENV\.fetch|env)\(\s*(["'])([A-Za-z_][\w.-]{0,80})\3\s*,\s*(?:default\s*=\s*)?(["'` + "`" + String.raw`])([^"'` + "`" + String.raw`\n]{1,200})\5`, "gi");
 const NAME_GANZ = new RegExp(String.raw`^${Z_NAME}$`, "i");
 // PHP: define('DB_PASSWORD', '…') (N3)
 const PHP_DEFINE = /define\(\s*(["'])([A-Z0-9_]*(?:PASSWORD|PASSWD|PASS|PWD|SECRET|KEY|TOKEN|SALT)[A-Z0-9_]*)\1\s*,\s*(["'])([^"'\n]{4,})\3/gi;
@@ -50,10 +50,14 @@ export function ohneGeheimnisse(text) {
   let s = String(text);
   for (const m of MUSTER) s = s.replace(m, "[entfernt]");
   s = s.replace(URL_PASSWORT, "$1[entfernt]@");
-  s = s.replace(ENV_STANDARD, (alles, k, z, q1, v, q2, w) => alles.slice(0, alles.length - w.length - 1) + `[entfernt]${q2}`);
-  s = s.replace(ZUWEISUNG, (alles, q, k, z, w) => (nurSchalter(k, w) ? alles : `${q}${k}${q}${z}[entfernt]`));
-  s = s.replace(ERSATZWERT, (alles, q, k, z, vor, a) => `${q}${k}${q}${z}${vor}${a}[entfernt]${a}`);
-  s = s.replace(ERSATZ_NACH, (alles, k, a) => alles.slice(0, alles.lastIndexOf(a, alles.length - 2) + 1) + `[entfernt]${a}`);
+  // Standard- und Ersatzwerte nur ersetzen, wenn sie nach derselben Regel wie beim Zählen ein Geheimnis sind (4. Nachprüfung N4: localhost, 3000 bleiben)
+  s = s.replace(ENV_STANDARD, (alles, k, z, q1, v, q2, w) => {
+    const name = [k, v].find((x) => x && NAME_GANZ.test(x));
+    return name && wertZaehlt(name, w, false) ? alles.slice(0, alles.length - w.length - 1) + `[entfernt]${q2}` : alles;
+  });
+  s = s.replace(ZUWEISUNG, (alles, q, k, z, w) => (nurSchalter(k, w) || (w.startsWith("${") && !wertZaehlt(k, w, false)) ? alles : `${q}${k}${q}${z}[entfernt]`));
+  s = s.replace(ERSATZWERT, (alles, q, k, z, vor, a, w) => (wertZaehlt(k, w, false) ? `${q}${k}${q}${z}${vor}${a}[entfernt]${a}` : alles));
+  s = s.replace(ERSATZ_NACH, (alles, k, a, w) => (wertZaehlt(k, w, false) ? alles.slice(0, alles.lastIndexOf(a, alles.length - 2) + 1) + `[entfernt]${a}` : alles));
   s = s.replace(PHP_DEFINE, (alles, a, k, b) => `define(${a}${k}${a}, ${b}[entfernt]${b}`);
   return s;
 }
@@ -65,6 +69,8 @@ const PLATZHALTER_GANZ = /^(?:<[^<>]+>|x+|\*+|\.\.\.|changeme|example|dummy|test
 const PLATZHALTER_YOUR = /^(?:your|YOUR)[_-][a-z_-]+$|^YOUR[_-][A-Z_-]+$/;   // your-password, YOUR_TOKEN – nicht „your-password-is-Sommer2024“
 // ${VAR:-wert} / ${VAR-wert} / ${VAR:=wert} sind KEINE Platzhalter – der Standardwert wird geprüft (B2)
 const SHELL_STANDARD = /^\$\{[A-Za-z_]\w*:?[-=](.*)\}$/s;
+// ${VAR:?Meldung} / ${VAR?Meldung}: Fehlermeldung, wenn die Variable fehlt – kein Standardwert (4. Nachprüfung N1)
+const SHELL_PFLICHT = /^\$\{[A-Za-z_]\w*:?\?.*\}$/s;
 const PLATZHALTER_GROSS = /^(?:\$\{[^{}]*\}|\{\{[^{}]*\}\}|\$[A-Z_][A-Z0-9_]*|%[A-Z_][A-Z0-9_]*%?)$/;
 // Verweis auf eine Umgebungsvariable als ganzer Wert (kein Geheimnis): process.env.X, import.meta.env.X, os.environ["X"], env("X"), getenv("X")
 // (ohne Anführungszeichen endet der erkannte Wert vor dem ersten Anführungszeichen: „os.environ[“, „getenv(“ – auch das ist nur ein Verweis)
@@ -78,9 +84,16 @@ const OEFFENTLICH_CAMEL = /(^(anon|publishable|public|pk)(?=[A-Z0-9]))|([a-z0-9]
 // … aber nie, wenn der Name zusätzlich etwas Geheimes nennt (NEXT_PUBLIC_API_TOKEN, VITE_PUBLIC_API_KEY, PK_TOKEN zählen)
 const GEGENLISTE = /pass|pwd|secret|service[_-]?role|private|token|api[_-]?key|apikey/i;
 // Beschriftungen (UI-Text) erkennt man an Leerzeichen UND einem Beschriftungswort (Punkt 1)
-const BESCHRIFTUNG = /(^|[^\p{L}])(eingeben|enter|your|bitte|feld|eingabe|type|please|here|hier|ihr|ihre|dein|deine|neues|new|confirm|bestätigen|wiederholen|repeat|vergessen|forgot|anzeigen|show|ändern|change|zurücksetzen|reset|mindestens|least|zeichen|characters|ungültig|invalid|falsch|wrong|erforderlich|required)([^\p{L}]|$)/iu;
+const BESCHRIFTUNG = /(^|[^\p{L}])(eingeben|enter|your|bitte|feld|eingabe|type|please|here|hier|ihr|ihre|dein|deine|neues|new|confirm|bestätigen|wiederholen|repeat|vergessen|forgot|anzeigen|show|ändern|change|zurücksetzen|reset|mindestens|least|zeichen|characters|ungültig|invalid|falsch|wrong|erforderlich|required|zu kurz|zu lang|too short|too long|kopiert|copied|geändert|changed|abgelaufen|expired|fehlt|missing|erfolgreich|successfully)([^\p{L}]|$)/iu;
 // Name einer Beschriftung statt eines Werts: passwordLabel, password_placeholder, secretHint …
-const BESCHRIFTUNG_NAME = /(label|placeholder|hint|title|text|message|msg|error|tooltip|caption)$/i;
+const BESCHRIFTUNG_NAME = /(label|placeholder|hint|title|text|message|msg|error|tooltip|caption|strength|question|expired|tooshort|toolong|mismatch|button|heading|description|help|info|warning|success)$/i;
+// Übersetzungs- und Text-Dateien: hier gilt die Beschriftungs-Ausnahme wie in Code (4. Nachprüfung N1) – nicht für .ini und .env*
+const UI_DATEI = /\.(json|ya?ml|po|pot|arb|properties|xliff|xlf|resx)$/i;
+// Übersetzung genau des Begriffs (nur in UI-Dateien): {"password": "Passwort"}, {"apiKey": "API key"}
+const BEGRIFF = /^(passwort|password|kennwort|mot de passe|contraseña|token|secret|geheimnis|schlüssel|key|api[ -]?key|api[ -]?schlüssel|zugangsdaten|credentials?)$/i;
+// Namen für Pfade, Adressen, Bezeichner und Speicher-Schlüssel (tokenUrl, passwordResetPath, TOKEN_STORAGE_KEY, passwordInputId, secretName, tokenType)
+const VERWEIS_NAME = /(url|uri|path|route|endpoint|id|name|type|storage[_-]?key|field|header|param|cookie|prefix|event|column|table)$/i;
+const VERWEIS_WERT = (w) => /^https?:\/\/[^\s@]+$/i.test(w) || /^\/[\w./:-]*$/.test(w) || /^[a-z][a-z0-9]*(?:[._:\/-][a-z0-9]+)+$/.test(w) || /^[a-z][a-z0-9_]*$/.test(w);
 const istJwt = (w) => /^eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}$/.test(w);
 const jwtRolle = (w) => { try { return JSON.parse(Buffer.from(w.split(".")[1], "base64url").toString("utf8"))?.role ?? null; } catch { return null; } };
 /**
@@ -88,17 +101,23 @@ const jwtRolle = (w) => { try { return JSON.parse(Buffer.from(w.split(".")[1], "
  * Nicht gezählt werden: ganze Platzhalter, Verweise auf Umgebungsvariablen, anon-JWTs, öffentliche Namen ohne geheimen Namensteil, Beschriftungen
  * (Leerzeichen + Beschriftungswort, bzw. Name endet auf Label/Placeholder/…).
  */
-function wertZaehlt(name, roh, code) {
+function wertZaehlt(name, roh, ui) {   // ui = "code" (Code-Datei) | "text" (Übersetzungs-/Text-Datei) | false
   const w = String(roh).trim();
+  if (SHELL_PFLICHT.test(w)) return false;
   const standard = SHELL_STANDARD.exec(w);
-  if (standard) return standard[1].length > 0 && wertZaehlt(name, standard[1], code);
+  if (standard) return standard[1].length > 0 && wertZaehlt(name, standard[1].replace(/^(["'])(.*)\1$/s, "$2"), ui);
   if (PLATZHALTER_GANZ.test(w) || PLATZHALTER_YOUR.test(w) || PLATZHALTER_GROSS.test(w) || UMGEBUNG.test(w)) return false;
   if (istJwt(w)) return jwtRolle(w) !== "anon" && (STARK.test(name) || STARK_SCHLUESSEL.test(name));   // nur der öffentliche anon-JWT ist ausgenommen
   // Öffentlich nur ohne geheimen Namensteil – auch starke Schlüssel-Namen heben das auf (B3: pk_signing_key, public_db_key zählen)
   if ((OEFFENTLICH_TEIL.test(name) || OEFFENTLICH_CAMEL.test(name)) && !GEGENLISTE.test(name) && !STARK_SCHLUESSEL.test(name)) return false;
-  // Beschriftungs-Name (passwordLabel …) nur in Code-Dateien und nur, wenn der Wert wie UI-Text aussieht (B1): nur Buchstaben/Leerzeichen/Satzzeichen
-  // oder mit Beschriftungswort. „Xk9!mQ2pLz“, „Pillersee77“, „Sommer2024!“ zählen auch unter passwordHint/…Title/…Text.
-  if (code && BESCHRIFTUNG_NAME.test(name) && (/^[\p{L} .,:;!?()'’-]+$/u.test(w) || BESCHRIFTUNG.test(w))) return false;
+  // Pfad, Adresse, Bezeichner oder Speicher-Schlüssel unter einem passenden Namen (…Url, …Path, …Id, …Name, …_STORAGE_KEY) ist kein Geheimnis
+  if (VERWEIS_NAME.test(name) && VERWEIS_WERT(w)) return false;
+  // Beschriftungs-Name (passwordLabel …) nur in Code-/Übersetzungs-Dateien und nur, wenn der Wert wie UI-Text aussieht (B1): nur Buchstaben,
+  // Leerzeichen und Satzzeichen – mit Leerzeichen auch Ziffern („Passwort zu kurz (min. 8)“) – oder mit Beschriftungswort.
+  // Ohne Leerzeichen mit Ziffern/Sonderzeichen zählt es: „Xk9!mQ2pLz“, „Pillersee77“, „Sommer2024!“.
+  const uiText = /^[\p{L} .,:;!?()'’-]+$/u.test(w) || (/\s/.test(w) && /^[\p{L}\d .,:;!?()'’+-]+$/u.test(w));
+  if (ui && BESCHRIFTUNG_NAME.test(name) && (uiText || BESCHRIFTUNG.test(w))) return false;
+  if (ui === "text" && BEGRIFF.test(w)) return false;   // nur in Übersetzungs-Dateien: Übersetzung genau des Begriffs ist eine Beschriftung
   if (/\s/.test(w) && BESCHRIFTUNG.test(w)) return false;
   if (STARK_SCHLUESSEL.test(name)) return w.length >= 8;
   if (!STARK.test(name)) return w.length >= 16 && !/\s/.test(w) && /[A-Za-z]/.test(w) && /\d/.test(w);
@@ -110,20 +129,22 @@ function wertZaehlt(name, roh, code) {
  * nur Werte in Anführungszeichen/Backticks.
  */
 export function zuweisungenZaehlen(text, rel = "") {
-  let n = 0; const code = CODE_DATEI.test(String(rel)); const t = String(text || "");
+  const datei = String(rel).split("/").pop();
+  let n = 0; const code = CODE_DATEI.test(datei); const t = String(text || "");
+  const ui = code ? "code" : UI_DATEI.test(datei) && !/^\.env/i.test(datei) ? "text" : false;
   for (const m of t.matchAll(ZUWEISUNG)) {
     const [, , k, , w] = m;
     if (nurSchalter(k, w)) continue;
     const zitiert = /^\\?["'`]/.test(w);
     if (code && !zitiert) continue;
-    if (wertZaehlt(k, w.replace(/^\\?["'`]|\\?["'`]$/g, ""), code)) n++;
+    if (wertZaehlt(k, w.replace(/^\\?["'`]|\\?["'`]$/g, ""), ui)) n++;
   }
   const ersatz = new Set();
-  for (const m of t.matchAll(ERSATZWERT)) if (wertZaehlt(m[2], m[6], code)) { n++; ersatz.add(m.index + m[0].length); }
-  for (const m of t.matchAll(ERSATZ_NACH)) if (!ersatz.has(m.index + m[0].length) && wertZaehlt(m[1], m[3], code)) n++;
+  for (const m of t.matchAll(ERSATZWERT)) if (wertZaehlt(m[2], m[6], ui)) { n++; ersatz.add(m.index + m[0].length); }
+  for (const m of t.matchAll(ERSATZ_NACH)) if (!ersatz.has(m.index + m[0].length) && wertZaehlt(m[1], m[3], ui)) n++;
   for (const m of t.matchAll(ENV_STANDARD)) {
     const k = [m[1], m[4]].find((x) => x && NAME_GANZ.test(x));
-    if (k && wertZaehlt(k, m[6], code)) n++;
+    if (k && wertZaehlt(k, m[6], ui)) n++;
   }
   for (const m of t.matchAll(PHP_DEFINE)) if (wertZaehlt("secret", m[4], false)) n++;   // Konstanten …PASSWORD/SECRET/KEY/TOKEN/SALT sind immer geheim
   return n;

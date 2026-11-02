@@ -11,7 +11,7 @@ import {
   zipEintraege, zipLesen, ordnerLesen, pruefen, pfadFehler, ausschluss, gefaehrlich, geheimeDatei, geheimnisseZaehlen, personenHinweis,
   technikErkennen, zielVorschlag, auswahlPruefen, kopierPlan, strukturListe, gruppenPrompt, gruppenAntwort, wissenAusKonzept, regelnAusEingelesen, berichtZeilen, alsText, datenWert,
 } from "../lib/einlesen.mjs";
-import { einsortieren, zielFrei, geheimnisseImOrdner } from "../lib/einlesenKopie.mjs";
+import { einsortieren, zielFrei, geheimnisseImOrdner, repoKennungMerken, repoKennungenLesen } from "../lib/einlesenKopie.mjs";
 import { ohneGeheimnisse as ohneGeheimnisseFuerTest } from "../lib/geheim.mjs";
 
 /** Kleine ZIP bauen. Eintrag: [name, inhalt, { groesse, attr, von, flags, methode }] */
@@ -517,7 +517,7 @@ test("2. Nachprüfung 6: Platzhalter nur als ganzer Wert", () => {
 });
 
 test("2. Nachprüfung 7/8: Bearer-Platzhalter, Stripe-Test, AWS ASIA", () => {
-  for (const t of ["Authorization: Bearer YOUR_ACCESS_TOKEN", "Authorization: Bearer <TOKEN_HIER>", "Bearer ACCESS_TOKEN_HERE"]) assert.equal(geheimnisseZaehlen(t, "README.md"), 0, t);
+  for (const t of ["Authorization: Bearer YOUR_ACCESS_TOKEN", "Authorization: Bearer <TOKEN_HIER>", "Bearer ACCESS_TOKEN"]) assert.equal(geheimnisseZaehlen(t, "README.md"), 0, t);
   for (const t of ["Authorization: Bearer ABCDEFGHIJKLMNOPQRSTUV", "Bearer abcdef1234567890xyz", `sk_test_${"a".repeat(24)}`, `rk_test_${"b".repeat(24)}`, "ASIAIOSFODNN7EXAMPLE"]) assert.ok(geheimnisseZaehlen(t, "README.md") >= 1, t);
 });
 
@@ -525,8 +525,8 @@ test("2. Nachprüfung 7/8: Bearer-Platzhalter, Stripe-Test, AWS ASIA", () => {
 
 test("B1: Beschriftungs-Namen nur in Code und nur bei UI-Text", () => {
   for (const [t, rel] of [['secretText = "Xk9!mQ2pLz"', "a.js"], ['passwordHint = "Xk9!mQ2pLz"', "a.js"], ['adminPasswordTitle = "Pillersee77"', "a.js"], ['dbPasswordText = "Sommer2024!"', "a.js"],
-    ['masterKeyCaption: "8f3a9b2c1d4e"', "a.js"], ["SECRET_TEXT=Xk9mQ2pLz12", "x.ini"], ['passwordLabel: "Kennwort"', "c.yml"]]) assert.ok(geheimnisseZaehlen(t, rel) >= 1, t);
-  for (const [t, rel] of [['passwordLabel: "Kennwort"', "a.js"], ['passwordHint: "Mindestens 8 Zeichen"', "a.js"], ['secretTitle: "Geheimer Bereich"', "a.ts"], ['passwordPlaceholder: "Ihr Passwort (8+ Zeichen)"', "a.jsx"]]) assert.equal(geheimnisseZaehlen(t, rel), 0, t);
+    ['masterKeyCaption: "8f3a9b2c1d4e"', "a.js"], ["SECRET_TEXT=Xk9mQ2pLz12", "x.ini"], ['passwordLabel = "Kennwort"', "c.ini"]]) assert.ok(geheimnisseZaehlen(t, rel) >= 1, t);
+  for (const [t, rel] of [['passwordLabel: "Kennwort"', "a.js"], ['passwordHint: "Mindestens 8 Zeichen"', "a.js"], ['secretTitle: "Geheimer Bereich"', "a.ts"], ['passwordPlaceholder: "Ihr Passwort (8+ Zeichen)"', "a.jsx"], ['passwordLabel: "Kennwort"', "c.yml"]]) assert.equal(geheimnisseZaehlen(t, rel), 0, t);
 });
 
 test("B2: Standardwerte von Umgebungsvariablen werden geprüft", () => {
@@ -546,8 +546,9 @@ test("B3: starke Schlüssel-Namen zählen auch mit pk_/public_/anon-Teil", () =>
 });
 
 test("B5: Bearer-Platzhalter nur als ganzer Wert ohne Ziffern", () => {
-  for (const t of ["Bearer YOUR_ACCESS_TOKEN", "Bearer ACCESS_TOKEN_HERE", "Bearer GITHUB_TOKEN_VALUE"]) assert.equal(geheimnisseZaehlen(t, "README.md"), 0, t);
-  for (const t of ["Bearer YOUR_TOKEN_12345678901", "Bearer ABCDEFGHIJKLMNOPQRSTUV", "Bearer TOKEN1234567890ABCDEF", "Bearer abcTOKENdefghijklmnop"]) assert.ok(geheimnisseZaehlen(t, "README.md") >= 1, t);
+  for (const t of ["Bearer YOUR_ACCESS_TOKEN", "Bearer TOKEN", "Bearer ACCESS_TOKEN"]) assert.equal(geheimnisseZaehlen(t, "README.md"), 0, t);
+  // seit der 4. Nachprüfung (N4) nur noch genau TOKEN/ACCESS_TOKEN/YOUR_…/<…>: diese zählen
+  for (const t of ["Bearer ACCESS_TOKEN_HERE", "Bearer GITHUB_TOKEN_VALUE", "Bearer YOUR_TOKEN_12345678901", "Bearer ABCDEFGHIJKLMNOPQRSTUV", "Bearer TOKEN1234567890ABCDEF", "Bearer abcTOKENdefghijklmnop"]) assert.ok(geheimnisseZaehlen(t, "README.md") >= 1, t);
 });
 
 test("B4: vorhandenes Repository nur bei gemerkter Kennung und unberührt weiterverwenden", async () => {
@@ -557,7 +558,7 @@ test("B4: vorhandenes Repository nur bei gemerkter Kennung und unberührt weiter
   try {
     const code = path.join(tmp, "code"); await mkdir(code); await writeFile(path.join(code, "a.js"), "1");
     const bare = path.join(tmp, "gh.git"); await run("git", ["init", "-q", "--bare", bare]);
-    const gut = { id: 4711, node_id: "R_kgDOAbc", sichtbarkeit: "private", branches: "409", tags: 0, hooks: 0, keys: 0, rulesets: 0, leute: ["tester"] };
+    const gut = { id: 4711, node_id: "R_kgDOAbc", sichtbarkeit: "private", branches: "409", tags: "409", hooks: 0, keys: 0, rulesets: 0, teams: 0, invitations: 0, leute: ["tester"] };
     const machSh = (r, { da = true } = {}) => { const aufrufe = []; let angelegt = da; const sh = async (b, a, o) => {
       const z = [b, ...a].join(" "); aufrufe.push(z);
       if (b === "gh" && a[0] === "api" && a[1] === "user") return { stdout: "tester\n" };
@@ -565,7 +566,10 @@ test("B4: vorhandenes Repository nur bei gemerkter Kennung und unberührt weiter
       if (b === "gh" && a[1] === "view") { if (!angelegt) throw new Error("fehlt"); return { stdout: "{}" }; }
       if (b === "gh" && a[1] === "create") { angelegt = true; return { stdout: "" }; }
       if (b === "gh" && a[0] === "api" && a[1] === "repos/kresak-it-solutions/x-projekt") return { stdout: JSON.stringify({ id: r.id, node_id: r.node_id, sichtbarkeit: r.sichtbarkeit }) };
-      for (const k of ["branches", "tags", "hooks", "keys", "rulesets"]) if (z.includes(`/x-projekt/${k} `)) { if (r[k] === "409") throw Object.assign(new Error("HTTP 409: Git Repository is empty."), { stderr: "HTTP 409" }); return { stdout: `${r[k]}\n` }; }
+      for (const k of ["branches", "tags", "hooks", "keys", "rulesets", "teams", "invitations"]) if (z.includes(`/x-projekt/${k} `)) {
+        if (r[k] === "409") throw Object.assign(new Error("HTTP 409: Git Repository is empty."), { stderr: "HTTP 409" });
+        if (r[k] === "fehler") throw Object.assign(new Error("HTTP 403"), { stderr: "HTTP 403: Resource not accessible" });
+        return { stdout: `${r[k]}\n` }; }
       if (z.includes("collaborators")) return { stdout: JSON.stringify(r.leute) };
       if (z.includes("actions/permissions")) return { stdout: a.includes("PUT") ? "" : "false\n" };
       if (b === "git" && a.includes("push")) return run("git", a.map((x) => (x.startsWith("https://github.com/") ? bare : x)), o);
@@ -579,7 +583,9 @@ test("B4: vorhandenes Repository nur bei gemerkter Kennung und unberührt weiter
     for (const [fall, r, gm, grund] of [["ohne gemerkte Kennung", gut, null, /nicht von diesem PC/], ["andere id", { ...gut, id: 999 }, gemerkt, /nicht von diesem PC/],
       ["andere node_id", { ...gut, node_id: "R_x" }, gemerkt, /nicht von diesem PC/], ["öffentlich", { ...gut, sichtbarkeit: "public" }, gemerkt, /nicht privat/],
       ["Zweig da", { ...gut, branches: 1 }, gemerkt, /Zweige/], ["Tag", { ...gut, tags: 1 }, gemerkt, /Tags/], ["Hook", { ...gut, hooks: 1 }, gemerkt, /Webhooks/],
-      ["Deploy-Key", { ...gut, keys: 1 }, gemerkt, /Deploy-Keys/], ["Ruleset", { ...gut, rulesets: 2 }, gemerkt, /Rulesets/], ["Mitarbeiter", { ...gut, leute: ["tester", "fremd"] }, gemerkt, /Mitarbeiter/]]) {
+      ["Deploy-Key", { ...gut, keys: 1 }, gemerkt, /Deploy-Keys/], ["Ruleset", { ...gut, rulesets: 2 }, gemerkt, /Rulesets/], ["Mitarbeiter", { ...gut, leute: ["tester", "fremd"] }, gemerkt, /Mitarbeiter/],
+      ["Team", { ...gut, teams: 1 }, gemerkt, /Teams/], ["Einladung", { ...gut, invitations: 1 }, gemerkt, /Einladungen/],
+      ["Teams nicht prüfbar", { ...gut, teams: "fehler" }, gemerkt, /Teams nicht prüfbar/], ["Einladungen nicht prüfbar", { ...gut, invitations: "fehler" }, gemerkt, /Einladungen nicht prüfbar/]]) {
       const { p, aufrufe } = await lauf(r, gm);
       await assert.rejects(p, (e) => /liegt schon bei GitHub, bitte dort prüfen oder löschen/.test(e.message) && grund.test(e.message), fall);
       assert.ok(!aufrufe.some((x) => x.includes(" push ") || x.includes("repo create")), `${fall}: nichts angelegt oder hochgeladen`);
@@ -594,5 +600,62 @@ test("B4: vorhandenes Repository nur bei gemerkter Kennung und unberührt weiter
     const iCreate = neu.aufrufe.findIndex((x) => x.includes("repo create")); const iId = neu.aufrufe.findIndex((x, i) => i > iCreate && x.includes("repos/kresak-it-solutions/x-projekt") && x.includes("node_id"));
     const iAus = neu.aufrufe.findIndex((x) => x.includes("enabled=false"));
     assert.ok(iCreate >= 0 && iId > iCreate && iAus > iId, "anlegen → Kennung merken → Actions aus");
+  } finally { await rm(tmp, { recursive: true, force: true }); }
+});
+
+
+test("4. Nachprüfung N1: keine Fehlalarme in Übersetzungs-Dateien, Verweise und ${X:?…}", () => {
+  for (const [rel, t] of [
+    ["de.json", '{"passwordLabel":"Passwort"}'], ["de.json", '{"tokenText":"Token kopiert!"}'], ["de.json", '{"passwordMsg":"Passwort geändert."}'], ["en.json", '{"apiKeyLabel":"API key"}'],
+    ["de.json", '{"auth":{"password":"Passwort","passwordHint":"Mindestens 8 Zeichen","forgotPassword":"Passwort vergessen?","tokenExpired":"Sitzung abgelaufen"}}'],
+    ["en.json", '{"password": "Password", "confirmPassword": "Confirm password", "passwordTooShort": "Password must be at least 8 characters"}'],
+    ["en.json", '{"passwordStrength": "Strong", "secretQuestion": "Name of first pet"}'], ["de.yml", "auth:\n  passwordLabel: Passwort\n  tokenText: Token kopiert!"],
+    ["messages.properties", "login.passwordLabel=Kennwort"], ["app_de.arb", '{"passwordHint": "Mindestens 8 Zeichen"}'], ["Strings.resx", "<data name=\"passwordLabel\"><value>Passwort</value></data>"],
+    ["Login.jsx", 'const passwordError = "Passwort zu kurz (min. 8)";'],
+    ["app.js", 'const tokenUrl = process.env.TOKEN_URL || "https://example.com/oauth/token";'], ["app.js", 'const passwordResetPath = "/auth/reset-password";'],
+    ["app.js", 'export const TOKEN_STORAGE_KEY = "ttg.auth.token";'], ["app.js", 'const passwordInputId = "login-password-field";'], ["app.js", 'const secretName = "projects/my-proj/secrets/db";'],
+    ["app.js", 'const tokenType = "access_token_type";'], ["docker-compose.yml", "POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Passwort fehlt}"], ["x.yml", "PW: ${PW?bitte setzen}"]])
+    assert.equal(geheimnisseZaehlen(t, rel), 0, `${rel}: ${t}`);
+});
+
+test("4. Nachprüfung N1: echte Geheimnisse zählen weiter – auch in .ini/.env und unter Verweis-Namen mit Zufallswert", () => {
+  for (const [rel, t] of [
+    ["a.ini", "SECRET_TEXT=Xk9mQ2pLz12"], ["a.ini", "passwordLabel=Passwort"], [".env.local.json", '{"passwordLabel":"Passwort"}'], ["config.json", '{"password":"Sommer2024!"}'],
+    ["config.json", '{"db":{"password":"Pillersee"}}'], ["config.yml", "password: Sommer"], ["a.js", 'const tokenId = "Xk9!mQ2pLz7#"'], ["a.js", 'const secretName = "Sommer2024!"'],
+    ["a.js", 'const tokenUrl = "https://user:geheim123@api.example.com"'], ["docker-compose.yml", "POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-Sommer2024!}"],
+    ["x.yml", "POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-${X:-Sommer2024!}}"], ["x.yml", "DB_PASSWORD: ${DB_PASSWORD:-'Sommer2024!'}"], ["de.json", '{"passwordHint":"Xk9!mQ2pLz"}']])
+    assert.ok(geheimnisseZaehlen(t, rel) >= 1, `${rel}: ${t}`);
+});
+
+test("4. Nachprüfung N4: Bearer-Platzhalter, default=, harmlose Standardwerte in Logs", () => {
+  for (const t of ["Bearer TOKEN", "Bearer ACCESS_TOKEN", "Bearer YOUR_ACCESS_TOKEN", "Bearer <token>"]) assert.equal(geheimnisseZaehlen(t, "README.md"), 0, t);
+  for (const t of ["Bearer MYTOKENISREALLYLONGSECRET", "Bearer ACCESSTOKENVALUEFORPRODX", "Bearer GITHUB_TOKEN_VALUE_XY"]) assert.ok(geheimnisseZaehlen(t, "README.md") >= 1, t);
+  assert.ok(geheimnisseZaehlen('password = os.getenv("DB_PASSWORD", default="Sommer2024!")', "a.py") >= 1);
+  assert.ok(geheimnisseZaehlen('const k = "sk_test_abcdefghijklmn";', "a.js") >= 1);
+  const o = ohneGeheimnisseFuerTest;
+  assert.equal(o('host = os.getenv("DB_HOST", "localhost")'), 'host = os.getenv("DB_HOST", "localhost")');
+  assert.equal(o('ports: "${PORT:-3000}:3000"'), 'ports: "${PORT:-3000}:3000"');
+  assert.equal(o('const port = process.env.PORT || "3000";'), 'const port = process.env.PORT || "3000";');
+  for (const t of ['password = os.getenv("DB_PASSWORD", "Sommer2024!")', "POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-Sommer2024!}", 'const pw = process.env.PW || "Sommer2024!";', "'password' => env('DB_PASSWORD', 'Sommer2024!'),"])
+    assert.ok(!o(t).includes("Sommer2024"), t);
+});
+
+test("4. Nachprüfung N3: einlesen-repos.json atomar, 0600, nie durch Verknüpfungen, Schreiber nacheinander", async () => {
+  const tmp = await mkdtemp(path.join(os.tmpdir(), "cs-einlesen-merk-"));
+  try {
+    const d = path.join(tmp, "einlesen-repos.json"); const geschuetzt = [];
+    await Promise.all(Array.from({ length: 12 }, (_, i) => repoKennungMerken(d, `kresak-it-solutions/p${i}`, { id: i + 1, node_id: `R_${i}` }, { schuetzen: async (f) => { geschuetzt.push(f); } })));
+    const alle = await repoKennungenLesen(d);
+    assert.equal(Object.keys(alle).length, 12, "kein Schreiber geht verloren");
+    assert.equal(alle["kresak-it-solutions/p3"].node_id, "R_3");
+    if (process.platform !== "win32") assert.equal((await stat(d)).mode & 0o777, 0o600);
+    assert.equal(geschuetzt.length, 12);
+    assert.deepEqual((await readdir(tmp)).filter((n) => n.endsWith(".neu")), [], "keine Hilfsdateien übrig");
+    // Verknüpfung statt Datei: nicht lesen, nicht schreiben
+    const ziel = path.join(tmp, "fremd.json"); await writeFile(ziel, "{}"); await rm(d); await symlink(ziel, d);
+    await assert.rejects(repoKennungMerken(d, "kresak-it-solutions/x", { id: 1, node_id: "R_1" }), /keine echte Datei/);
+    assert.deepEqual(await repoKennungenLesen(d), {});
+    assert.equal(await readFile(ziel, "utf8"), "{}");
+    await assert.rejects(repoKennungMerken(path.join(tmp, "x.json"), "../boese", { id: 1, node_id: "R" }), /Ungültige Kennung/);
   } finally { await rm(tmp, { recursive: true, force: true }); }
 });

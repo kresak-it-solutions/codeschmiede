@@ -1,7 +1,8 @@
 // Bestehendes Projekt einlesen (0.15.0): Kopieren in den Projektordner und Prüfungen auf der Platte.
 // Kopieren, nie verschieben – die Quelle wird nur gelesen. Im Projektordner wird nichts überschrieben (sicherNeu); der Code geht in einen frischen
 // Wegwerf-Ordner, aus dem das Repository entsteht (danach klont die Werkstatt wie immer nach <Projektordner>/code).
-import { lstat, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readdir, readFile, writeFile, rename, rm } from "node:fs/promises";
+import { randomBytes } from "node:crypto";
 import path from "node:path";
 import { sicherNeu, relOk, kennungOk } from "./projektordner.mjs";
 import { geheimeDatei, geheimnisseZaehlen, pfadFehler } from "./einlesen.mjs";
@@ -66,4 +67,34 @@ export async function geheimnisseImOrdner(ordner, { max = 5 * 1024 * 1024 } = {}
   };
   await gehe(ordner, "");
   return r;
+}
+
+// ---------- Gemerkte Repository-Kennungen (<Daten>/einlesen-repos.json, 4. Nachprüfung N3) ----------
+let merkKette = Promise.resolve();   // kleiner Mutex im Prozess: Schreiber nacheinander
+/** Gemerkte Kennungen lesen – nur aus einer echten Datei (keine Verknüpfung). Fehler → {}. */
+export async function repoKennungenLesen(datei) {
+  const st = await lstat(datei).catch(() => null);
+  if (!st || !st.isFile() || st.isSymbolicLink() || st.size > 1024 * 1024) return {};
+  try { const j = JSON.parse(await readFile(datei, "utf8")); return j && typeof j === "object" && !Array.isArray(j) ? j : {}; } catch { return {}; }
+}
+/**
+ * Kennung { id, node_id } für repo merken: atomar (Hilfsdatei mit mode 0o600 und flag „wx“, dann umbenennen), nie durch eine Verknüpfung,
+ * Schreiber nacheinander; schuetzen(datei) setzt unter Windows die Rechte (icacls wie beim Zugriffstoken).
+ */
+export function repoKennungMerken(datei, repo, k, { schuetzen = async () => {} } = {}) {
+  const lauf = merkKette.then(async () => {
+    if (!/^[A-Za-z0-9-]+\/[A-Za-z0-9._-]+$/.test(repo) || !(Number(k?.id) > 0) || !/^[A-Za-z0-9_=-]{1,100}$/.test(String(k?.node_id || ""))) throw new Error("Ungültige Kennung");
+    const st = await lstat(datei).catch(() => null);
+    if (st && (st.isSymbolicLink() || !st.isFile())) throw new Error("einlesen-repos.json ist keine echte Datei – nicht geschrieben");
+    const alle = await repoKennungenLesen(datei);
+    alle[repo] = { id: Number(k.id), node_id: String(k.node_id), zeit: new Date().toISOString() };
+    const tmp = `${datei}.${randomBytes(6).toString("hex")}.neu`;
+    try {
+      await writeFile(tmp, JSON.stringify(alle, null, 1), { mode: 0o600, flag: "wx" });
+      await schuetzen(tmp);
+      await rename(tmp, datei);
+    } finally { await rm(tmp, { force: true }).catch(() => {}); }
+  });
+  merkKette = lauf.catch(() => {});
+  return lauf;
 }

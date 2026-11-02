@@ -204,7 +204,7 @@ export async function repoKennung({ sh, repo }) {
 /**
  * Darf ein schon vorhandenes Repository weiterverwendet werden (3. Nachprüfung B4)? Nur, wenn es GENAU das ist, das die Codeschmiede beim ersten
  * Versuch angelegt hat (gleiche id und node_id, lokal gemerkt), und wenn es privat, leer (keine Zweige; 409 = leer), ohne Hooks, Deploy-Keys, Tags,
- * Rulesets und ohne Mitarbeiter außer dem eigenen Konto ist. Rückgabe: Grund (Text) oder null (weiterverwenden).
+ * Rulesets, Teams, offene Einladungen und ohne Mitarbeiter außer dem eigenen Konto ist (Abfrage scheitert → nicht weiterverwenden). Rückgabe: Grund (Text) oder null (weiterverwenden).
  */
 export async function repoWiederGrund({ sh, repo, gemerkt, login }) {
   const k = await repoKennung({ sh, repo });
@@ -215,7 +215,8 @@ export async function repoWiederGrund({ sh, repo, gemerkt, login }) {
     try { const n = Number(String((await sh("gh", ["api", `repos/${repo}/${pfad}`, "--jq", "length"])).stdout).trim()); return Number.isFinite(n) ? n : NaN; }
     catch (e) { return leer409 && /409|empty/i.test(String(e?.stderr || e?.message || e)) ? 0 : NaN; }
   };
-  for (const [pfad, was, o] of [["branches", "Zweige", { leer409: true }], ["tags", "Tags"], ["hooks", "Webhooks"], ["keys", "Deploy-Keys"], ["rulesets", "Rulesets"]]) {
+  // 409 „Git Repository is empty“ gilt bei allen Listen als leer (4. Nachprüfung N5); Teams und offene Einladungen zählen mit (N2)
+  for (const [pfad, was, o] of [["branches", "Zweige"], ["tags", "Tags"], ["hooks", "Webhooks"], ["keys", "Deploy-Keys"], ["rulesets", "Rulesets"], ["teams", "Teams"], ["invitations", "offene Einladungen"]].map(([p, w]) => [p, w, { leer409: true }])) {
     const n = await anzahl(pfad, o);
     if (Number.isNaN(n)) return `${was} nicht prüfbar`;
     if (n > 0) return `hat ${was}`;

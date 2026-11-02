@@ -181,7 +181,7 @@ const SCHLUESSEL = [
   /(?<![A-Za-z0-9])SG\.[\w-]{16,}\.[\w-]{16,}/g,                                   // SendGrid
   /Authorization["']?\s*[:=]\s*["'`]?Basic\s+[A-Za-z0-9+/]{12,}={0,2}/gi,           // Basic-Zugang im Kopf
   /(?<![A-Za-z0-9])(?:sb_secret_|sbp_)[A-Za-z0-9_-]{16,}/g,
-  /(?<![A-Za-z0-9])(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{16,}/g,
+  /(?<![A-Za-z0-9])(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{10,}/g,
   /(?<![A-Za-z0-9])whsec_[A-Za-z0-9]{16,}/g,
   /(?<![A-Za-z0-9])xox[abprs]-[A-Za-z0-9-]{10,}/g,
   /:\/\/[^\s:@/'"]{1,64}:[^\s@/'"]{6,}@[A-Za-z0-9.-]+/g,   // Zugangsdaten in einer Adresse (postgres://name:passwort@…)
@@ -204,8 +204,8 @@ export function alsText(buf) {
 export function geheimnisseZaehlen(text, rel = "") {
   const t = Buffer.isBuffer(text) ? alsText(text) : String(text || "");
   let n = zuweisungenZaehlen(t, rel);
-  // Bearer-Token: Muster aus geheim.mjs; Platzhalter nur als GANZER Wert ohne Ziffern (B5): YOUR_…, <…>, …TOKEN…
-  for (const m of t.matchAll(new RegExp(BEARER.source, "g"))) { const tok = m[0].replace(/^Bearer\s+/, "").replace(/=+$/, ""); if (!/^(YOUR_[A-Z_]+|<[^>]+>|[A-Z_]*TOKEN[A-Z_]*)$/.test(tok)) n++; }
+  // Bearer-Token: Muster aus geheim.mjs; Platzhalter nur als GANZER Wert ohne Ziffern: genau TOKEN, ACCESS_TOKEN, YOUR_… oder <…> (4. Nachprüfung N4)
+  for (const m of t.matchAll(new RegExp(BEARER.source, "g"))) { const tok = m[0].replace(/^Bearer\s+/, "").replace(/=+$/, ""); if (!/^(TOKEN|ACCESS_TOKEN|YOUR_[A-Z_]+|<[^>]+>)$/.test(tok)) n++; }
   for (const m of SCHLUESSEL) n += (t.match(m) || []).length;
   for (const m of t.matchAll(JWT)) {
     try { const j = JSON.parse(Buffer.from(m[1], "base64url").toString("utf8")); if (j && typeof j === "object" && String(j.role || "").toLowerCase() === "service_role") n++; } catch { /* kein JWT */ }

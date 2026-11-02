@@ -126,6 +126,17 @@ Das Original (ZIP bzw. Ordner) bleibt unverändert. Bricht das Einlesen ab, steh
 **Verbleibende Grenzen:** Base64- oder anders kodierte bzw. zusammengesetzte Schlüssel (`"sk-" + teil2`) werden nicht erkannt; Schlüssel in Binärdateien
 (Bilder, PDF, Office) nur, wenn sie als Klartext darin stehen; eine Passphrase, die zufällig ein Beschriftungswort enthält (z. B. „bitte nicht raten“), wird nicht erkannt; Werte unter 6 Zeichen zählen nie; die Erkennung ist eine Mustersuche – sie ersetzt nicht das Prüfen der Schlüssel durch den Admin vor dem Einschalten von Actions.
 
+## 4. Nachprüfung (02.11.2026, GELB, N1–N5)
+| Nr. | Umsetzung |
+|---|---|
+| N1 | Beschriftungs-Ausnahme (Namen auf Label, Hint, Title, Text, Msg, Error, Strength, Question, Expired … mit UI-Text) gilt in Code **und** in Übersetzungs-/Text-Dateien (`.json .yaml .yml .po .arb .properties .xliff .resx`), **nicht** in `.ini` und `.env*`. UI-Text = nur Buchstaben/Leerzeichen/Satzzeichen, mit Leerzeichen auch Ziffern („Passwort zu kurz (min. 8)“), oder mit Beschriftungswort. Nur in Übersetzungs-Dateien: die Übersetzung genau des Begriffs (`{"password": "Passwort"}`, `{"apiKeyLabel": "API key"}`) zählt nicht. Namen auf Url, Uri, Path, Route, Endpoint, Id, Name, Type, _STORAGE_KEY, Field, Header, Param, Cookie … mit einem Wert, der wie Adresse, Pfad, Bezeichner oder Speicher-Schlüssel aussieht, zählen nicht (`tokenUrl`, `passwordResetPath`, `TOKEN_STORAGE_KEY`, `passwordInputId`, `secretName`, `tokenType`). `${X:?Meldung}` ist eine Fehlermeldung, kein Standardwert. |
+| N2 | Weiterverwenden zusätzlich nur ohne Teams (`repos/{repo}/teams`) und ohne offene Einladungen (`repos/{repo}/invitations`); scheitert eine Abfrage → Abbruch. |
+| N3 | `<Daten>/einlesen-repos.json` wird atomar geschrieben (Hilfsdatei `mode 0o600`, `flag "wx"`, dann umbenennen), nie durch eine Verknüpfung (vorher `lstat`), unter Windows mit Rechten nur für die eigene Person und SYSTEM (`icacls`, wie beim Zugriffstoken); Schreiber laufen im Prozess nacheinander. |
+| N4 | Bearer-Platzhalter nur genau `TOKEN`, `ACCESS_TOKEN`, `YOUR_…`, `<…>`. `os.getenv("PW", default="…")` wird erkannt. `ohneGeheimnisse` ersetzt Standard- und Ersatzwerte nur, wenn sie nach derselben Regel ein Geheimnis sind (`localhost`, `3000` bleiben stehen). Stripe-Testschlüssel ab 10 Zeichen. |
+| N5 | 409 „Git Repository is empty“ gilt bei allen abgefragten Listen (Zweige, Tags, Hooks, Keys, Rulesets, Teams, Einladungen) als leer. |
+
+**Bewusste Lücken nach diesen Regeln:** Ein Wert aus reinen Buchstaben (auch mit Leerzeichen) unter einem Beschriftungs-Namen in Code oder Übersetzungs-Dateien (`passwordHint = "Pillersee"`, `dbPasswordText = "Sommer Sonne"`) zählt nicht; ebenso ein Bearer-Wert der Form `YOUR_…` (z. B. `YOUR_SECRET_VALUE_HERE_X`).
+
 ## Offen / bewusst nicht gebaut
 - Zuordnung je Eintrag der **obersten Ebene** (Datei oder Ordner), nicht je einzelner Datei in Unterordnern.
 - Eingelesene `CLAUDE.md`/`AGENTS.md` liegen zusätzlich im Code (Teil des Projekts); ob Claude Code sie in Aufträgen von selbst liest, hängt von Claude Code ab – die Rangfolge der Regeln im Auftrag gilt trotzdem.
