@@ -1,10 +1,12 @@
-// Ein Arbeitsplatz für jede Art von Programm, Stufe 1 (Entwurf freigegeben von Gerhard 02.11.2026, docs/KONZEPT-ARBEITSPLATZ.md, Datenbank 0059).
+// Ein Arbeitsplatz für jede Art von Programm, Stufe 1 (Entwurf freigegeben von Gerhard 02.11.2026, docs/KONZEPT-ARBEITSPLATZ.md, Datenbank 0059);
+// Stufen 2/3 (0.17.0, Datenbank 0060): Vorschau je Ziel aus ArbeitsplatzZiele.jsx, „Auf diesen Stand zurück“ im Verlauf.
 // Bausteine des Feature-Arbeitsplatzes: Status-Punkt im Baum, offene Punkte über dem Chat, Prüfweg, rechte Hälfte mit
 // Vorschau | Code live | Verlauf. Reine Logik in bausteine/arbeitsplatz.js (getestet), Daten der Punkte in daten/punkte.js.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Box, Check, CircleCheck, Code2, ExternalLink, EyeOff, FileCode2, History, Info, ListChecks, Loader2, Monitor, Pencil, Play, Plus, RefreshCw, Route } from "lucide-react";
-import { ABGESCHLOSSEN, btn, card, fehler, fmt, ghost, input, merke } from "../bausteine/grund";
-import { DATEI_ART, PRUEFWEG_TYPEN, STATUS_TEXT, ZIELE, diffZeilen, featureStatus, pruefwegFehler, pruefwegVon, punktStatus, verlaufEintraege, zieleVon } from "../bausteine/arbeitsplatz";
+import { Check, CircleCheck, Code2, EyeOff, FileCode2, History, Info, ListChecks, Loader2, Monitor, Pencil, Plus, RefreshCw, Route, Undo2 } from "lucide-react";
+import { ABGESCHLOSSEN, btn, card, fehler, fmt, ghost, input, merke, useBestaetigen } from "../bausteine/grund";
+import { DATEI_ART, PRUEFWEG_TYPEN, STATUS_TEXT, ZIELE, diffZeilen, featureStatus, pruefwegFehler, pruefwegVon, punktStatus, verlaufEintraege, zieleVon, zielAnsicht, zuruecksetzenPlan } from "../bausteine/arbeitsplatz";
+import { DokumentVorschau, DotnetAnsicht, FensterVorschau, HandyQr, KeineVorschau, WerkzeugKonsole } from "./ArbeitsplatzZiele";
 import { Fehlerzustand, Laden, Leerzustand } from "../bausteine/zustand";
 import { useAuftragDetails } from "../daten/werkstattDaten";
 import { frage as codeFrage } from "../CodeEditor";
@@ -127,13 +129,18 @@ export function PruefwegZeile({ f, projekt, darf, toast, onGespeichert }) {
 
 // ---------------- Rechte Hälfte: Vorschau | Code live | Verlauf ----------------
 const ANSICHTEN = [["vor", "Vorschau", Monitor], ["code", "Code live", Code2], ["verlauf", "Verlauf", History]];
-export function RechteHaelfte({ projekt, f, d, ich, toast, onCode, vorschau }) {
+export function RechteHaelfte({ projekt, f, d, ich, toast, onCode, vorschau, onBaustein, baustein, darfAuftrag = false }) {
   const [ansicht, setAnsichtRoh] = useState(() => { const v = merke.lies("cs-platz-rechts"); return ANSICHTEN.some(([k]) => k === v) ? v : "vor"; });
   const setAnsicht = (v) => { setAnsichtRoh(v); merke.schreib("cs-platz-rechts", v); };
   const ziele = zieleVon(projekt);
   const [ziel, setZiel] = useState(ziele[0]);
   useEffect(() => { if (!ziele.includes(ziel)) setZiel(ziele[0]); }, [ziele.join(","), ziel]); // eslint-disable-line react-hooks/exhaustive-deps
   const laeuft = d.auftraege.some((a) => a.feature_id === f.id && a.stand === "laeuft");
+  // Stand für Sandbox, Testlauf und Dokument: Zweig des offenen Auftrags dieses Features, sonst main
+  const aktiv = [...d.auftraege].reverse().find((a) => a.feature_id === f.id && a.zweig && !ABGESCHLOSSEN.includes(a.stand) && a.stand !== "abgebrochen") || null;
+  const zweig = aktiv?.zweig || "main";
+  const art = zielAnsicht(ziel, projekt);
+  const gemeinsam = { projekt, f, d, ich, toast, zweig };
   return (
     <div className={`${card} flex flex-col min-h-[480px] min-w-0 overflow-hidden`}>
       <div className="flex flex-wrap items-center gap-2 p-2 border-b border-slate-200 dark:border-slate-800">
@@ -145,56 +152,20 @@ export function RechteHaelfte({ projekt, f, d, ich, toast, onCode, vorschau }) {
         {ansicht === "vor" && ziele.length > 1 && <div role="tablist" aria-label="Ziel" className="flex flex-wrap gap-1">
           {ziele.map((z) => <button key={z} type="button" role="tab" aria-selected={ziel === z} onClick={() => setZiel(z)}
             className={`h-8 px-2.5 rounded-full border text-xs font-semibold ${ziel === z ? "border-emerald-600 bg-emerald-50 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200" : "border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300"}`}>
-            {ZIELE[z].name}{ZIELE[z].stufe > 1 ? ` · Stufe ${ZIELE[z].stufe}` : ""}</button>)}
+            {ZIELE[z].name}</button>)}
         </div>}
       </div>
       <div className="flex-1 min-h-0 flex flex-col">
-        {ansicht === "vor" ? (ZIELE[ziel]?.stufe === 1 ? vorschau(ziel) : <ZielPlatzhalter ziel={ziel} projekt={projekt} f={f} d={d} ich={ich} toast={toast} />)
+        {ansicht === "vor" ? (
+          art === "testseite" ? vorschau(ziel)
+          : art === "handy" ? <><HandyQr projekt={projekt} f={f} aktiv={aktiv} />{vorschau(ziel)}</>
+          : art === "fenster" ? <FensterVorschau ziel={ziel} {...gemeinsam} aktiv={aktiv} vorschau={vorschau(ziel)} />
+          : art === "dotnet" ? <DotnetAnsicht {...gemeinsam} />
+          : art === "konsole" ? <WerkzeugKonsole {...gemeinsam} />
+          : art === "dokument" ? <DokumentVorschau {...gemeinsam} onBaustein={onBaustein} baustein={baustein} />
+          : <KeineVorschau ziel={ziel} />)
           : ansicht === "code" ? <CodeLive projekt={projekt} f={f} d={d} ich={ich} onCode={onCode} />
-          : <Verlauf projekt={projekt} f={f} d={d} />}
-      </div>
-    </div>);
-}
-
-// Ziele, die erst in Stufe 2 oder 3 eine Vorschau bekommen: klarer Platzhalter mit dem, was es heute schon gibt
-const KOMMT = {
-  windows: "Stufe 2 zeigt die Oberfläche des Programms als Testseite (Tauri-Funktionen wie „Datei öffnen“ werden nachgespielt) und startet es in der Windows-Sandbox – mit Bildschirmfoto an den Chat.",
-  mac: "Stufe 2 zeigt die Oberfläche als Testseite. Mac-Installationsdateien (.dmg) lädst du bis dahin bei GitHub.",
-  cloud_lauf: "Stufe 3 bringt eine Testlauf-Konsole: Beispiel-Eingabe wählen, Lauf in der Cloud, Ausgabe an den Chat.",
-  pdf: "Stufe 3 bringt eine Seiten-Vorschau des Dokuments (PDF) mit Seitenzahl aus dem Prüfweg.",
-};
-function ZielPlatzhalter({ ziel, projekt, f, d, ich, toast }) {
-  const admin = ich.rolle === "admin";
-  const [busy, setBusy] = useState("");
-  const aktiv = [...d.auftraege].reverse().find((a) => a.feature_id === f.id && a.zweig && !ABGESCHLOSSEN.includes(a.stand));
-  const meinPc = (d.pcs || []).find((p) => p.benutzer_id === ich.id && p.an && Date.now() - new Date(p.zuletzt).getTime() < 180000)?.id || null;
-  const aktion = async (art) => {
-    setBusy(art);
-    try {
-      if (art === "sandbox" && !meinPc) throw new Error("Auf diesem PC läuft keine Werkstatt – oben „Werkstatt an“ einschalten");
-      const { error } = await supabase.rpc("ws_projekt_aktion_anfordern", { p_projekt: projekt.id, p_art: art, p_zweig: aktiv?.zweig || "main", p_pc: art === "sandbox" ? meinPc : null, p_netz: false });
-      if (error) throw error;
-      toast(art === "sandbox" ? `Die Werkstatt holt den Build (${aktiv?.zweig || "main"}) und startet die Windows-Sandbox` : `Testlauf (${aktiv?.zweig || "main"}) wird gestartet`);
-    } catch (e) { toast(fehler(e)); } finally { setBusy(""); }
-  };
-  const programm = projekt.technik_art === "programm"; const werkzeug = projekt.technik_art === "werkzeug";
-  return (
-    <div className="flex-1 grid place-items-center p-6 bg-slate-50 dark:bg-slate-950">
-      <div className="max-w-md flex flex-col gap-3 text-sm">
-        <span className="self-start inline-flex items-center gap-1.5 rounded-full border border-dashed border-slate-400 px-2.5 py-1 text-xs font-semibold text-slate-600 dark:text-slate-300">Vorschau für {ZIELE[ziel].name} kommt in Stufe {ZIELE[ziel].stufe}</span>
-        <p className="text-slate-600 dark:text-slate-300">{KOMMT[ziel]}</p>
-        <p className="font-semibold">Was es heute schon gibt</p>
-        <div className="flex flex-wrap gap-2">
-          {(ziel === "windows" || ziel === "mac") && programm && <button type="button" className={btn} disabled={!admin || !!busy || !projekt.repo} onClick={() => aktion("sandbox")}>{busy === "sandbox" ? <Loader2 className="w-4 h-4 motion-safe:animate-spin" /> : <Box className="w-4 h-4" />}In Windows-Sandbox starten</button>}
-          {ziel === "cloud_lauf" && werkzeug && <button type="button" className={btn} disabled={!admin || !!busy || !projekt.repo} onClick={() => aktion("testlauf")}>{busy === "testlauf" ? <Loader2 className="w-4 h-4 motion-safe:animate-spin" /> : <Play className="w-4 h-4" />}Testlauf starten</button>}
-          {projekt.repo && programm && <a className={ghost} href={`https://github.com/${projekt.repo}/actions/workflows/programm.yml`} target="_blank" rel="noopener noreferrer"><ExternalLink className="w-4 h-4" />Builds bei GitHub</a>}
-          {projekt.repo && werkzeug && <a className={ghost} href={`https://github.com/${projekt.repo}/actions/workflows/lauf.yml`} target="_blank" rel="noopener noreferrer"><ExternalLink className="w-4 h-4" />Läufe und Ergebnisse</a>}
-        </div>
-        {(ziel === "windows" || ziel === "mac") && !programm && <p className="text-xs text-slate-500">Sandbox und Builds gibt es heute für Projekte der Art „Programm (.exe)“ (unter „Anbindungen“ › „Art und Datenbank ändern“).</p>}
-        {ziel === "cloud_lauf" && !werkzeug && <p className="text-xs text-slate-500">Testläufe gibt es heute für Projekte der Art „Werkzeug / Skript“.</p>}
-        {ziel === "pdf" && <p className="text-xs text-slate-500">Bis dahin: Code live und Verlauf zeigen, was sich am Dokument ändert.</p>}
-        {!admin && (programm || werkzeug) && <p className="text-xs text-slate-500">Sandbox und Testlauf startet der Admin.</p>}
-        {aktiv && <p className="text-xs text-slate-500">Zweig des laufenden Auftrags #{aktiv.id}: <span className="font-mono">{aktiv.zweig}</span></p>}
+          : <Verlauf projekt={projekt} f={f} d={d} ich={ich} toast={toast} darfAuftrag={darfAuftrag} />}
       </div>
     </div>);
 }
@@ -297,8 +268,11 @@ function Schritte({ auftragId }) {
 }
 
 // ---------------- Verlauf ----------------
-function Verlauf({ projekt, f, d }) {
-  const [versionen, setVersionen] = useState([]);
+// „Auf diesen Stand zurück …“ (0.17.0): gibt einen Auftrag „Feature auf Stand #n zurücksetzen“ – die Werkstatt nimmt die späteren, zusammengeführten
+// Aufträge dieses Features mit Revert-Commits auf ihrem Zweig zurück (nie direkt auf main); Prüfung, Freigabe und Live wie bei jedem Auftrag.
+function Verlauf({ projekt, f, d, ich, toast, darfAuftrag }) {
+  const [versionen, setVersionen] = useState([]); const [busy, setBusy] = useState(null);
+  const bestaetigen = useBestaetigen();
   useEffect(() => {
     if (!projekt?.id) return undefined; let aus = false;
     supabase.from("ws_live_versionen").select("commit_sha, geschaltet").eq("projekt_id", projekt.id).order("id", { ascending: false }).limit(200)
@@ -306,16 +280,35 @@ function Verlauf({ projekt, f, d }) {
     return () => { aus = true; };
   }, [projekt?.id]);
   const liste = verlaufEintraege(d.auftraege, f.id, versionen);
+  const offen = d.auftraege.some((a) => a.feature_id === f.id && !ABGESCHLOSSEN.includes(a.stand) && a.stand !== "abgebrochen");
+  const zurueck = async (auftragId) => {
+    const plan = zuruecksetzenPlan(d.auftraege, f.id, auftragId); if (!plan) return;
+    const ja = await bestaetigen({ titel: plan.titel, ja: "Als Auftrag geben",
+      text: `Zurückgenommen werden ${plan.zurueck.length} spätere Auftrag/Aufträge: ${plan.zurueck.map((a) => `#${a.id}`).join(", ")}.\nDie Werkstatt macht das mit Revert-Commits auf einem eigenen Zweig – nichts geht direkt auf main. Danach Prüfung, Freigabe und Live wie bei jedem Auftrag.` });
+    if (!ja) return; setBusy(auftragId);
+    try {
+      const istTexter = d.mitglieder.some((m) => m.projekt_id === d.projektId && m.benutzer_id === ich.id && m.rolle === "texter");
+      const { data, error } = await supabase.from("ws_auftraege").insert({ gruppe_id: f.gruppe_id, feature_id: f.id, titel: plan.titel, art: istTexter ? "text" : "aendern", erstellt_von: ich.id }).select().single();
+      if (error) throw error;
+      const r = await supabase.from("ws_nachrichten").insert({ auftrag_id: data.id, von: ich.id, art: "text", text: plan.text, kanal: "codeschmiede" });
+      if (r.error) throw r.error;
+      toast(`Auftrag #${data.id}: ${plan.titel}`); d.holen?.();
+    } catch (e) { toast(fehler(e)); } finally { setBusy(null); }
+  };
   return (
     <div className="flex-1 min-h-0 overflow-y-auto p-3 flex flex-col gap-3">
       {!liste.length ? <Leerzustand klein Symbol={History} titel="Noch kein Verlauf" text="Aufträge und Live-Schaltungen zu diesem Feature erscheinen hier mit Zeit." />
         : <ol className="flex flex-col gap-2 text-sm">
-          {liste.map((e, i) => <li key={`${e.art}-${e.auftrag}-${i}`} className="grid grid-cols-[auto_88px_minmax(0,1fr)] gap-2 items-baseline">
-            {e.art === "live" ? <CircleCheck className="w-4 h-4 text-emerald-600 translate-y-0.5" aria-label="live" /> : <i className="w-2 h-2 rounded-full bg-slate-400 ml-1" aria-hidden="true" />}
-            <time className="text-xs text-slate-500 tabular-nums">{fmt(e.zeit)}</time>
-            <span className={`min-w-0 break-words ${e.art === "live" ? "font-semibold text-emerald-800 dark:text-emerald-300" : ""}`}>{e.text}</span></li>)}
+          {liste.map((e, i) => {
+            const kann = e.art === "live" && darfAuftrag && !offen && !!zuruecksetzenPlan(d.auftraege, f.id, e.auftrag);
+            return <li key={`${e.art}-${e.auftrag}-${i}`} className="grid grid-cols-[auto_88px_minmax(0,1fr)_auto] gap-2 items-baseline">
+              {e.art === "live" ? <CircleCheck className="w-4 h-4 text-emerald-600 translate-y-0.5" aria-label="live" /> : <i className="w-2 h-2 rounded-full bg-slate-400 ml-1" aria-hidden="true" />}
+              <time className="text-xs text-slate-500 tabular-nums">{fmt(e.zeit)}</time>
+              <span className={`min-w-0 break-words ${e.art === "live" ? "font-semibold text-emerald-800 dark:text-emerald-300" : ""}`}>{e.text}</span>
+              {kann ? <button type="button" className={`${ghost} h-8 px-2.5 text-xs`} disabled={busy != null} onClick={() => zurueck(e.auftrag)} title="Spätere Änderungen an diesem Feature als Auftrag zurücknehmen">
+                {busy === e.auftrag ? <Loader2 className="w-3.5 h-3.5 motion-safe:animate-spin" /> : <Undo2 className="w-3.5 h-3.5" />}Auf diesen Stand zurück …</button> : <span />}
+            </li>; })}
         </ol>}
-      <p className="text-xs text-slate-500 flex gap-1.5"><Info className="w-3.5 h-3.5 shrink-0 mt-0.5" aria-hidden="true" />Zurück auf einen früheren Stand geht nur für die ganze App: „Zu erledigen“ › Live › Zurücksetzen (nur Admin, nur Versionen, die zur Datenbank passen).</p>
+      <p className="text-xs text-slate-500 flex gap-1.5"><Info className="w-3.5 h-3.5 shrink-0 mt-0.5" aria-hidden="true" />„Auf diesen Stand zurück“ gibt einen Auftrag: Die Werkstatt nimmt die späteren Aufträge dieses Features mit Revert-Commits auf einem eigenen Zweig zurück – nie direkt auf main. {offen ? "Geht erst, wenn kein Auftrag zu diesem Feature mehr offen ist." : ""} Die ganze App setzt nur der Admin unter „Zu erledigen“ › Live zurück.</p>
     </div>);
 }
-

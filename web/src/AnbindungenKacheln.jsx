@@ -121,7 +121,8 @@ export default function AnbindungenKacheln({ projekt, d, admin, toast }) {
     catch (e) { toast(fehler(e)); } finally { setBusy(""); }
   };
   const [busy, setBusy] = useState("");
-  const web = !projekt.technik_art || ["web", "handy"].includes(projekt.technik_art);
+  // Testseite: Web, Handy und seit 0.17.0 Tauri-Programme (Oberfläche als Testseite, nie .NET)
+  const web = !projekt.technik_art || ["web", "handy"].includes(projekt.technik_art) || (projekt.technik_art === "programm" && projekt.programm_technik !== "dotnet");
   const pcName = (id) => (d.pcs || []).find((p) => p.id === id)?.name || "Werkstatt-PC";
   // PCs, die eine ANDERE Fassung der REGELN.md melden – nach dem Bestätigen gilt dort keine (Nachprüfung 0.13.1, Punkt 5)
   const andereVon = (sha) => [...new Set(regeln.zeilen.filter((z) => z.sha !== sha).map((z) => pcName(z.pc_id)))];

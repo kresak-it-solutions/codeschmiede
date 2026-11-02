@@ -27,6 +27,18 @@ function ZieleWahl({ ziele, onChange, name = "cs-ziele" }) {
     </fieldset>);
 }
 
+// Technik für Windows/Mac (0.17.0): Tauri ist der Standard (Oberfläche auch als Testseite), .NET nur als Sonderfall (nur Sandbox und Bildschirmfotos)
+function RahmenWahl({ wert, onChange, name }) {
+  return (
+    <fieldset className="flex flex-col gap-1.5"><legend className="text-sm font-semibold mb-1">Technik für Windows/Mac</legend>
+      <div className="flex flex-wrap gap-1.5">
+        {[["tauri", "Tauri (Standard)"], ["dotnet", ".NET (Sonderfall)"]].map(([k, t]) => <label key={k} className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-sm cursor-pointer ${wert === k ? "border-emerald-600 bg-emerald-50 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200" : "border-slate-200 dark:border-slate-700"}`}>
+          <input type="radio" name={name} className="accent-emerald-700" checked={wert === k} onChange={() => onChange(k)} />{t}</label>)}
+      </div>
+      <span className="text-xs text-slate-500">{wert === "dotnet" ? "Bei .NET zeigt der Arbeitsplatz nur den letzten Bau, die Windows-Sandbox und Bildschirmfotos – keine Testseite der Oberfläche." : "Bei Tauri siehst du die Oberfläche auch als Testseite (Programm-Funktionen nachgespielt) und startest das echte Programm in der Windows-Sandbox."}</span>
+    </fieldset>);
+}
+
 // Technik-Empfehlung aus dem Entwurf als Hilfe bei der Wahl (Klick auf eine Zeile übernimmt Art und Ziele)
 function TechnikEmpfehlung({ onWahl }) {
   return (
@@ -63,8 +75,8 @@ const DATENBANK = {
   spielwiese: ["Spielwiese (gemeinsam)", "Abgetrennter Bereich in einer gemeinsamen Datenbank. Braucht Supabase Pro – wird erst nach deiner Bestätigung angelegt"],
   eigen: ["Eigenes Supabase-Projekt", "Für ernste Apps mit echten Nutzern"],
 };
-const AMPEL_NAMEN = { projektordner: "Projektordner (Admin-PC)", regeln: "Projektregeln", sicherungen: "Sicherungen (Admin-PC)", setup: "Setup-Dateien (Admin-PC)", github: "GitHub", pruefung: "Prüfungen", build: "Build Windows/Mac", signatur: "Automatische Updates", sandbox: "Windows-Sandbox", testseite: "Testseite", testlauf: "Testlauf", datenbank: "Datenbank (Test)", datenbank_live: "Datenbank (Live)", fehler: "Fehler-Meldungen" };
-const AMPEL_REIHE = ["projektordner", "regeln", "sicherungen", "setup", "github", "pruefung", "build", "testlauf", "testseite", "sandbox", "signatur", "datenbank", "datenbank_live", "fehler"];
+const AMPEL_NAMEN = { projektordner: "Projektordner (Admin-PC)", regeln: "Projektregeln", sicherungen: "Sicherungen (Admin-PC)", setup: "Setup-Dateien (Admin-PC)", github: "GitHub", pruefung: "Prüfungen", build: "Build Windows/Mac", signatur: "Automatische Updates", sandbox: "Windows-Sandbox", testseite: "Testseite", testlauf: "Testlauf", dokument: "Seiten-Vorschau", datenbank: "Datenbank (Test)", datenbank_live: "Datenbank (Live)", fehler: "Fehler-Meldungen" };
+const AMPEL_REIHE = ["projektordner", "regeln", "sicherungen", "setup", "github", "pruefung", "build", "testlauf", "dokument", "testseite", "sandbox", "signatur", "datenbank", "datenbank_live", "fehler"];
 const PUNKT = { gruen: "bg-emerald-500 ring-emerald-500/25", gelb: "bg-amber-500 ring-amber-500/25", rot: "bg-red-500 ring-red-500/25", grau: "bg-slate-400 dark:bg-slate-600 ring-slate-400/20" };
 const STAND_TEXT = { gruen: "grün", gelb: "gelb", rot: "rot", grau: "grau" };
 
@@ -76,6 +88,7 @@ export function NeuesProjektAssistent({ toast, onClose, onFertig, projekte = [] 
   const [ziele, setZieleRoh] = useState(["web"]); const [zieleEigen, setZieleEigen] = useState(false);   // vorbelegt aus der Art, bis man selbst wählt
   const setTechnik = (k) => { setTechnikRoh(k); if (!zieleEigen) setZieleRoh(zieleAusArt(k)); };
   const setZiele = (z) => { setZieleRoh(z); setZieleEigen(true); };
+  const [rahmen, setRahmen] = useState("tauri");   // 0.17.0: Tauri (Standard) oder .NET (Sonderfall) für Windows/Mac
   const [name, setName] = useState(""); const [kennung, setKennung] = useState(""); const [besch, setBesch] = useState("");
   const [repo, setRepo] = useState(""); const [anlegen, setAnlegen] = useState(true); const [privat, setPrivat] = useState(true);   // Befund S2 (01.11.2026): neue Repos standardmäßig privat
   const [symbol, setSymbol] = useState("layers"); const [art, setArt] = useState("verwaltung");
@@ -98,6 +111,7 @@ export function NeuesProjektAssistent({ toast, onClose, onFertig, projekte = [] 
       if (t.error) toast(`Art nicht gespeichert: ${fehler(t.error)}`);
       if (zeigeDesignArt && art !== "verwaltung") { const ra = await supabase.rpc("ws_projekt_app_art", { p_projekt: id, p_art: art }); if (ra.error) toast(fehler(ra.error)); }
       if (ziele.join(",") !== zieleAusArt(technik).join(",")) { const rz = await supabase.rpc("ws_projekt_ziele_setzen", { p_projekt: id, p_ziele: ziele }); if (rz.error) toast(`Ziele nicht gespeichert: ${fehler(rz.error)}`); }
+      if (technik === "programm" && rahmen === "dotnet") { const rt = await supabase.rpc("ws_projekt_programm_technik_setzen", { p_projekt: id, p_technik: "dotnet" }); if (rt.error) toast(`Technik nicht gespeichert: ${fehler(rt.error)}`); }
       let gh = "";
       if (!repo.trim() && anlegen) {
         const r = await supabase.rpc("ws_repo_anfordern", { p_projekt: id, p_privat: privat });
@@ -141,7 +155,8 @@ export function NeuesProjektAssistent({ toast, onClose, onFertig, projekte = [] 
                 </label>))}
             </div>
             <ZieleWahl ziele={ziele} onChange={setZiele} />
-            <TechnikEmpfehlung onWahl={(e) => { setTechnikRoh(e.art); setZiele(e.ziele); }} />
+            {technik === "programm" && <RahmenWahl wert={rahmen} onChange={setRahmen} name="cs-rahmen-neu" />}
+            <TechnikEmpfehlung onWahl={(e) => { setTechnikRoh(e.art); setZiele(e.ziele); setRahmen(e.technik_rahmen === "dotnet" ? "dotnet" : "tauri"); }} />
           </fieldset>)}
 
         {schritt === 2 && (
@@ -205,7 +220,7 @@ export default function Anbindungen({ d, ich, toast, onVorschau }) {
   const [zweig, setZweig] = useState("main"); const [netz, setNetz] = useState(false);
   const laden = useCallback(async () => {
     if (!admin || !projekt) return;
-    const { data } = await supabase.from("ws_projekt_aktionen").select("*").eq("projekt_id", projekt.id).order("id", { ascending: false }).limit(5);
+    const { data } = await supabase.from("ws_projekt_aktionen").select("*").eq("projekt_id", projekt.id).order("id", { ascending: false }).limit(20);
     setAktionen(data || []);
   }, [admin, projekt]);
   useEffect(() => {
@@ -218,6 +233,17 @@ export default function Anbindungen({ d, ich, toast, onVorschau }) {
   const t = TECHNIK[projekt.technik_art] || TECHNIK.web;
   const ampel = projekt.anbindungen || {};
   const meinePcs = (d.pcs || []).filter((p) => p.benutzer_id === ich.id && p.an && Date.now() - new Date(p.zuletzt).getTime() < 180000);
+  const ziele = zieleVon(projekt);
+  const windowsZiel = projekt.technik_art === "programm" || ziele.includes("windows");
+  const tauri = projekt.technik_art === "programm" && projekt.programm_technik !== "dotnet";
+  const einrichten = async (ziel) => {
+    setBusy(`vorschau-${ziel}`);
+    try {
+      const { error } = await supabase.rpc("ws_projekt_aktion_anfordern", { p_projekt: projekt.id, p_art: "vorschau_einrichten", p_eingaben: { ziel } });
+      if (error) throw error;
+      toast("Die Werkstatt des Admins legt den Auftrag mit den Dateien der Vorlage an – vorhandene Dateien bleiben unverändert");
+    } catch (e) { toast(fehler(e)); } finally { setBusy(""); }
+  };
   const aktion = async (art) => {
     setBusy(art);
     try {
@@ -264,7 +290,15 @@ export default function Anbindungen({ d, ich, toast, onVorschau }) {
           <p className="text-sm text-slate-600 dark:text-slate-300">{projekt.technik_art === "handy" ? "Die Handy-App siehst du in der Live-Vorschau in Handy-Größe (oben rechts umschalten). Am echten Handy: Testseite öffnen und „Zum Startbildschirm hinzufügen“." : "Die Web-App siehst du in der Live-Vorschau – mit „Zeigen & kommentieren“ für Aufträge."}</p>
           <div className="flex flex-wrap gap-2"><button type="button" className={btn} onClick={onVorschau}><Eye className="w-4 h-4" />Live-Vorschau öffnen</button>
             {(projekt.test_url || projekt.live_url) && <a className={ghost} href={projekt.test_url || projekt.live_url} target="_blank" rel="noopener noreferrer"><ExternalLink className="w-4 h-4" />Testseite im Browser</a>}</div></>)}
-        {projekt.technik_art === "programm" && (<>
+        {tauri && (<div className="flex flex-col gap-1.5">
+          <p className="text-sm text-slate-600 dark:text-slate-300">Die Oberfläche des Programms siehst du im Arbeitsplatz als Testseite im Fensterrahmen (Programm-Funktionen werden nachgespielt). Bestehende Programme brauchen dafür einmal die Dateien unter <span className="font-mono">vorschau/</span>, danach oben „Testseite einrichten“.</p>
+          {admin && <button type="button" className={`${ghost} self-start`} disabled={!!busy || !projekt.repo} onClick={() => einrichten("windows")}>{busy === "vorschau-windows" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Box className="w-4 h-4" />}Testseite für die Programm-Oberfläche einrichten</button>}
+          <Ergebnis a={aktionen.find((a) => a.art === "vorschau_einrichten" && a.eingaben?.ziel === "windows")} /></div>)}
+        {ziele.includes("pdf") && (<div className="flex flex-col gap-1.5">
+          <p className="text-sm text-slate-600 dark:text-slate-300">Seiten-Vorschau des Dokuments: Der Ablauf „Dokument“ baut das PDF in GitHub (Skript „pdf“) und legt die Seiten als Bilder ab – im Arbeitsplatz unter Vorschau › PDF.</p>
+          {admin && <button type="button" className={`${ghost} self-start`} disabled={!!busy || !projekt.repo} onClick={() => einrichten("pdf")}>{busy === "vorschau-pdf" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Box className="w-4 h-4" />}Seiten-Vorschau einrichten</button>}
+          <Ergebnis a={aktionen.find((a) => a.art === "vorschau_einrichten" && a.eingaben?.ziel === "pdf")} /></div>)}
+        {windowsZiel && (<>
           <div className="flex flex-wrap items-end gap-2">
             <label className="flex flex-col gap-1 text-xs text-slate-500">Zweig<input className={`${input} font-mono w-56`} value={zweig} onChange={(e) => setZweig(e.target.value)} /></label>
             <button type="button" className={btn} disabled={!admin || !!busy || !projekt.repo} onClick={() => aktion("sandbox")}>{busy === "sandbox" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Box className="w-4 h-4" />}In Windows-Sandbox starten</button>
@@ -275,7 +309,8 @@ export default function Anbindungen({ d, ich, toast, onVorschau }) {
           <p className="text-xs text-slate-500">Die Sandbox ist eine Wegwerf-Umgebung von Windows: Die Installation startet nur darin, Schließen löscht alles, dein PC bleibt unberührt. Mac-Dateien (.dmg) lädst du bei GitHub.</p>
           <Ergebnis a={letzte("sandbox")} />
           {!admin && <p className="text-xs text-slate-500">Die Sandbox startet der Admin auf seinem PC.</p>}</>)}
-        {projekt.technik_art === "werkzeug" && (<>
+        {(projekt.technik_art === "werkzeug" || ziele.includes("cloud_lauf")) && (<>
+          <p className="text-sm text-slate-600 dark:text-slate-300">Testlauf mit Befehl und Beispiel-Eingabe (Konsole mit Ausgabe): im Arbeitsplatz eines Features unter Vorschau › Cloud-Lauf. Hier: Standardlauf ohne Eingaben.</p>
           <div className="flex flex-wrap items-end gap-2">
             <label className="flex flex-col gap-1 text-xs text-slate-500">Zweig<input className={`${input} font-mono w-56`} value={zweig} onChange={(e) => setZweig(e.target.value)} /></label>
             <button type="button" className={btn} disabled={!admin || !!busy || !projekt.repo} onClick={() => aktion("testlauf")}>{busy === "testlauf" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}Testlauf starten</button>
@@ -297,12 +332,16 @@ function ArtAendern({ projekt, toast, onGeaendert }) {
   useEffect(() => { setZiele(zieleJetzt.split(",")); }, [zieleJetzt]);
   const artGeaendert = art !== (projekt.technik_art || "web") || db !== (projekt.datenbank || "keine");
   const zieleGeaendert = ziele.join(",") !== zieleJetzt;
-  const geaendert = artGeaendert || zieleGeaendert;
+  const [rahmen, setRahmen] = useState(projekt.programm_technik === "dotnet" ? "dotnet" : "tauri");
+  useEffect(() => { setRahmen(projekt.programm_technik === "dotnet" ? "dotnet" : "tauri"); }, [projekt.programm_technik]);
+  const rahmenGeaendert = art === "programm" && rahmen !== (projekt.programm_technik === "dotnet" ? "dotnet" : "tauri");
+  const geaendert = artGeaendert || zieleGeaendert || rahmenGeaendert;
   const speichern = async () => {
     setBusy(true);
     try {
       if (artGeaendert) { const { error } = await supabase.rpc("ws_projekt_technik", { p_projekt: projekt.id, p_art: art, p_datenbank: db }); if (error) throw error; }
       if (zieleGeaendert) { const { error } = await supabase.rpc("ws_projekt_ziele_setzen", { p_projekt: projekt.id, p_ziele: ziele }); if (error) throw error; }
+      if (rahmenGeaendert) { const { error } = await supabase.rpc("ws_projekt_programm_technik_setzen", { p_projekt: projekt.id, p_technik: rahmen }); if (error) throw error; }
       toast("Gespeichert – die Ampel prüft beim nächsten Durchlauf neu"); onGeaendert();
     } catch (e) { toast(fehler(e)); } finally { setBusy(false); }
   };
@@ -315,6 +354,7 @@ function ArtAendern({ projekt, toast, onGeaendert }) {
         <button type="button" className={btn} disabled={!geaendert || busy} onClick={speichern}>Speichern</button>
       </div>
       <div className="mt-3"><ZieleWahl ziele={ziele} onChange={setZiele} name="cs-ziele-aendern" /></div>
+      {art === "programm" && <div className="mt-3"><RahmenWahl wert={rahmen} onChange={setRahmen} name="cs-rahmen-aendern" /></div>}
       <p className="mt-2 text-xs text-slate-500">Ändert nur die Einordnung und Ampel. Ein neues Grundgerüst im bestehenden Repository gibst du als Auftrag.</p>
     </details>);
 }
