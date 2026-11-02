@@ -2,7 +2,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { releaseWahl, tagImLive } from "../lib/setup.mjs";
+import { releaseWahl, tagImLive, vergleichsZweig } from "../lib/setup.mjs";
 
 const quelle = await readFile(new URL("../index.mjs", import.meta.url), "utf8");
 const teil = (von, bis) => quelle.slice(quelle.indexOf(von), quelle.indexOf(bis, quelle.indexOf(von)));
@@ -43,6 +43,16 @@ test("3: Releases ohne Entwürfe/Vorab-Versionen, nur wenn der Tag im Live-Stand
   for (const s of ["behind", "identical", "\"behind\"\n"]) assert.ok(tagImLive(s), s);
   for (const s of ["ahead", "diverged", "", "Not Found"]) assert.ok(!tagImLive(s), s);
   const p = teil("async function setupPflegen", "async function liveArbeit");
-  assert.ok(p.includes("select((.draft | not) and (.prerelease | not))") && p.includes("compare/live...${r.tag}") && p.includes("if (!tagImLive(cmp))"));
+  assert.ok(p.includes("select((.draft | not) and (.prerelease | not))") && p.includes("compare/${encodeURIComponent(basis)}...${r.tag}") && p.includes("if (!tagImLive(cmp))"));
   assert.ok(p.includes("for (const st of stroeme) st.destroy();"), "offene Ströme im finally geschlossen");
+});
+
+test("3b: ohne Zweig „live“ gegen den Standard-Zweig des Repositorys vergleichen (Codeschmiede: main)", () => {
+  assert.equal(vergleichsZweig(true, "main"), "live");
+  assert.equal(vergleichsZweig(false, "main\n"), "main");
+  assert.equal(vergleichsZweig(false, "\"develop\""), "develop");
+  for (const z of ["", "../x", "-x", "a b", "x/"]) assert.equal(vergleichsZweig(false, z), null, z);
+  const p = teil("async function setupPflegen", "async function liveArbeit");
+  assert.ok(p.includes("repos/${repo}/branches/live") && p.includes('"--jq", ".default_branch"'));
+  assert.ok(p.indexOf("vergleichsZweig(liveDa, standard)") < p.indexOf("compare/${encodeURIComponent(basis)}"));
 });

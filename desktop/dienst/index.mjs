@@ -45,7 +45,7 @@ import { rm, rmdir, readdir, lstat, realpath } from "node:fs/promises";
 import { GLOBAL_ORDNER, GLOBAL_KENNUNG, GLOBAL_DATEI, GLOBAL_LIESMICH, globalVorlage, imGlobal } from "./lib/projektordner.mjs";
 import { kennungPasst, konfigLesen, ordnerStand, sicherOrdner, sicherSchreiben, sicherNeu, sicherLesen, sicherLoeschen, dateienSammeln, dateienKopieren, geruestAnlegen, altOrdner, dokuListe, projektregelnAusAgents, regelnVorlage } from "./lib/projektordner.mjs";
 import { konflikteFinden, konfliktKurz, konfliktNachricht, regelBlock, regelBlockText, PRUEF_SCHLUSS, regelwerkListe, regelwerkUnterschied, altName, SHA1 } from "./lib/regeln.mjs";
-import { setupNameOk, versionOrdner, releaseVersion, releaseWahl, tagImLive, releaseDateien, zipDateien, setupLampe, SETUP_JE, SETUP_GESAMT } from "./lib/setup.mjs";
+import { setupNameOk, versionOrdner, releaseVersion, releaseWahl, tagImLive, vergleichsZweig, releaseDateien, zipDateien, setupLampe, SETUP_JE, SETUP_GESAMT } from "./lib/setup.mjs";
 import { sicherungsName, freierName, uebersicht as sicherungenUebersicht, sicherungenLampe, aufbauPruefen, aufbauArtefakt, BUNDLE_MAX } from "./lib/sicherungen.mjs";
 import { testseiteEinrichten, lotsePruefen, Lotse } from "./lib/testseite.mjs";
 import { laufSperren, sperrListe, gefaehrlicheGitConfig, gefaehrlicheAttribute, gitdirOk, linksNachAussen } from "./lib/rechte.mjs";
@@ -2577,9 +2577,13 @@ async function setupPflegen(p, po) {
       const r = releaseWahl(rel);
       if (r && !(await lstat(path.join(await sicherOrdner(po.wurzel, "setup"), releaseVersion(r.tag))).catch(() => null))) {
         const ordner = releaseVersion(r.tag);
-        // Der Tag-Stand muss im Live-Stand enthalten sein (GitHub compare live...<tag>: „behind“ oder „identical“), sonst nicht ablegen
-        const { stdout: cmp } = await ghGrenze("gh", ["api", `repos/${repo}/compare/live...${r.tag}`, "--jq", ".status"]).catch(() => ({ stdout: "" }));
-        if (!tagImLive(cmp)) melde("status", `Setup-Dateien ${p.name} ${ordner}: Release ist (noch) nicht im Live-Stand – nicht abgelegt`);
+        // Der Tag-Stand muss im Live-Stand enthalten sein (GitHub compare <zweig>...<tag>: „behind“ oder „identical“), sonst nicht ablegen.
+        // Ohne Zweig „live“ gilt der Standard-Zweig des Repositorys (GET /repos/{repo} → default_branch; bei der Codeschmiede main).
+        const liveDa = await ghGrenze("gh", ["api", `repos/${repo}/branches/live`, "--jq", ".name"]).then(({ stdout }) => String(stdout).trim() === "live", () => false);
+        const standard = liveDa ? null : await ghGrenze("gh", ["api", `repos/${repo}`, "--jq", ".default_branch"]).then(({ stdout }) => stdout, () => "");
+        const basis = vergleichsZweig(liveDa, standard);
+        const { stdout: cmp } = basis ? await ghGrenze("gh", ["api", `repos/${repo}/compare/${encodeURIComponent(basis)}...${r.tag}`, "--jq", ".status"]).catch(() => ({ stdout: "" })) : { stdout: "" };
+        if (!tagImLive(cmp)) melde("status", `Setup-Dateien ${p.name} ${ordner}: Release ist (noch) nicht im Stand von ${basis || "live"} – nicht abgelegt`);
         else {
           const { dateien, ausgelassen } = releaseDateien(r.assets);
           const geladen = [];
