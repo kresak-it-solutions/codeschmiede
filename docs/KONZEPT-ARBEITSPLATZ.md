@@ -3,7 +3,7 @@
 **Stand:** 2026-11-02 · **Wer:** Gerhard Kresak (Entscheidungen, Entwurf freigegeben 02.11.2026), Claude (Konzept, Umsetzung)
 **Entwurf:** `docs/entwurf-1.0-arbeitsplatz-alle-arten.html` · **Version:** 0.15.0 (Stufe 1) · **0.17.0 (Stufen 2 und 3, freigegeben von Gerhard 02.11.2026, gebaut ohne weiteren Entwurf)**
 **Datenbank:** 0059 (`supabase/migrations/0059_arbeitsplatz.sql`, Test `supabase/tests/t46_arbeitsplatz.sql`; 0057 kommt aus 0.14.0, 0058 ist reserviert) – eingetragen in `supabase/einspielen.txt` nach der Sicherheitsprüfung (GRÜN 02.11.2026)
-**Datenbank Stufen 2/3:** 0060 (`supabase/migrations/0060_arbeitsplatz_stufe23.sql`, Test `supabase/tests/t47_arbeitsplatz_stufe23.sql`) – erst nach der Sicherheitsprüfung in `supabase/einspielen.txt`
+**Datenbank Stufen 2/3:** 0060 (`supabase/migrations/0060_arbeitsplatz_stufe23.sql`, Test `supabase/tests/t47_arbeitsplatz_stufe23.sql`) – Sicherheitsprüfung GRÜN 02.11.2026 (nach Behebung M1–M2, N1–N7), eingetragen in `supabase/einspielen.txt`
 **Umgesetzt (Stufen 2/3):** `web/src/seiten/ArbeitsplatzZiele.jsx` (Fensterrahmen, Sandbox-Leiste mit Bildschirmfoto, .NET, Werkzeug-Konsole, Dokument-Vorschau, Handy-QR), `web/src/bausteine/qr.js`, `desktop/dienst/lib/bildschirmfoto.mjs` + `.ps1`, `lib/cloudLauf.mjs`, `lib/vorschauEinrichten.mjs`, Vorlagen `programm/vorschau/`, `werkzeug/beispiele/` + `lauf.yml`, `_dokument/dokument.yml` (Tests `desktop/dienst/test/stufe23.test.mjs`)
 **Umgesetzt (Stufe 1):** `web/src/seiten/Arbeitsplatz.jsx` (Baum, Punkte, Prüfweg, rechte Hälfte), `web/src/bausteine/arbeitsplatz.js` (reine Funktionen,
 Test `desktop/dienst/test/arbeitsplatz.test.mjs`), `web/src/daten/punkte.js`, `desktop/dienst/lib/codeLive.mjs` (Diff-Filter, Test `codeLive.test.mjs`),
@@ -184,7 +184,7 @@ Freigegeben von Gerhard am 02.11.2026 („alles freigegeben“), gebaut nach dem
 - Das PNG wird geprüft (Signatur, IHDR, 1–10000 Pixel, ≤ 10 MB, echte Datei ohne Verknüpfung), im **eigenen privaten Chat-Speicher** `ws-chat` abgelegt (`<ich>/<projekt>/<zufall>.png`, Regel 0050)
   und mit `ws_bildschirmfoto_melden` gemeldet; die lokale Datei wird immer gelöscht.
 - **Nichts geht automatisch weg:** Die Oberfläche zeigt das Foto zuerst in einem Dialog mit dem Hinweis auf persönliche Daten. Erst **„An den Chat senden“** legt die Chat-Nachricht mit dem Foto als
-  Anhang an (Anhang-Weg 0050, Text „Bildschirmfoto aus der Windows-Sandbox zu Feature …“) und verknüpft sie (`ws_bildschirmfoto_gesendet`: nur genau dieser Anhang, nur einmal). „Verwerfen“ löscht die Datei.
+  Anhang an (Anhang-Weg 0050, Text „Bildschirmfoto aus der Windows-Sandbox zu Feature …“) und verknüpft sie – beides in einem Schritt in der Datenbank (`ws_bildschirmfoto_senden`: Text und genau ein Anhang von der Datenbank gebaut, nur einmal). Unbestätigte Fotos löscht der Aufräumlauf nach 24 Stunden. „Verwerfen“ löscht die Datei.
 - **macOS/Linux:** keine Sandbox – die Knöpfe sind ausgeblendet, es steht „Windows-Sandbox und Bildschirmfoto nur unter Windows“ (Plattform aus „Dieser PC“).
 
 ### Werkzeug-Konsole (Ziel Cloud-Lauf)
@@ -230,6 +230,25 @@ Freigegeben von Gerhard am 02.11.2026 („alles freigegeben“), gebaut nach dem
   Testseite bei Web, Handy und Tauri-Programmen (nie .NET).
 - Abläufe (Datenbank 0060): Sandbox/Bildschirmfoto nur mit Ziel Windows, Testlauf nur mit Art Werkzeug oder Ziel Cloud-Lauf, Dokument nur mit Ziel PDF, Testseite nur für Web/Handy/Tauri.
 
+### Sicherheitsprüfung 02.11.2026 (GELB → behoben)
+- **M1 Artefakte:** Ergebnisse werden nicht mehr mit `gh run download` auf die Platte entpackt. Der Dienst holt die ZIP über `gh api repos/<repo>/actions/artifacts/<id>/zip`
+  (Größe vorher aus der Liste und nachher am Puffer geprüft, ≤ 60 MB) und liest sie im Speicher mit dem ZIP-Leser von „Projekt einlesen“ (`zipEintraege`): Verknüpfungen, „..“, absolute Pfade,
+  Rückwärtsschrägstriche, ZIP64, Verschlüsselung und doppelte Namen werden abgelehnt; dazu höchstens 500 Einträge, 64 MB je Datei, 256 MB entpackt gesamt, Packverhältnis 200 : 1, CRC geprüft.
+  Übernommen werden nur `konsole.txt`, Ergebnisdateien mit festem Namensmuster (Text nur bis 256 KB) und `seite-NNN.png`.
+- **M2 Ablauf auf dem Zweig:** Vor jedem Lauf per Knopf auf einem Zweig vergleicht der Dienst die Blob-SHA von `.github/workflows/lauf.yml` bzw. `dokument.yml` auf dem Zweig mit main (oder live).
+  Weicht sie ab, startet nichts: „Ablauf auf dem Zweig verändert – erst nach Prüfung und Zusammenführen“. **Empfehlung:** Geheimnisse eines Projekts nur in GitHub-Environments ablegen
+  (mit Zweig-Regel, wie die Datenbank-Station „test“/„live“), nie als Repository-Geheimnis – dann kommt auch ein veränderter Ablauf nicht heran.
+- **N1 Bildschirmfoto:** Das Fenster zählt nur, wenn sein Programm (MainModule) `System32\WindowsSandbox*.exe` bzw. unter `Program Files\WindowsApps\MicrosoftWindows.WindowsSandbox_*` liegt
+  (Ordner aus Windows, nicht aus Umgebungsvariablen) **und** eine gültige Authenticode-Signatur von Microsoft hat. PowerShell mit vollem Pfad, ohne PATH in der Umgebung.
+- **N2:** Alle Actions in `lauf.yml` und `dokument.yml` (Vorlagen) per SHA gepinnt wie in `datenbank.yml`.
+- **N3:** `ws_bildschirmfoto_senden` legt Chat-Nachricht (Text und genau ein Anhang von der Datenbank gebaut) und Verknüpfung in einem Schritt an; ein zweiter Versuch legt nichts an.
+  `ws_bildschirmfoto_gesendet` entfällt.
+- **N4:** Nicht bestätigte Bildschirmfotos werden nach 24 Stunden gelöscht (`ws_bildschirmfotos_aufraeumen` im Aufräumlauf `ws_code_aufraeumen`, Datei über die Lösch-Warteschlange `ws_chat_dateien_weg`).
+- **N5:** Die Testseite der Programm-Oberfläche erlaubt das Einbetten nur durch `https://codeschmiede.pages.dev` (`frame-ancestors`). Auch das Programm zeigt diese Herkunft
+  (`desktop/ui/start.js` leitet dorthin weiter), darum keine `tauri://`-Herkunft.
+- **N6/N7:** Repository und Zweig werden in allen Cloud-Lauf-Funktionen geprüft; der Lauf wird über eine eigene Kennung (UUID als Eingabe `kennung`, Name des Laufs `Codeschmiede <kennung>`
+  per `run-name`) zugeordnet, nicht über die Uhrzeit.
+
 ### Datenmodell (Datenbank 0060)
 | Was | Wo | Regeln |
 |---|---|---|
@@ -237,7 +256,7 @@ Freigegeben von Gerhard am 02.11.2026 („alles freigegeben“), gebaut nach dem
 | Neue Aktionen | `ws_projekt_aktionen.art` + `bildschirmfoto`, `dokument`, `vorschau_einrichten`; Spalten `feature_id`, `eingaben`, `ergebnis` (≤ 256 KB), `chat_id` | anfordern nur Admin (`ws_projekt_aktion_anfordern` mit `p_eingaben`, `p_feature`); Eingaben nur feste Form (`ws_aktion_eingaben_ok`, auch als Tabellen-Check); Feature nur aus dem Projekt; höchstens 200 Aktionen am Tag je Projekt; lesen nur Admin |
 | Nehmen | `ws_projekt_aktion_nehmen(p_pc, p_arten)` | die Werkstatt nennt die Arten, die sie kann; ältere Dienste (ohne Liste) bekommen keine neuen Arten |
 | Lange Läufe | `ws_projekt_aktion_lebt` | nur die haltende Werkstatt, nur Testlauf/Dokument, höchstens 1 Stunde |
-| Bildschirmfoto | `ws_bildschirmfoto_melden`, `ws_bildschirmfoto_gesendet` | melden nur der Ziel-PC, Bild muss im eigenen Ordner von `ws-chat` liegen; in den Chat nur die anfordernde Person, nur mit genau diesem Anhang, nur einmal |
+| Bildschirmfoto | `ws_bildschirmfoto_melden`, `ws_bildschirmfoto_senden`, `ws_bildschirmfotos_aufraeumen` | melden nur der Ziel-PC, Bild muss im eigenen Ordner von `ws-chat` liegen; in den Chat nur die anfordernde Person: Nachricht mit genau diesem einen Anhang und Verknüpfung in einem Schritt, nur einmal; unbestätigt nach 24 Std. gelöscht |
 | Ergebnis | `ws_aktion_ergebnis_melden` + `ws_aktion_ergebnis_ok` | nur die haltende Werkstatt; Testlauf: Ausgabe ≤ 20.000 Zeichen, ≤ 30 Dateien mit sicheren Namen; Dokument: ≤ 60 Seiten, Pfad genau `<ich>/<projekt>/<aktion>/seite-NNN.png` und im Speicher vorhanden |
 | Seitenbilder | Speicher `ws-vorschau` (privat, nur PNG, ≤ 3 MB) | hochladen nur Admin zur laufenden Dokument-Aktion der eigenen Werkstatt, lesen nur Admins, löschen nur eigene |
 | Ampel | `ws_anbindungen_ok` + Lampe `dokument` | wie bisher |

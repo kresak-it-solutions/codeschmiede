@@ -1,3 +1,3 @@
 # Dateien, die beim nächsten Push in die Codeschmiede-Datenbank eingespielt werden (Reihenfolge!). Alle sind mehrfach ausführbar.
-# 2026-11-02: Bestehendes Projekt einlesen (0.16.0) – Sicherheitsprüfung GRÜN 02.11.2026 (6. Nachprüfung, Stand feature/projekt-einlesen)
-migrations/0058_projekt_einlesen.sql
+# Arbeitsplatz Stufe 2/3 (0.17.0) – Sicherheitsprüfung GRÜN 02.11.2026
+migrations/0060_arbeitsplatz_stufe23.sql
