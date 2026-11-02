@@ -13,7 +13,7 @@ import { createInterface } from "node:readline";
 import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import { mkdir, mkdtemp, readFile, writeFile, access, stat, rename } from "node:fs/promises";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import os from "node:os";
@@ -537,6 +537,8 @@ async function fuehreAus(auftrag, { fortsetzen = false, nacharbeit = false, ersa
   laeuft = { id: auftrag.id, abort };
   melde("status", fortsetzen ? "Setzt Auftrag fort" : "Übernimmt Auftrag", auftrag.id);
   let anhangOrdner = null;   // .codeschmiede-anhaenge/ dieses Laufs – wird im finally IMMER gelöscht (Prüfung M3)
+  let einstellDatei = null;  // Einstellungen dieses Laufs als Datei (G1) – im finally gelöscht
+  let nachLauf = null;       // { projekt, ordner }: Git-/Link-Prüfung nach dem Lauf steht noch aus (G3) – sonst im finally
   let projektId = null;
   try {
     const { data: gruppe } = await db.from("ws_gruppen").select("*, ws_bereiche!inner(projekt_id, global)").eq("id", auftrag.gruppe_id).single();
@@ -612,8 +614,12 @@ async function fuehreAus(auftrag, { fortsetzen = false, nacharbeit = false, ersa
       // „ask“ geht vor „allow“: Bau-/Test-Einstellungen und Websuche laufen immer über die Erlaubnis-Brücke (Befund S1/S2)
       // Lesen außerhalb des Arbeitsordners verweigert Claude Code selbst (Befund S2); Hooks aus (wie in der Prüfung)
       // Feste Schreib-Verbote je Lauf: Ebenen über dem Arbeitsordner und die Unterordner des Projektordners, absolut (H1)
-      "--settings", JSON.stringify({ disableAllHooks: true, permissions: { ask: [...FRAGEN, "WebSearch", "WebFetch"], deny: laufVerbote, blockReadsOutsideWorkingDirectories: true } })];
+      // Als DATEI (dritte Prüfung, G1): inline würde die Befehlszeile unter Windows (32.767 Zeichen) bei vielen Arbeitsordnern zu lang
+      "--settings", (einstellDatei = await laufEinstellungen(auftrag.id, { disableAllHooks: true, permissions: { ask: [...FRAGEN, "WebSearch", "WebFetch"], deny: laufVerbote, blockReadsOutsideWorkingDirectories: true } }))];
     if ((fortsetzen || nacharbeit) && merk.sitzung) args.push("--resume", merk.sitzung);
+    // Ist die Befehlszeile trotzdem zu lang (großer Auftragstext), geht der Auftrag über die Standardeingabe (wie im Chat, Nachprüfung 0.10.0 N1)
+    const ueberEingabe = args.reduce((n, a) => n + String(a).length + 3, 0) > 30000;
+    if (ueberEingabe) args.splice(1, 1);
     // Ohne API-Schlüssel in der Umgebung arbeitet Claude Code mit dem eigenen Abo-Login dieser Person
     const env = { ...process.env };
     // Abo-Login erzwingen: keine Schlüssel, fremden Server oder Cloud-Anbieter aus der Umgebung (auch Windows-Schreibweisen)
@@ -623,7 +629,9 @@ async function fuehreAus(auftrag, { fortsetzen = false, nacharbeit = false, ersa
     await new Promise((fertig, fehl) => {
       const claude = findeClaude();
       if (!claude) throw new Error("Claude Code wurde auf diesem PC nicht gefunden (erwartet: %USERPROFILE%\\.local\\bin\\claude.exe). Bitte installieren und einmal „claude“ im Terminal starten.");
-      const kind = spawn(claude.befehl, [...claude.vorne, ...args], { cwd: ordner, env, shell: false, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
+      nachLauf = { projekt, ordner };
+      const kind = spawn(claude.befehl, [...claude.vorne, ...args], { cwd: ordner, env, shell: false, windowsHide: true, stdio: [ueberEingabe ? "pipe" : "ignore", "pipe", "pipe"] });
+      if (ueberEingabe) { kind.stdin.on("error", () => {}); kind.stdin.end(prompt); }
       laeuft.kind = kind;
       abort.signal.addEventListener("abort", () => kind.kill("SIGINT"));
       const rl = createInterface({ input: kind.stdout });
@@ -654,7 +662,7 @@ async function fuehreAus(auftrag, { fortsetzen = false, nacharbeit = false, ersa
     if (ende && ergebnisText.length < 600 && istLimit(ergebnisText)) throw new LimitFehler(ergebnisText.trim());
     if (!ende || ende.subtype !== "success") throw new Error(ende?.subtype ? `Lauf beendet: ${ende.subtype}` : "Lauf ohne Ergebnis beendet");
     // Nach dem Lauf: Git-Ordner und Verknüpfungen erneut prüfen, bevor die Werkstatt selbst git benutzt (R5)
-    { const ort = await repoOrt(projekt, { altErlaubt: true }); await gitPruefen(ort.repo, path.join(ort.arbeit, "keine-hooks"), projekt, ordner); await linksPruefen(ordner); }
+    nachLauf = null; await nachLaufPruefen(projekt, ordner);   // schlägt sie fehl, meldet der catch-Zweig (nicht doppelt im finally)
     r = werteAus(ende.result);
     }
     // Bild-Vorlagen aus dem Assistenten nach dem Lauf vom PC löschen (Datenschutz: „mit Abschluss gelöscht“, Prüfung M1)
@@ -739,8 +747,42 @@ async function fuehreAus(auftrag, { fortsetzen = false, nacharbeit = false, ersa
     } catch { /* Datenbank nicht erreichbar – nächster Durchlauf versucht es wieder */ }
   } finally {
     if (anhangOrdner) await rm(anhangOrdner, { recursive: true, force: true }).catch(() => {});
+    if (einstellDatei) await rm(einstellDatei, { force: true }).catch(() => {});
+    // G3: Endete der Lauf mit Fehler, Abbruch oder Limit, wird der Git-Ordner trotzdem geprüft, bevor der Dienst ihn wieder benutzt
+    if (nachLauf) {
+      try { await nachLaufPruefen(nachLauf.projekt, nachLauf.ordner); }
+      catch (e) {
+        const t = kuerzen(ohneGeheimnisse(e?.message || String(e)), 400);
+        melde("fehler", t, auftrag.id);
+        await log(auftrag.id, "fehler", t).catch(() => {});
+        await nachricht(auftrag.id, "frage", `Nach dem Lauf: ${t}\nBitte prüfen – bis dahin arbeitet die Werkstatt an diesem Auftrag nicht weiter.`).catch(() => {});
+        await db.from("ws_auftraege").update({ stand: "frage" }).eq("id", auftrag.id).then(() => {}, () => {});
+      }
+    }
     laeuft = null;
   }
+}
+/** Git-Ordner und Verknüpfungen nach einem Lauf prüfen (R5/G3). */
+async function nachLaufPruefen(projekt, ordner) {
+  const ort = await repoOrt(projekt, { altErlaubt: true });
+  await gitPruefen(ort.repo, path.join(ort.arbeit, "keine-hooks"), projekt, ordner);
+  await linksPruefen(ordner);
+}
+/** Einstellungen eines Laufs als Datei im Daten-Ordner (nur für den Dienst lesbar, nach dem Lauf gelöscht). */
+async function laufEinstellungen(auftragId, inhalt) {
+  const ordner = path.join(cfg.daten_ordner, "laeufe");
+  await mkdir(ordner, { recursive: true });
+  const datei = path.join(ordner, `einstellungen-${Number(auftragId) || 0}-${randomUUID()}.json`);
+  await writeFile(datei, JSON.stringify(inhalt), { mode: 0o600, flag: "wx" });
+  await nurFuerMich(datei);
+  return datei;
+}
+/** Unter Windows wirkt „mode 0o600“ nicht: Zugriff per icacls nur für die eigene Person und SYSTEM (wie beim Zugriffstoken, Befund S12). */
+async function nurFuerMich(datei) {
+  if (process.platform !== "win32") return;
+  const ich = process.env.USERDOMAIN && process.env.USERNAME ? `${process.env.USERDOMAIN}\\${process.env.USERNAME}` : process.env.USERNAME;
+  if (!ich) return;
+  await sh("icacls", [datei, "/inheritance:r", "/grant:r", `${ich}:F`, "/grant:r", "*S-1-5-18:F"], { windowsHide: true, timeout: 15000 }).catch(() => {});
 }
 
 // Beim Start: Anhang-Ordner früherer (abgestürzter) Läufe in allen Arbeitsordnern löschen (Prüfung M3)
@@ -752,6 +794,7 @@ async function gitAusschliessen(ordner, muster) {
 }
 async function alteAnhaengeAufraeumen() {
   const projekte = path.join(cfg.daten_ordner, "projekte");
+  await rm(path.join(cfg.daten_ordner, "laeufe"), { recursive: true, force: true }).catch(() => {});   // Einstellungs-Dateien abgebrochener Läufe (G1)
   // Chat-Anhänge (0050) aus abgebrochenen Läufen: Lese-Ordner und leere Chat-Ordner im Temp-Verzeichnis
   for (const o of await readdir(os.tmpdir()).catch(() => [])) if (/^cs-chat-/.test(o)) await rm(path.join(os.tmpdir(), o), { recursive: true, force: true }).catch(() => {});
   for (const p of await readdir(projekte).catch(() => [])) {
@@ -788,9 +831,11 @@ async function regelnLesen(po, projektId) {
   const aktuell = b ? b.toString("utf8") : "";
   const sha = b ? sha256(b) : null;
   const zuLang = aktuell.length > 30000;   // wird nie gekürzt bestätigt (Nachprüfung M1a)
-  // Bestätigt ist eine Prüfsumme (gilt für alle PCs mit genau diesem Inhalt, Nachprüfung M1b)
-  let frei = new Set();
-  try { const { data } = await db.from("ws_regeln_freigaben").select("sha").eq("projekt_id", projektId).limit(500); frei = new Set((data || []).map((x) => x.sha)); } catch { /* ohne Datenbank 0055 */ }
+  // Bestätigt ist eine Prüfsumme (gilt für alle PCs mit genau diesem Inhalt, Nachprüfung M1b). Es gilt nur die NEUESTE Bestätigung je
+  // Projekt (G5) – eine ältere oder widerrufene Fassung nie
+  let neueste = null;
+  try { const { data } = await db.from("ws_regeln_freigaben").select("sha").eq("projekt_id", projektId).order("am", { ascending: false }).limit(1); neueste = data?.[0]?.sha || null; } catch { /* ohne Datenbank 0055 */ }
+  const frei = new Set(neueste ? [neueste] : []);
   let text = ""; const bestaetigt = !!sha && !zuLang && frei.has(sha);
   if (bestaetigt) {
     text = aktuell;

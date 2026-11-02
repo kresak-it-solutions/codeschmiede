@@ -47,10 +47,18 @@ export default function AnbindungenKacheln({ projekt, d, admin, toast }) {
   const dbStand = useOrdnerStandDb(projekt.id);
   const bestaetigen = useBestaetigen();
   const regeln = useRegelnStand(projekt.id);
-  const freiSha = new Set(regeln.frei.map((f) => f.sha));
+  // Es gilt nur die NEUESTE bestätigte Fassung je Projekt (G5)
+  const gilt = regeln.frei[0]?.sha || null;
+  const freiSha = new Set(gilt ? [gilt] : []);
   const letzteFreigabe = regeln.frei[0]?.am || null;
   // Je Prüfsumme einmal anzeigen, mit den PCs, die sie melden (Bestätigung gilt für alle PCs mit genau diesem Inhalt)
   const offen = Object.values(regeln.zeilen.filter((z) => !freiSha.has(z.sha)).reduce((m, z) => { (m[z.sha] ||= { ...z, pcs: [] }).pcs.push(z.pc_id); return m; }, {}));
+  const regelnWiderrufen = async (sha) => {
+    if (!(await bestaetigen({ titel: "Bestätigung widerrufen?", text: "Danach gilt diese Fassung der REGELN.md nicht mehr. Es gilt die davor bestätigte (falls es eine gibt), sonst die Projektregeln aus AGENTS.md.", ja: "Widerrufen", gefahr: true }))) return;
+    setBusy(`widerruf-${sha}`);
+    try { const { error } = await supabase.rpc("ws_regeln_widerrufen", { p_projekt: projekt.id, p_sha: sha }); if (error) throw error; toast("Bestätigung widerrufen"); }
+    catch (e) { toast(fehler(e)); } finally { setBusy(""); }
+  };
   const regelnBestaetigen = async (sha) => {
     setBusy(`regeln-${sha}`);
     try { const { error } = await supabase.rpc("ws_regeln_bestaetigen", { p_projekt: projekt.id, p_sha: sha }); if (error) throw error; toast("Projektregeln bestätigt – ab dem nächsten Auftrag gilt diese Fassung (auf allen PCs mit genau diesem Inhalt)"); }
@@ -119,7 +127,15 @@ export default function AnbindungenKacheln({ projekt, d, admin, toast }) {
           {admin ? <button type="button" className={`${btn} self-start`} disabled={!!busy} onClick={() => regelnBestaetigen(r.sha)}>{busy === `regeln-${r.sha}` ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}Diese Fassung bestätigen</button>
             : <span className="text-xs">Bestätigen kann nur der Admin.</span>}
         </div>))}
-      {regeln.zeilen.length > 0 && <p className="text-xs text-slate-500">REGELN.md je PC: {regeln.zeilen.map((z) => `${pcName(z.pc_id)} ${freiSha.has(z.sha) ? "bestätigt" : "offen"} (${z.sha.slice(0, 8)})`).join(" · ")}</p>}
+      {regeln.zeilen.length > 0 && <p className="text-xs text-slate-500">REGELN.md je PC: {regeln.zeilen.map((z) => `${pcName(z.pc_id)} ${freiSha.has(z.sha) ? "gilt" : "nicht bestätigt"} (${z.sha.slice(0, 8)})`).join(" · ")}</p>}
+      {regeln.frei.length > 0 && (
+        <details className={`${card} p-3 text-sm`}><summary className="cursor-pointer font-semibold">Bestätigte Fassungen der REGELN.md ({regeln.frei.length})</summary>
+          <ul className="mt-2 flex flex-col gap-1.5">{regeln.frei.map((f, i) => (
+            <li key={f.sha} className="flex flex-wrap items-center gap-2 text-xs"><span className="font-mono">{f.sha.slice(0, 12)}</span>
+              <span className="text-slate-500">bestätigt {new Date(f.am).toLocaleString("de-AT", { dateStyle: "short", timeStyle: "short" })}</span>
+              {i === 0 ? <span className="rounded-full px-2 py-0.5 font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">gilt</span> : <span className="text-slate-500">ältere Fassung, gilt nicht</span>}
+              {admin && <button type="button" className={`${ghost} h-8 text-xs`} disabled={!!busy} onClick={() => regelnWiderrufen(f.sha)}>{busy === `widerruf-${f.sha}` ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <X className="w-3.5 h-3.5" />}Widerrufen</button>}</li>))}</ul>
+        </details>)}
       <ul className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
         <Lampe stand={po[0]} titel="Projektordner" text={po[1]} />
         <Lampe stand={ampel.github?.stand || (projekt.repo ? "grau" : "rot")} titel="GitHub" text={ampel.github?.text ? `${projekt.repo || ""} · ${ampel.github.text}` : projekt.repo || "Noch kein Repository – unter „Projekte verwalten“ anlegen"} />

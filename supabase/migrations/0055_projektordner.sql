@@ -66,6 +66,28 @@ create table if not exists public.ws_regeln_stand (
   gemeldet timestamptz not null default now(),
   primary key (projekt_id, pc_id)
 );
+-- Robust gegen eine frühere Entwurfs-Fassung dieser Tabelle (ein Eintrag je Projekt, Spalten bestaetigt_*; dritte Prüfung G6):
+-- fehlende Spalten ergänzen, alte Zeilen ohne PC verwerfen (die Werkstätten melden jede Minute neu), Primärschlüssel auf (Projekt, PC)
+alter table public.ws_regeln_stand add column if not exists pc_id uuid references public.ws_werkstatt_pcs(id) on delete cascade;
+alter table public.ws_regeln_stand add column if not exists konflikte smallint not null default 0;
+alter table public.ws_regeln_stand add column if not exists gemeldet timestamptz not null default now();
+delete from public.ws_regeln_stand where pc_id is null or sha is null or text is null;
+alter table public.ws_regeln_stand alter column pc_id set not null;
+alter table public.ws_regeln_stand alter column sha set not null;
+alter table public.ws_regeln_stand alter column text set not null;
+alter table public.ws_regeln_stand drop column if exists bestaetigt_sha;
+alter table public.ws_regeln_stand drop column if exists bestaetigt_von;
+alter table public.ws_regeln_stand drop column if exists bestaetigt_am;
+do $$
+begin
+  if exists (select 1 from pg_constraint c where c.conrelid = 'public.ws_regeln_stand'::regclass and c.contype = 'p'
+              and (select array_agg(a.attname::text order by a.attname) from unnest(c.conkey) k join pg_attribute a on a.attrelid = c.conrelid and a.attnum = k) <> array['pc_id','projekt_id']) then
+    execute (select format('alter table public.ws_regeln_stand drop constraint %I', conname) from pg_constraint where conrelid = 'public.ws_regeln_stand'::regclass and contype = 'p');
+  end if;
+  if not exists (select 1 from pg_constraint where conrelid = 'public.ws_regeln_stand'::regclass and contype = 'p') then
+    alter table public.ws_regeln_stand add primary key (projekt_id, pc_id);
+  end if;
+end $$;
 alter table public.ws_regeln_stand enable row level security;
 revoke all on public.ws_regeln_stand from anon, authenticated;
 grant select on public.ws_regeln_stand to authenticated;
@@ -117,6 +139,18 @@ begin
 end $$;
 revoke execute on function public.ws_regeln_bestaetigen(text, text) from public, anon;
 grant execute on function public.ws_regeln_bestaetigen(text, text) to authenticated;
+
+-- Bestätigung widerrufen (nur Admin, G5). Im Auftrag gilt immer nur die NEUESTE bestätigte Fassung je Projekt.
+create or replace function public.ws_regeln_widerrufen(p_projekt text, p_sha text) returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  if not public.ws_ist_admin() then raise exception 'Widerrufen kann nur der Admin'; end if;
+  delete from public.ws_regeln_freigaben where projekt_id = p_projekt and sha = p_sha;
+  if not found then raise exception 'Diese Fassung ist nicht bestätigt'; end if;
+  insert into public.ws_protokoll (wer, was, details) values (auth.uid(), 'regeln_widerrufen', jsonb_build_object('projekt', p_projekt, 'sha', p_sha));
+end $$;
+revoke execute on function public.ws_regeln_widerrufen(text, text) from public, anon;
+grant execute on function public.ws_regeln_widerrufen(text, text) to authenticated;
 
 -- ---------- Ampel: neue Lampen ----------
 create or replace function public.ws_anbindungen_ok(w jsonb) returns boolean

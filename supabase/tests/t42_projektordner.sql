@@ -129,3 +129,15 @@ select (select count(*) from ws_regeln_stand) stand, (select count(*) from ws_re
 :ADM
 insert into ws_regeln_freigaben(projekt_id, sha) values ('trainer-to-go', repeat('d',64));
 update ws_regeln_stand set sha = repeat('d',64);
+
+\echo [33] Neueste Bestätigung gilt: zweite Fassung bestätigen -> neueste = neu; Entwickler widerruft -> FEHLER; Admin widerruft -> neueste wieder alt; nochmal -> FEHLER
+:ADM
+select ws_regeln_bestaetigen('trainer-to-go', encode(sha256(convert_to('# Regeln neu','UTF8')),'hex')) \g /dev/null
+select (select sha from ws_regeln_freigaben where projekt_id='trainer-to-go' order by am desc limit 1) = encode(sha256(convert_to('# Regeln neu','UTF8')),'hex') neueste_ist_neu;
+:DEV
+select ws_regeln_widerrufen('trainer-to-go', encode(sha256(convert_to('# Regeln neu','UTF8')),'hex'));
+:ADM
+select ws_regeln_widerrufen('trainer-to-go', encode(sha256(convert_to('# Regeln neu','UTF8')),'hex')) \g /dev/null
+select (select sha from ws_regeln_freigaben where projekt_id='trainer-to-go' order by am desc limit 1) = encode(sha256(convert_to('# Regeln','UTF8')),'hex') neueste_ist_alt;
+select ws_regeln_widerrufen('trainer-to-go', encode(sha256(convert_to('# Regeln neu','UTF8')),'hex'));
+select was, count(*) from ws_protokoll where was like 'regeln_%' group by was order by was;

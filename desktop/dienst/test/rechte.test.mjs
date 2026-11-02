@@ -6,14 +6,16 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
 import { createRequire } from "node:module";
-import { readFile, mkdtemp, mkdir, writeFile, symlink, rm } from "node:fs/promises";
+import { readFile, mkdtemp, mkdir, writeFile, symlink, rm, link } from "node:fs/promises";
 import os from "node:os";
-import { laufSperren, sperrListe, allesAusser, regelPfade, maskieren, gefaehrlicheGitConfig, gefaehrlicheAttribute, gitdirOk, linksNachAussen } from "../lib/rechte.mjs";
+import { repoUrlOk, laufSperren, sperrListe, allesAusser, regelPfade, maskieren, gefaehrlicheGitConfig, gefaehrlicheAttribute, gitdirOk, linksNachAussen } from "../lib/rechte.mjs";
 
 const ignore = createRequire(import.meta.url)("./hilfen/ignore-7.0.5.cjs");
 const P = path.posix;
+// Windows (dritte Prüfung, sim2.mjs): „//x/…“ ist ein Laufwerks-Muster mit Wurzel „/x“; Dateipfade schreibt Claude Code als /x/… (Laufwerk klein)
+let WIN = false;
 function wurzelVon(regel) {
-  if (regel.startsWith("//")) return { rel: regel.slice(1), wurzel: "/" };
+  if (regel.startsWith("//")) { const y = regel.slice(1); if (WIN && /^\/[a-z]\//i.test(y)) return { rel: y.slice(3), wurzel: `/${y[1].toLowerCase()}` }; return { rel: y, wurzel: "/" }; }
   if (regel.startsWith("~/")) return { rel: regel.slice(1), wurzel: "/home/nutzer" };
   if (regel.startsWith("/")) return { rel: regel, wurzel: "EINSTELLUNGEN" };
   return { rel: regel.startsWith("./") ? regel.slice(2) : regel, wurzel: null };
@@ -68,18 +70,36 @@ test("Wirkung alte Kopie (Daten-Ordner): eigener Auftrag frei, alles andere im D
   for (const f of [`${A}/repo/.git/config`, `${A}/keine-hooks/pre-commit`, `${A}/auftrag-10/x`, `${A}/abgleich.git/config`, `${D}/zugriff.token`, `${D}/projektordner.json`, `${D}/projekte/codeschmiede/repo/x`]) assert.equal(wirkung(f, verbote, cwd), "verweigert", f);
 });
 
-test("Wirkung Windows-Schreibweisen: //e/…, //E:/… treffen, eigener Ordner frei", async () => {
-  const W = "E:\\Projekte\\vereinsheft"; const cwd = `${W}\\code-arbeit\\auftrag-5`;
-  const baum = { [W]: ["code", "code-arbeit", "regeln"], [`${W}\\code-arbeit`]: ["auftrag-5", "auftrag-6", "keine-hooks"] };
-  const regeln = inhalt(laufSperren({ ordner: cwd, plattform: "win32", sperren: await sperrListe({ ordner: cwd, wurzel: W, plattform: "win32", lesen: lesenAus(baum) }) }));
-  for (const form of [(p) => `/e/${p}`, (p) => `/E/${p}`, (p) => `/E:/${p}`]) {
-    const c = form("Projekte/vereinsheft/code-arbeit/auftrag-5");
-    assert.equal(wirkung(`${c}/src/a.js`, regeln, c), "erlaubt");
-    for (const f of ["code/.git/config", "regeln/REGELN.md", "material/a.png", "code-arbeit/auftrag-6/x", "code-arbeit/keine-hooks/h", ".codeschmiede-projekt.json"]) {
-      assert.equal(wirkung(form(`Projekte/vereinsheft/${f}`), regeln, c), "verweigert", form(f));
+test("Wirkung Windows (Laufwerks-Muster //e/…, Sonderzeichen): eigener Ordner frei, Rest gesperrt", async () => {
+  const W = "E:\\Projekte (G)\\Verein*s"; const D = "C:\\Users\\g\\AppData\\Roaming\\Codeschmiede"; const cwd = `${W}\\code-arbeit\\auftrag-5`;
+  const baum = { [W]: ["code", "code-arbeit", "regeln", ".codeschmiede-projekt.json"], [`${W}\\code-arbeit`]: ["auftrag-5", "auftrag-6", "keine-hooks"] };
+  const regeln = inhalt(laufSperren({ ordner: cwd, plattform: "win32", sperren: await sperrListe({ ordner: cwd, wurzel: W, datenOrdner: D, plattform: "win32", lesen: lesenAus(baum) }) }));
+  const ic = (p) => `/${p[0].toLowerCase()}${p.slice(2).replace(/\\/g, "/")}`;   // so schreibt Claude Code Windows-Pfade
+  WIN = true;
+  try {
+    assert.equal(wirkung(ic(`${cwd}\\src\\a.js`), regeln, ic(cwd)), "erlaubt");
+    for (const f of ["code\\.git\\config", "regeln\\REGELN.md", "material\\a.png", "konzept\\x.md", "doku\\x", "sicherungen\\x", "code-arbeit\\auftrag-6\\x", "code-arbeit\\keine-hooks\\h", ".codeschmiede-projekt.json"]) {
+      assert.equal(wirkung(ic(`${W}\\${f}`), regeln, ic(cwd)), "verweigert", f);
     }
-  }
-  assert.deepEqual(regelPfade("E:\\Projekte", "win32"), ["//e/Projekte", "//E/Projekte", "//E:/Projekte", "//e:/Projekte"]);
+    for (const f of ["projektordner.json", "zugriff.token"]) assert.equal(wirkung(ic(`${D}\\${f}`), regeln, ic(cwd)), "verweigert", f);
+  } finally { WIN = false; }
+  assert.deepEqual(regelPfade("E:\\Projekte", "win32"), ["//e/Projekte"], "nur die Laufwerks-Form, die Claude Code kennt");
+  assert.ok(!regeln.some((r) => /\/\/[A-Za-z]:/.test(r)), "keine //E:/-Muster");
+});
+
+test("Länge (G1): 60 andere Arbeitsordner – Einstellungen als Datei, Befehlszeile bleibt unter 30.000 Zeichen", async () => {
+  const W = "E:\\Projekte\\vereinsheft"; const cwd = `${W}\\code-arbeit\\auftrag-5`;
+  const baum = { [W]: ["code", "code-arbeit", "regeln", "material", "konzept", "doku", "sicherungen", ".codeschmiede-projekt.json", "LIESMICH.md"],
+    [`${W}\\code-arbeit`]: ["auftrag-5", "keine-hooks", "lesen", ...Array.from({ length: 50 }, (_, i) => `auftrag-${100 + i}`), ...Array.from({ length: 10 }, (_, i) => `pruef-${100 + i}`)] };
+  const deny = laufSperren({ ordner: cwd, plattform: "win32", sperren: await sperrListe({ ordner: cwd, wurzel: W, datenOrdner: "C:\\Users\\g\\AppData\\Roaming\\Codeschmiede", plattform: "win32", lesen: lesenAus(baum) }) });
+  assert.ok(JSON.stringify({ deny }).length > 10000, "so lang wäre es inline");
+  const q = await readFile(new URL("../index.mjs", import.meta.url), "utf8");
+  assert.ok(/"--settings", \(einstellDatei = await laufEinstellungen\(/.test(q), "Bau-Lauf übergibt die Einstellungen als Datei");
+  assert.ok(/ueberEingabe = args\.reduce\([^;]+> 30000/.test(q), "zu langer Auftragstext geht über die Standardeingabe");
+  // Feste Teile der Befehlszeile (ohne Auftragstext): ERLAUBT, VERBOTEN, LESE_SPERREN aus index.mjs auswerten
+  const block = (name) => new Function(`return ${new RegExp(`const ${name} = (\\[[\\s\\S]*?\\]);\\n`).exec(q)[1]};`)();
+  const fest = block("ERLAUBT").join(",").length + [...block("VERBOTEN"), ...block("LESE_SPERREN")].join(",").length + 1500 /* MCP-Brücke, Schalter, Pfade */;
+  assert.ok(fest < 30000, `feste Teile ${fest} Zeichen`);
 });
 
 test("Sonderzeichen in Pfaden werden maskiert statt weggelassen", () => {
@@ -103,6 +123,9 @@ test("Git-Härtung: gefährliche Schlüssel, fremde Adressen, Attribute, .git-Da
   assert.deepEqual(gefaehrlicheGitConfig(ok, { "core.hookspath": "/x/keine-hooks" }, "kresak-it-solutions/vereinsheft"), []);
   assert.deepEqual(gefaehrlicheGitConfig(ok, {}, "kresak-it-solutions/vereinsheft"), ["core.hookspath"]);
   assert.deepEqual(gefaehrlicheGitConfig("remote.origin.url=https://boese.example/x.git\nremote.origin.pushurl=https://github.com/a/b", {}, "kresak-it-solutions/vereinsheft").sort(), ["remote.origin.pushurl", "remote.origin.url"]);
+  // SSH für dasselbe Repository ist in Ordnung (G2), für ein anderes nicht
+  for (const u of ["git@github.com:kresak-it-solutions/vereinsheft.git", "ssh://git@github.com/kresak-it-solutions/vereinsheft.git", "https://github.com/Kresak-IT-Solutions/vereinsheft"]) assert.ok(repoUrlOk(u, "kresak-it-solutions/vereinsheft"), u);
+  for (const u of ["git@github.com:boese/vereinsheft.git", "ssh://git@boese.example/kresak-it-solutions/vereinsheft.git", "git@github.com:kresak-it-solutions/vereinsheft-x.git"]) assert.ok(!repoUrlOk(u, "kresak-it-solutions/vereinsheft"), u);
   const boese = "core.fsmonitor=./x.sh\nfilter.lfs.clean=sh -c x\ncore.sshCommand=evil\ninclude.path=../x\ndiff.pdf.textconv=x\nalias.st=!sh\ntrailer.a.cmd=x\nmergetool.m.cmd=x\ndifftool.d.cmd=x\nurl.https://boese/.insteadof=https://github.com/";
   assert.deepEqual(gefaehrlicheGitConfig(boese).sort(), ["alias.st", "core.fsmonitor", "core.sshcommand", "diff.pdf.textconv", "difftool.d.cmd", "filter.lfs.clean", "include.path", "mergetool.m.cmd", "trailer.a.cmd", "url.https://boese/.insteadof"].sort());
   assert.deepEqual(gefaehrlicheAttribute("# x\n*.png binary\n*.c filter=boese\n*.txt diff=x"), ["*.c filter=boese", "*.txt diff=x"]);
@@ -122,5 +145,10 @@ test("Verknüpfungen, die aus dem Arbeitsordner hinauszeigen, werden gefunden", 
     await symlink(d, path.join(o, "src", "raus"));
     await symlink(path.join(o, "gibt-es-nicht"), path.join(o, "leer"));
     assert.deepEqual((await linksNachAussen(o)).sort(), ["leer", path.join("src", "raus")].sort());
+    // harte Links werden gemeldet, node_modules und .git übersprungen (G4)
+    await writeFile(path.join(d, "geheim.txt"), "x"); await link(path.join(d, "geheim.txt"), path.join(o, "src", "hart.txt"));
+    await mkdir(path.join(o, "node_modules")); await symlink(d, path.join(o, "node_modules", "paket"));
+    assert.ok((await linksNachAussen(o)).includes(`${path.join("src", "hart.txt")} (harter Link)`));
+    assert.ok(!(await linksNachAussen(o)).some((x) => x.startsWith("node_modules")));
   } finally { await rm(o, { recursive: true, force: true }); await rm(d, { recursive: true, force: true }); }
 });

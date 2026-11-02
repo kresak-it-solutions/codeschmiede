@@ -17,15 +17,15 @@ export const GESCHUETZT = ["code", "regeln", "material", "konzept", "doku", "sic
 /** Sonderzeichen für die Muster-Bibliothek (ignore 7.x, gitignore-Regeln) maskieren. „?“ bleibt (passt auf genau ein Zeichen – für ein Verbot nur weiter). */
 export const maskieren = (t) => String(t).replace(/[\\*[\]!#]/g, "\\$&");
 
-/** Absoluten Pfad in die Schreibweise der Rechte-Regeln von Claude Code bringen („//“ = absolut). Windows: //e/…, //E/…, //E:/…, //e:/… */
+/** Absoluten Pfad in die Schreibweise der Rechte-Regeln von Claude Code bringen („//“ = absolut). Windows: nur //e/… – Claude Code erkennt nur
+ *  diese Laufwerks-Form, und ignore vergleicht ohne Groß/Klein (dritte Prüfung, G1: weniger Muster, kürzere Einstellungen). */
 export function regelPfade(abs, plattform = process.platform) {
   if (!abs || /[\u0000-\u001f\u007f]/.test(abs)) return [];
   if (plattform === "win32") {
     const m = /^([A-Za-z]):[\\/](.*)$/.exec(abs);
     if (!m) return [];
     const rest = m[2].split(/[\\/]+/).filter(Boolean).map(maskieren).join("/");
-    const mit = (lw) => `//${lw}${rest ? `/${rest}` : ""}`;
-    return [...new Set([mit(m[1].toLowerCase()), mit(m[1].toUpperCase()), mit(`${m[1].toUpperCase()}:`), mit(`${m[1].toLowerCase()}:`)])];
+    return [`//${m[1].toLowerCase()}${rest ? `/${rest}` : ""}`];
   }
   if (!abs.startsWith("/")) return [];
   return [`/${abs.split("/").filter(Boolean).map(maskieren).map((t) => `/${t}`).join("")}`];
@@ -93,9 +93,12 @@ const GEFAEHRLICH = [/^core\.(fsmonitor|sshcommand|pager|editor|askpass|gitproxy
   /^trailer\.[^.]+\.(cmd|command)$/, /^mergetool\.[^.]+\.(cmd|path)$/, /^difftool\.[^.]+\.(cmd|path)$/, /^merge\.tool$/, /^diff\.tool$/];
 
 /** Erwartete Adresse eines Repositorys bei GitHub (https, optional .git). */
-const repoUrlOk = (url, repo) => {
+/** Erwartete Adresse eines Repositorys bei GitHub: https, oder SSH für dasselbe Repository (git@github.com:… bzw. ssh://git@github.com/…, G2). */
+export const repoUrlOk = (url, repo) => {
+  if (!repo) return false;
   const u = String(url || "").trim().toLowerCase().replace(/\/+$/, "").replace(/\.git$/, "");
-  return !!repo && u === `https://github.com/${String(repo).toLowerCase()}`;
+  const r = String(repo).toLowerCase();
+  return u === `https://github.com/${r}` || u === `git@github.com:${r}` || u === `ssh://git@github.com/${r}`;
 };
 
 /**
@@ -131,21 +134,24 @@ export function gitdirOk(inhalt, common, plattform = process.platform) {
  * Symbolische Links (bzw. Junctions) im Arbeitsordner, die aus ihm hinauszeigen (Nachprüfung R3). Ein solcher Link könnte das Lesen oder
  * Schreiben „im Ordner“ auf Dateien außerhalb lenken. Gibt die Teilpfade zurück (leer = in Ordnung); .git wird nicht durchsucht.
  */
-export async function linksNachAussen(ordner, { max = 50000 } = {}) {
+// Ordner ohne Projekt-Inhalt, die bei der Suche übersprungen werden (G4) – node_modules legt die Werkstatt nie an, könnte aber eingecheckt sein
+const UEBERSPRINGEN = new Set([".git", "node_modules"]);
+export async function linksNachAussen(ordner, { max = 500000 } = {}) {
   const { lstat, readdir: rd, realpath } = await import("node:fs/promises");
   const wurzel = await realpath(ordner);
   const r = []; let n = 0;
   const innen = (p) => p === wurzel || p.startsWith(wurzel + path.sep);
   const gehe = async (o) => {
     for (const e of await rd(o, { withFileTypes: true }).catch(() => [])) {
-      if (++n > max) { r.push("(zu viele Dateien – nicht vollständig geprüft)"); return; }
-      if (o === wurzel && e.name === ".git") continue;
+      if (++n > max) { r.push(`(mehr als ${max} Einträge – nicht vollständig geprüft, bitte den Arbeitsordner aufräumen)`); return; }
+      if (UEBERSPRINGEN.has(e.name)) continue;
       const p = path.join(o, e.name);
       const st = await lstat(p).catch(() => null); if (!st) continue;
       if (st.isSymbolicLink()) {
         const ziel = await realpath(p).catch(() => null);
         if (!ziel || !innen(ziel)) r.push(path.relative(wurzel, p));   // ins Leere oder hinaus: beides nicht zulassen
       } else if (st.isDirectory()) await gehe(p);
+      else if (st.isFile() && st.nlink > 1) r.push(`${path.relative(wurzel, p)} (harter Link)`);   // könnte auf eine Datei außerhalb zeigen (G4)
       if (r.length >= 20) return;
     }
   };
