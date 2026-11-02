@@ -12,7 +12,7 @@ import { supabase } from "./supabase";
 import { useKiName } from "./kiName";
 import { Markdown } from "./Markdown";
 import { useVerzeichnis } from "./verzeichnis";
-import { GRUPPEN, GROESSEN, ZUSTAENDE, SEITE, KATALOG, bausteinVon, bausteinWerteBereinigen, bausteineBereinigen, mitStandard, nurAbweichung } from "./bausteinKatalog";
+import { GRUPPEN, GROESSEN, ZUSTAENDE, SEITE, KATALOG, bausteinVon, bausteinWerteBereinigen, bausteineBereinigen, galerieKennung, mitStandard, nurAbweichung } from "./bausteinKatalog";
 import { pruefeBaustein, zusammenfassung, verhaeltnis, SOLL } from "./kontrast";
 import { useBestaetigen } from "./bausteine/grund";
 import { ChatRahmen, ChatKopf, ChatVerlauf, ChatNachricht, ChatWartet, ChatEingabe } from "./bausteine/chat";
@@ -81,7 +81,8 @@ export function useBausteinDesigner({ dunkel }) {
   // Nachricht aus der Galerie (Herkunft und Absender prüft die Testseite)
   const onNachricht = useCallback((m) => {
     if (m.cs === "geladen") { setGalerieDa(true); laden(); return; }
-    if (m.cs === "baustein-wahl") { if (typeof m.id === "string" && bausteinVon(m.id)) { setWahl(m.id); setZustand("normal"); } return; }
+    // Galerie meldet ggf. noch die alte Kennung (knopf-neben …) – intern immer die neue (Datenbank 0054)
+    if (m.cs === "baustein-wahl") { const b = typeof m.id === "string" ? bausteinVon(m.id) : null; if (b) { setWahl(b.id); setZustand("normal"); } return; }
     if ((m.cs === "baustein-stand" || m.cs === "baustein-gespeichert") && warte.current.has(Number(m.nr))) {
       const w = warte.current.get(Number(m.nr)); warte.current.delete(Number(m.nr));
       if (m.ok) w.ok(m); else { const f = new Error(String(m.fehler || "Fehler").slice(0, 300)); f.freigabe = !!m.freigabe; w.fehl(f); }
@@ -119,9 +120,9 @@ export function useBausteinDesigner({ dunkel }) {
   const alle = useMemo(() => zusammen(stand.geerbt, eigen), [stand.geerbt, eigen]);
   // Sofort-Vorschau in der Galerie: alle Werte (geerbt + eigen), gewählter Baustein und Zustand, Hell/Dunkel
   useEffect(() => {
-    try { bruecke.current?.({ cs: "baustein-vorschau", bausteine: alle, id: wahl, zustand, modus: dunkel ? "dunkel" : "hell" }); } catch { /* egal */ }
+    try { bruecke.current?.({ cs: "baustein-vorschau", bausteine: alle, id: wahl ? galerieKennung(wahl) : null, zustand, modus: dunkel ? "dunkel" : "hell" }); } catch { /* egal */ }
   }, [alle, wahl, zustand, dunkel, galerieDa]);
-  const markieren = (id) => { setWahl(id); setZustand("normal"); try { bruecke.current?.({ cs: "baustein-markieren", id }); } catch { /* egal */ } };
+  const markieren = (id) => { setWahl(id); setZustand("normal"); try { bruecke.current?.({ cs: "baustein-markieren", id: galerieKennung(id) }); } catch { /* egal */ } };
 
   return { bruecke, onNachricht, wahl, setWahl: markieren, zustand, setZustand, ebene, setEbene, stand, laden, eigen, alle, setze, offen, speichert, galerieDa };
 }
@@ -291,17 +292,22 @@ function BausteinChat({ b, bs, d, ich, projekt, darf, toast, ki }) {
   const [text, setText] = useState("");
   const [liste, setListe] = useState([]); const [sende, setSende] = useState(false);
   const praefix = `[Baustein ${b.id}]`;
+  // ältere Gespräche mit der alten Kennung (z. B. „[Baustein knopf-neben]“) gehören dazu
+  const praefixe = useMemo(() => [b.id, ...(b.alt || [])].map((k) => `[Baustein ${k}]`), [b.id, b.alt]);
+  const ohnePraefix = (t) => { const p = praefixe.find((x) => String(t).startsWith(x)); return p ? String(t).slice(p.length).trim() : String(t); };
   const holen = useCallback(async () => {
     const { data } = await supabase.from("ws_design_chat").select("*").eq("projekt_id", projekt.id).is("entwurf_id", null).order("id", { ascending: false }).limit(200);
-    const fragen = new Set((data || []).filter((m) => !m.frage_id && String(m.text).startsWith(praefix)).map((m) => m.id));
+    const fragen = new Set((data || []).filter((m) => !m.frage_id && praefixe.some((p) => String(m.text).startsWith(p))).map((m) => m.id));
     setListe((data || []).filter((m) => fragen.has(m.id) || fragen.has(m.frage_id)).reverse());
-  }, [projekt.id, praefix]);
+  }, [projekt.id, praefixe]);
   useEffect(() => {
     holen();
     const ch = supabase.channel(`cs-baustein-chat-${projekt.id}-${b.id}`).on("postgres_changes", { event: "*", schema: "public", table: "ws_design_chat" }, holen).subscribe();
     return () => { supabase.removeChannel(ch); };
   }, [holen, projekt.id, b.id]);
   const voll = mitStandard(b.id, bs.alle[b.id], bs.stand.akzent);
+  // Vorschlag unter der neuen oder (ältere Antworten) einer alten Kennung
+  const vorschlagWerte = (m) => [b.id, ...(b.alt || [])].map((k) => m.werte?.bausteine?.[k]).find(Boolean) || null;
   const werkstattAn = d.pcs.some((p) => p.benutzer_id === ich.id && p.an);
   const wartet = liste.some((m) => !m.frage_id && m.von === ich.id && ["offen", "laeuft"].includes(m.stand));
   const schicke = async (t) => {
@@ -317,7 +323,7 @@ function BausteinChat({ b, bs, d, ich, projekt, darf, toast, ki }) {
   };
   const entscheide = async (m, e) => {
     if (e === "uebernommen") {
-      const w = bausteinWerteBereinigen(b.id, m.werte?.bausteine?.[b.id]);
+      const w = bausteinWerteBereinigen(b.id, vorschlagWerte(m));
       if (!Object.keys(w).length) { toast("Der Vorschlag enthält keine gültigen Werte für diesen Baustein"); return; }
       if (!darf || !bs.stand.darf?.edit) { toast("Kein Recht zum Gestalten auf dieser Ebene"); return; }
       const n = JSON.parse(JSON.stringify(voll)); for (const x of ["hell", "dunkel"]) if (w[x]) n[x] = { ...n[x], ...w[x] }; for (const x of ["ecken", "groesse", "symbol"]) if (x in w) n[x] = w[x];
@@ -335,11 +341,11 @@ function BausteinChat({ b, bs, d, ich, projekt, darf, toast, ki }) {
         {liste.map((m) => m.frage_id ? (
           <ChatNachricht key={m.id} seite="ki" kopf={ki.von(m.ki)}>
             <Markdown text={m.text} klein />
-            {m.werte?.bausteine?.[b.id] && <VorschlagBaustein b={b} voll={voll} w={m.werte.bausteine[b.id]} m={m} kann={fragen[m.frage_id]?.von === ich.id && darf} onEntscheid={(e) => entscheide(m, e)} />}
+            {vorschlagWerte(m) && <VorschlagBaustein b={b} voll={voll} w={vorschlagWerte(m)} m={m} kann={fragen[m.frage_id]?.von === ich.id && darf} onEntscheid={(e) => entscheide(m, e)} />}
           </ChatNachricht>
         ) : (
           <ChatNachricht key={m.id} seite="ich" ton={m.stand === "fehler" ? "fehler" : undefined} kopf={<>{m.von === ich.id ? "Du" : d.benutzer.find((u) => u.id === m.von)?.name || "Mitglied"} · {fmt(m.erstellt)}</>}>
-            <Markdown text={String(m.text).slice(praefix.length).trim()} klein />
+            <Markdown text={ohnePraefix(m.text)} klein />
           </ChatNachricht>))}
         {wartet && <ChatWartet an={werkstattAn} ki={ki.name} text={`${ki.name} denkt nach … (über deine Werkstatt)`} aus="Deine Werkstatt ist aus – schalte sie oben ein." />}
       </ChatVerlauf>
