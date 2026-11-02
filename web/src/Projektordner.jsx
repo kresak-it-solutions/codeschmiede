@@ -40,7 +40,7 @@ export function RegelnRangfolge({ konflikt = null }) {
         <div className={`${card} p-3.5 text-sm leading-relaxed`}><h4 className="font-semibold flex items-center gap-1.5 mb-1"><Scale className="w-4 h-4 text-emerald-700" aria-hidden="true" />2 · Projektregeln{pill("Vorrang")}</h4>
           <span className="font-mono text-xs">regeln\REGELN.md</span> im Projektordner: Sprache, Stil, Fachliches, Abläufe. Gehen dem allgemeinen Regelwerk vor.</div>
         <div className={`${card} p-3.5 text-sm leading-relaxed`}><h4 className="font-semibold flex items-center gap-1.5 mb-1"><BookOpen className="w-4 h-4 text-slate-500" aria-hidden="true" />3 · Allgemeines Regelwerk</h4>
-          Gilt für alles, was die Projektregeln nicht anders festlegen. Fassung je Projekt fest – Aufträge lesen sie direkt aus GitHub, <span className="font-mono text-xs">regeln\regelwerk</span> ist eine Kopie zum Lesen. Eine neue Fassung nur nach deiner Entscheidung („Anbindungen“ › „Neue Regelwerk-Fassung übernehmen“).</div>
+          Gilt für alles, was die Projektregeln nicht anders festlegen. Fassung je Projekt fest – Aufträge lesen sie aus dem geprüften Git-Klon des Regelwerks, <span className="font-mono text-xs">regeln\regelwerk</span> ist eine Kopie zum Lesen. Eine neue Fassung nur nach deiner Entscheidung („Anbindungen“ › „Neue Regelwerk-Fassung übernehmen“).</div>
       </div>
       {konflikt ? <p className={`${ROT} flex gap-2`} role="alert"><AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" aria-hidden="true" /><span>{konflikt}</span></p>
         : <p className={NOTIZ}>Widerspricht eine Projektregel einer Sicherheitsregel, zeigt die Codeschmiede das als rote Zeile unter „Anbindungen“ und im Auftrag an – die Sicherheitsregel gilt.</p>}

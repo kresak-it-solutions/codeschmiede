@@ -43,6 +43,7 @@ function useRegelnStand(projektId) {
 
 const ART = { A: ["neu", "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"], M: ["geändert", "bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-300"], D: ["entfernt", "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300"] };
 const kurzSha = (s) => (s ? String(s).slice(0, 7) : "–");
+const REGELWERK_URL = "https://github.com/gerhardkresak-code/ai-dev-os";
 
 /**
  * Regelwerk (gerhardkresak-code/ai-dev-os) in der festgelegten Fassung (0.13.1, Datenbank 0056). Neue Fassung nur nach Klick des Admins:
@@ -75,7 +76,7 @@ function RegelwerkKarte({ projekt, admin, toast }) {
     } catch (e) { toast(fehler(e)); } finally { setBusy(""); }
   };
   const text = projekt.regelwerk_fassung
-    ? `Festgelegte Fassung ${kurzSha(projekt.regelwerk_fassung)}${projekt.regelwerk_fassung_am ? ` seit ${new Date(projekt.regelwerk_fassung_am).toLocaleDateString("de-AT")}` : ""}. Aufträge lesen das Regelwerk nur in dieser Fassung direkt aus GitHub – Änderungen an der Kopie im Projektordner wirken nicht.`
+    ? `Festgelegte Fassung ${kurzSha(projekt.regelwerk_fassung)}${projekt.regelwerk_fassung_am ? ` seit ${new Date(projekt.regelwerk_fassung_am).toLocaleDateString("de-AT")}` : ""}. Aufträge lesen das Regelwerk nur in dieser Fassung aus dem geprüften Git-Klon des Regelwerks – Änderungen an der Kopie im Projektordner wirken nicht.`
     : "Noch keine Fassung festgelegt – die Werkstatt des Admins legt beim nächsten Durchlauf die aktuelle Fassung fest (einmalig).";
   return (
     <Lampe stand={projekt.regelwerk_fassung ? "gruen" : "grau"} titel="Regelwerk (ai-dev-os)" text={text}>
@@ -88,6 +89,7 @@ function RegelwerkKarte({ projekt, admin, toast }) {
             <span className="text-xs">Festgelegt: <b className="font-mono">{kurzSha(v.fest)}</b> · neueste: <b className="font-mono">{kurzSha(v.neu)}</b> · {(v.dateien || []).length} Datei(en) geändert</span>
             {(v.dateien || []).length > 0 && <ul className="flex flex-col gap-1 max-h-48 overflow-auto text-xs" aria-label="Geänderte Dateien">{v.dateien.map((x) => (
               <li key={`${x.art}-${x.pfad}`} className="flex items-center gap-2"><span className={`rounded-full px-2 py-0.5 font-semibold ${(ART[x.art] || ART.M)[1]}`}>{(ART[x.art] || ART.M)[0]}</span><span className="font-mono break-all">{x.pfad}</span></li>))}</ul>}
+            <button type="button" className={`${ghost} self-start h-9 text-xs`} onClick={() => oeffneExtern(v.fest ? `${REGELWERK_URL}/compare/${v.fest}...${v.neu}` : `${REGELWERK_URL}/commit/${v.neu}`)}><ExternalLink className="w-3.5 h-3.5" />Unterschied bei GitHub ansehen</button>
             <button type="button" className={`${btn} self-start`} disabled={!!busy} onClick={uebernehmen}>{busy === "uebernehmen" ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}Übernehmen</button>
             <span className="text-xs text-slate-500">Nichts passiert automatisch – erst mit „Übernehmen“ gilt die neue Fassung.</span>
           </div>)}
@@ -200,7 +202,7 @@ export default function AnbindungenKacheln({ projekt, d, admin, toast }) {
         <Lampe stand={po[0]} titel="Projektordner" text={po[1]} />
         <RegelwerkKarte projekt={projekt} admin={admin} toast={toast} />
         <Lampe stand={ampel.sicherungen?.stand || "grau"} titel="Sicherungen"
-          text={ampel.sicherungen?.text || "Beim Live-Schalten legt die Werkstatt des Admins den Repo-Stand (git bundle von main) und – mit Datenbank – ihren Aufbau in sicherungen ab. Nichts wird überschrieben oder automatisch gelöscht."} />
+          text={ampel.sicherungen?.text || "Beim Live-Schalten legt die Werkstatt des Admins den eben live geschalteten Repo-Stand (git bundle) und – mit Datenbank und privatem Repository – ihren gefilterten Aufbau in sicherungen ab. Nichts wird überschrieben oder automatisch gelöscht."} />
         <Lampe stand={ampel.github?.stand || (projekt.repo ? "grau" : "rot")} titel="GitHub" text={ampel.github?.text ? `${projekt.repo || ""} · ${ampel.github.text}` : projekt.repo || "Noch kein Repository – unter „Projekte verwalten“ anlegen"} />
         {web && <Lampe stand={testseite[0]} titel="Testseite (Cloudflare)" text={testseite[1]}>
           {admin && !tsDa && ts !== "laeuft" && <button type="button" className={`${btn} self-start`} disabled={!!busy || !projekt.repo} onClick={anfordern}>

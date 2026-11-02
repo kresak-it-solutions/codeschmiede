@@ -5,8 +5,9 @@ name: Datenbank
 # Zugang: je Umgebung das Geheimnis SUPABASE_DB_URL (Verbindungsadresse NUR dieser Datenbank, „Session pooler“) – trägst du selbst in
 # GitHub › Settings › Environments ein. Die Umgebungen lassen nur ihren Zweig zu (main bzw. live), andere Zweige kommen nicht an den Zugang.
 # Was eingespielt ist und die Sicherung des Aufbaus (vor jedem Einspielen in Live) liegen in der Datenbank selbst im Schema „codeschmiede“
-# (nicht über die App erreichbar). Seit Codeschmiede 0.13.1 wird diese Sicherung (nur der Aufbau, keine Daten, keine Zugangsdaten) bei PRIVATEN
-# Repositories zusätzlich 7 Tage als Artefakt „datenbank-aufbau“ abgelegt – die Werkstatt des Admins legt sie in den Projektordner (sicherungen).
+# (nicht über die App erreichbar). Seit Codeschmiede 0.13.1 entsteht dabei zusätzlich eine GEFILTERTE Fassung (Funktionen nur mit Signatur und
+# Prüfsumme, Standardwerte und Regel-Ausdrücke ohne bekannte Schlüssel-/Passwort-/Token-/Verbindungs-Muster, keine Daten). Sie wird nur bei
+# PRIVATEN Repositories 7 Tage als Artefakt „datenbank-aufbau“ abgelegt; die Werkstatt des Admins legt sie in den Projektordner (sicherungen).
 # Jede Datei läuft in einer eigenen Transaktion: Fehler → nichts von ihr bleibt, nichts Weiteres läuft.
 # Grenzen: Eine Datei mit eigenem begin/commit hebt diese Klammer auf; „create index concurrently“ und „vacuum“ gehen hier nicht
 # (in einer Transaktion verboten) – solche Schritte gehören in eine eigene, von Hand ausgeführte Datei.
@@ -139,11 +140,29 @@ jobs:
                 'eingespielt', (select json_agg(datei order by datei) from codeschmiede.migrationen))::jsonb" > /dev/null 2>fehler.txt \
               || { echo "::error::Sicherung des Aufbaus fehlgeschlagen – nichts eingespielt: $(melde < fehler.txt)"; exit 1; }
             echo "::notice::Aufbau der Live-Datenbank gesichert (codeschmiede.sicherungen)"
-            # Für den Projektordner (sicherungen): genau diese Sicherung als Datei – nur der Aufbau, nie die Verbindungsadresse
+            # Für den Projektordner (sicherungen): eine GEFILTERTE Fassung als Datei (Nachprüfung 0.13.1, B2). Die vollständige Sicherung bleibt
+            # nur in der Datenbank. In der Datei stehen Funktionen nur mit Signatur und Prüfsumme (sha256 von pg_get_functiondef – vergleichbar
+            # mit codeschmiede.sicherungen), nie ihr Text; Standardwerte und Regel-Ausdrücke werden von bekannten Schlüssel-, Passwort-, Token-
+            # und Verbindungs-Mustern befreit ([ENTFERNT]). Die Verbindungsadresse steht nie darin.
             mkdir -p "$RUNNER_TEMP/sicherung"
-            if q -c "select aufbau from codeschmiede.sicherungen order by id desc limit 1" > "$RUNNER_TEMP/sicherung/datenbank-aufbau.json" 2>fehler.txt; then
+            if q -c "create function pg_temp.cs_ohne(t text) returns text language sql immutable as \$\$
+                  select regexp_replace(regexp_replace(regexp_replace(regexp_replace(regexp_replace(t,
+                    'eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}', '[ENTFERNT]', 'g'),
+                    '(sb_secret_|sb_publishable_|sbp_|ghp_|gho_|ghu_|ghs_|ghr_|github_pat_|sk-ant-|sk-proj-|sk_live_|sk_test_|rk_live_|AKIA)[A-Za-z0-9_-]{8,}', '[ENTFERNT]', 'g'),
+                    'bearer\s+[A-Za-z0-9._~+/=-]{12,}', 'Bearer [ENTFERNT]', 'gi'),
+                    '(password|passwort|kennwort|secret|token|api[_-]?key|service_role|authorization)([\x22'' ]*\s*[:=]\s*[\x22'' ]*)[^\x22''\s,;)]{6,}', '\1\2[ENTFERNT]', 'gi'),
+                    'postgres(ql)?://[^\s''\x22]+', '[ENTFERNT]', 'gi') \$\$;
+                select json_build_object(
+                'tabellen', (select json_agg(json_build_object('schema', c.table_schema, 'tabelle', c.table_name, 'spalte', c.column_name, 'typ', c.data_type, 'null', c.is_nullable, 'standard', pg_temp.cs_ohne(c.column_default)) order by c.table_schema, c.table_name, c.ordinal_position)
+                             from information_schema.columns c where c.table_schema not in ('pg_catalog','information_schema','auth','storage','extensions','graphql','graphql_public','realtime','supabase_functions','supabase_migrations','vault','pgsodium','pgsodium_masks','net','cron','pgbouncer','codeschmiede') and c.table_schema not like 'pg_%'),
+                'regeln', (select json_agg(json_build_object('schema', schemaname, 'tabelle', tablename, 'name', policyname, 'befehl', cmd, 'rollen', roles, 'using', pg_temp.cs_ohne(qual), 'check', pg_temp.cs_ohne(with_check))) from pg_policies where schemaname not in ('auth','storage','realtime','supabase_functions','vault')),
+                'funktionen', (select json_agg(json_build_object('schema', n.nspname, 'name', p.proname, 'argumente', pg_get_function_identity_arguments(p.oid), 'ergebnis', pg_get_function_result(p.oid),
+                                 'sprache', l.lanname, 'definer', p.prosecdef, 'pruefsumme', encode(sha256(convert_to(pg_get_functiondef(p.oid), 'UTF8')), 'hex')) order by n.nspname, p.proname)
+                               from pg_proc p join pg_namespace n on n.oid = p.pronamespace join pg_language l on l.oid = p.prolang
+                               where p.prokind = 'f' and n.nspname not in ('pg_catalog','information_schema','auth','storage','extensions','graphql','graphql_public','realtime','supabase_functions','vault','pgsodium','net','cron','pgbouncer','codeschmiede') and n.nspname not like 'pg_%'),
+                'eingespielt', (select json_agg(datei order by datei) from codeschmiede.migrationen))" > "$RUNNER_TEMP/sicherung/datenbank-aufbau.json" 2>fehler.txt; then
               echo "sicherung=ja" >> "$GITHUB_OUTPUT"
-            else echo "::warning::Sicherung des Aufbaus nicht als Datei abgelegt (liegt in codeschmiede.sicherungen): $(melde < fehler.txt)"; fi
+            else echo "::warning::Gefilterte Sicherung des Aufbaus nicht als Datei abgelegt (vollständig in codeschmiede.sicherungen): $(melde < fehler.txt)"; fi
           fi
           for f in "${OFFEN[@]}"; do
             echo "Spiele ein: $f"
@@ -152,10 +171,10 @@ jobs:
             q --single-transaction -f einspielen.sql > /dev/null 2>fehler.txt || { echo "::error::$f konnte nicht in die $ZIEL-Datenbank eingespielt werden (nichts davon übernommen, nichts Weiteres eingespielt): $(melde < fehler.txt)"; exit 1; }
             echo "::notice::$ZIEL: $f eingespielt"
           done
-      # Nur bei privaten Repositories (Artefakte öffentlicher Repositories kann jeder mit GitHub-Konto laden), 7 Tage, auch wenn das Einspielen danach scheitert
+      # Nur bei privaten Repositories (Artefakte öffentlicher bzw. „internal“ Repositories können weitere Personen laden), 7 Tage, auch wenn das Einspielen danach scheitert
       - name: Sicherung des Aufbaus ablegen
-        if: ${{ always() && steps.einspielen.outputs.sicherung == 'ja' && github.event.repository.private }}
-        uses: actions/upload-artifact@v4
+        if: ${{ always() && steps.einspielen.outputs.sicherung == 'ja' && github.event.repository.visibility == 'private' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02   # v4.6.2
         with:
           name: datenbank-aufbau
           path: ${{ runner.temp }}/sicherung/datenbank-aufbau.json

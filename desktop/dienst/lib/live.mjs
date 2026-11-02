@@ -2,6 +2,8 @@
 // Nur die Werkstatt des Admins setzt den Zweig – über GitHub (gh api), ohne eigenen Code auszuführen. Keine Zugangsdaten in der Codeschmiede.
 // Außerdem: Aufträge für die unabhängige Prüfung per Knopf (Feature, Gruppe, ganze App).
 
+import { PRUEF_SCHLUSS } from "./regeln.mjs";
+
 export const LIVE_ZWEIG = "live";
 const SHA = /^[0-9a-f]{40}$/;
 const REPO = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\/[A-Za-z0-9._-]{1,100}$/;
@@ -197,5 +199,6 @@ export function pruefPrompt({ projekt, umfang, feature, gruppe, features = [], r
     "Einschleusung (SQL/HTML/Befehle), offensichtliche Fehler, Zusammenspiel mit angrenzenden Funktionen, Bedienbarkeit am Handy, Handbuch aktuell.",
     "Antworte mit einer kurzen Liste der Befunde (rot = muss behoben werden, orange = Hinweis), je Befund Datei und Zeile.",
     "Die allerletzte Zeile lautet genau „PRÜFUNG: GRÜN“ oder „PRÜFUNG: ROT“.",
+    PRUEF_SCHLUSS,   // fest am Ende, nach Rolle und Daten (Nachprüfung 0.13.1, B1)
   ].join("\n");
 }
