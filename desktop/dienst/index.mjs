@@ -561,6 +561,7 @@ async function fuehreAus(auftrag, { fortsetzen = false, nacharbeit = false, ersa
     // auch für Aufträge, die noch in der alten Kopie im Daten-Ordner laufen
     const poLauf = await projektOrdner(projekt.id).catch(() => null);
     const laufWurzel = poLauf?.stand === "ok" && ordner.startsWith(poLauf.arbeit + path.sep) ? poLauf.wurzel : null;
+    await mkdir(path.join(cfg.daten_ordner, "laeufe"), { recursive: true });   // vor der Sperrliste anlegen, damit er immer darin steht (H-b)
     const laufVerbote = laufSperren({ ordner, sperren: await sperrListe({ ordner, wurzel: laufWurzel, datenOrdner: cfg.daten_ordner }) });
     const merk = (await sitzungen())[auftrag.id] || {};
     const versuch = merk.versuch || 0;
@@ -618,7 +619,10 @@ async function fuehreAus(auftrag, { fortsetzen = false, nacharbeit = false, ersa
       "--settings", (einstellDatei = await laufEinstellungen(auftrag.id, { disableAllHooks: true, permissions: { ask: [...FRAGEN, "WebSearch", "WebFetch"], deny: laufVerbote, blockReadsOutsideWorkingDirectories: true } }))];
     if ((fortsetzen || nacharbeit) && merk.sitzung) args.push("--resume", merk.sitzung);
     // Ist die Befehlszeile trotzdem zu lang (großer Auftragstext), geht der Auftrag über die Standardeingabe (wie im Chat, Nachprüfung 0.10.0 N1)
-    const ueberEingabe = args.reduce((n, a) => n + String(a).length + 3, 0) > 30000;
+    // Gezählt wird wie unter Windows: Programm + vorne (cli.js) + alle Argumente, je mit Anführungszeichen und verdoppelten „\“/„"“; Schwelle mit Puffer (H-a)
+    const cl = findeClaude();
+    const zeichen = (a) => String(a).length + (String(a).match(/["\\]/g) || []).length + 3;
+    const ueberEingabe = [cl?.befehl || "claude", ...(cl?.vorne || []), ...args].reduce((n, a) => n + zeichen(a), 0) > 24000;
     if (ueberEingabe) args.splice(1, 1);
     // Ohne API-Schlüssel in der Umgebung arbeitet Claude Code mit dem eigenen Abo-Login dieser Person
     const env = { ...process.env };

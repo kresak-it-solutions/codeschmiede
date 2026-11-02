@@ -95,7 +95,8 @@ test("Länge (G1): 60 andere Arbeitsordner – Einstellungen als Datei, Befehlsz
   assert.ok(JSON.stringify({ deny }).length > 10000, "so lang wäre es inline");
   const q = await readFile(new URL("../index.mjs", import.meta.url), "utf8");
   assert.ok(/"--settings", \(einstellDatei = await laufEinstellungen\(/.test(q), "Bau-Lauf übergibt die Einstellungen als Datei");
-  assert.ok(/ueberEingabe = args\.reduce\([^;]+> 30000/.test(q), "zu langer Auftragstext geht über die Standardeingabe");
+  assert.ok(/ueberEingabe = \[cl\?\.befehl[^;]+> 24000/.test(q), "zu langer Auftragstext geht über die Standardeingabe (mit Programm, vorne und Maskierung gezählt)");
+  assert.ok(q.indexOf('mkdir(path.join(cfg.daten_ordner, "laeufe")') < q.indexOf("const laufVerbote"), "laeufe-Ordner vor der Sperrliste");
   // Feste Teile der Befehlszeile (ohne Auftragstext): ERLAUBT, VERBOTEN, LESE_SPERREN aus index.mjs auswerten
   const block = (name) => new Function(`return ${new RegExp(`const ${name} = (\\[[\\s\\S]*?\\]);\\n`).exec(q)[1]};`)();
   const fest = block("ERLAUBT").join(",").length + [...block("VERBOTEN"), ...block("LESE_SPERREN")].join(",").length + 1500 /* MCP-Brücke, Schalter, Pfade */;

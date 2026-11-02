@@ -127,7 +127,13 @@ export default function AnbindungenKacheln({ projekt, d, admin, toast }) {
           {admin ? <button type="button" className={`${btn} self-start`} disabled={!!busy} onClick={() => regelnBestaetigen(r.sha)}>{busy === `regeln-${r.sha}` ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}Diese Fassung bestätigen</button>
             : <span className="text-xs">Bestätigen kann nur der Admin.</span>}
         </div>))}
-      {regeln.zeilen.length > 0 && <p className="text-xs text-slate-500">REGELN.md je PC: {regeln.zeilen.map((z) => `${pcName(z.pc_id)} ${freiSha.has(z.sha) ? "gilt" : "nicht bestätigt"} (${z.sha.slice(0, 8)})`).join(" · ")}</p>}
+      {regeln.zeilen.length > 0 && (
+        <div className="flex flex-col gap-1.5 text-xs">
+          <p className="text-slate-600 dark:text-slate-300">Es gilt nur die neueste bestätigte Fassung. PCs mit einer anderen Fassung arbeiten ohne Projektregeln, bis du ihre Fassung bestätigst (hatte ein PC die geltende Fassung schon einmal, nutzt er seine gespeicherte Kopie davon).</p>
+          <ul className="flex flex-wrap gap-1.5" aria-label="REGELN.md je PC">{regeln.zeilen.map((z) => (
+            <li key={z.pc_id} className={`rounded-full px-2.5 py-0.5 font-semibold ${freiSha.has(z.sha) ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300" : "bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-300"}`}>
+              {pcName(z.pc_id)} · {freiSha.has(z.sha) ? "gilt" : "ohne Projektregeln"} <span className="font-mono font-normal">({z.sha.slice(0, 8)})</span></li>))}</ul>
+        </div>)}
       {regeln.frei.length > 0 && (
         <details className={`${card} p-3 text-sm`}><summary className="cursor-pointer font-semibold">Bestätigte Fassungen der REGELN.md ({regeln.frei.length})</summary>
           <ul className="mt-2 flex flex-col gap-1.5">{regeln.frei.map((f, i) => (
