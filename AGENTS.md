@@ -40,6 +40,14 @@ Zusammengeführt wird nur auf Gerhards Wort (in der Codeschmiede: Knopf „Freig
 - Werkstatt arbeitet nur im Arbeitsordner des Auftrags (eigener Zweig), nie direkt auf `main`; heikle Befehle brauchen Erlaubnis im Programm.
 
 ## Neue Anweisungen
+- **2026-11-02 – Ein Arbeitsplatz für jede Art von Programm (Entwurf 1.0 frei, `docs/entwurf-1.0-arbeitsplatz-alle-arten.html`, Stufe 1 in 0.15.0 vorläufig):**
+  Baum Bereich › Gruppe › Feature für alle Arten gleich, Namen überall gleich; was sich je Art ändert, ist der **Prüfweg** (Seite/Fenster/Befehl/Kapitel).
+  **Tauri** ist Standard für Windows/Mac, .NET nur Sonderfall. Projekte haben mehrere **Ziele** (Web, Handy, Windows, Mac, Cloud-Lauf, PDF). Rechts
+  Vorschau | Code live | Verlauf; in der Mitte die offenen Punkte (= Aufgaben am Feature, kein zweites System) und der Chat – „Weiterarbeiten“ gibt einen
+  Punkt als Auftrag (gleiche Rechte wie „Als Auftrag“), „Fragen“ klärt nur. Status-Punkt am Feature (blau blinkend/orange/grün, ohne Blinken bei reduzierter Bewegung).
+  Chat-Begriffe dafür: „Fragen“ und „Weiterarbeiten“ nur mit gewähltem Punkt. **Code live** zeigt nur Code aus dem Arbeitsordner bzw. Zweig, nie Geheimnis-Dateien
+  (nur Name „ausgeblendet“), Schlüssel maskiert, keine Personendaten; geht flüchtig über die Datenbank (`ws_code_live`, gelöscht bei Auftragsende) und führt nie
+  Projekt-Code aus (nur Git-Lesebefehle ohne ext-diff/textconv). Datenbank 0059, `docs/KONZEPT-ARBEITSPLATZ.md`.
 - **2026-11-02 – Programmier-Werkzeug je Projekt (0.14.0, Entwurf frei, `docs/KONZEPT-WERKZEUGE.md`):** Je Projekt wählt der Admin unter
   KI-Anbieter › Programmieren das Werkzeug: Claude Code (Standard), OpenAI Codex CLI, Gemini CLI oder OpenCode (mit Modell). **Verpflichtend:** ist es
   auf einem PC nicht installiert, nicht angemeldet oder hat es den Sperren-Test nicht bestanden, wartet der Auftrag („wartet auf <Werkzeug>“) – kein anderes

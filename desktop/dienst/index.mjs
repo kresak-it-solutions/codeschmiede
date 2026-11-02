@@ -52,6 +52,7 @@ import { setupNameOk, versionOrdner, releaseVersion, releaseWahl, tagImLive, ver
 import { sicherungsName, freierName, uebersicht as sicherungenUebersicht, sicherungenLampe, aufbauPruefen, aufbauArtefakt, BUNDLE_MAX } from "./lib/sicherungen.mjs";
 import { testseiteEinrichten, lotsePruefen, Lotse } from "./lib/testseite.mjs";
 import { laufSperren, sperrListe, gefaehrlicheGitConfig, gefaehrlicheAttribute, gitdirOk, linksNachAussen } from "./lib/rechte.mjs";
+import { diffSammeln, fingerabdruck, GitVerdaechtig, codeLiveUmgebung } from "./lib/codeLive.mjs";
 
 const HIER = path.dirname(fileURLToPath(import.meta.url));
 // Claude Code finden. Windows: nativer Installer (claude.exe in %USERPROFILE%\.local\bin) oder npm (cli.js) – immer OHNE Shell
@@ -146,6 +147,22 @@ async function existiert(p) { try { await access(p); return true; } catch { retu
 // Jeder git-Aufruf des Dienstes ohne fsmonitor und ohne „ext::“-Transport – eine untergeschobene Einstellung startet so kein Programm (H1)
 const GIT_SICHER = ["-c", "core.fsmonitor=false", "-c", "protocol.ext.allow=never"];
 async function git(cwd, ...args) { return (await sh("git", [...GIT_SICHER, ...args], { cwd, maxBuffer: 20 * 1024 * 1024 })).stdout.trim(); }
+// Code live (0059): nur lesen, ohne optionale Sperren – schreibt nie in den Index, stört den laufenden Auftrag nicht
+// Aus der persönlichen Git-Konfiguration übernimmt Code live nur harmlose Werte, die das Ergebnis betreffen: Zeilenenden (sonst zeigt Windows
+// mit autocrlf jede Datei als geändert) und safe.directory (externe Festplatte mit anderem Besitzer). Gelesen, nie ausgeführt; Filter nie.
+let liveGlobal = null;
+async function liveGlobaleArgs() {
+  if (liveGlobal) return liveGlobal;
+  const lies = async (...x) => (await sh("git", [...GIT_SICHER, "config", "--global", "--no-includes", ...x], { env: { ...process.env, GIT_CONFIG_NOSYSTEM: "1" } }).catch(() => ({ stdout: "" }))).stdout;
+  const a = [];
+  for (const k of ["core.autocrlf", "core.eol"]) { const v = String(await lies("--get", k)).trim(); if (/^(true|false|input|lf|crlf|native)$/i.test(v)) a.push("-c", `${k}=${v}`); }
+  for (const v of String(await lies("--get-all", "safe.directory")).split(/\r?\n/).map((x) => x.trim()).filter((x) => x && x.length < 1000).slice(0, 50)) a.push("-c", `safe.directory=${v}`);
+  return (liveGlobal = a);
+}
+async function gitLive(cwd, ...args) {
+  // Externe Diff-Programme sind über --no-ext-diff/--no-textconv aus; Umgebung ohne globale/System-Konfiguration und System-Attribute (Nachprüfung N1)
+  return (await sh("git", [...GIT_SICHER, "-c", "core.quotePath=false", ...(await liveGlobaleArgs()), ...args], { cwd, maxBuffer: 8 * 1024 * 1024, env: codeLiveUmgebung() })).stdout.trim();
+}
 async function log(auftrag, art, text, ausschnitt) {
   await db.from("ws_live_log").insert({ auftrag_id: auftrag, art, text: kuerzen(ohneGeheimnisse(text), 500), ausschnitt: ausschnitt ? kuerzen(ohneGeheimnisse(ausschnitt), 2000) : null });
 }
@@ -554,6 +571,7 @@ async function fuehreAus(auftrag, { fortsetzen = false, nacharbeit = false } = {
   let einstellDatei = null;  // Einstellungen dieses Laufs als Datei (G1) – im finally gelöscht
   let nachLauf = null;       // { projekt, ordner }: Git-/Link-Prüfung nach dem Lauf steht noch aus (G3) – sonst im finally
   let projektId = null;
+  let codeLiveStopp = null;  // Code live (0059): Abgleich des Diffs – im finally IMMER beendet und gelöscht
   try {
     const { data: gruppe } = await db.from("ws_gruppen").select("*, ws_bereiche!inner(projekt_id, global)").eq("id", auftrag.gruppe_id).single();
     const { data: projekt } = await db.from("ws_projekte").select("*").eq("id", gruppe.ws_bereiche.projekt_id).single();
@@ -589,6 +607,7 @@ async function fuehreAus(auftrag, { fortsetzen = false, nacharbeit = false } = {
     await db.from("ws_auftraege").update({ stand: "laeuft", werkstatt_pc: pcId, modell, zweig }).eq("id", auftrag.id);
     await log(auftrag.id, "info", fremd ? `Werkstatt-PC ${cfg.pc_name || os.hostname()} programmiert mit ${werkzeugName(werkzeug)} (${modell}) auf ${zweig}`
       : `Werkstatt-PC ${cfg.pc_name || os.hostname()} arbeitet mit Modell ${modell} auf ${zweig}${lage === "klein" ? " (Abo-Limit wird knapp – kleineres Modell)" : ""}`);
+    codeLiveStopp = await codeLiveStarten(auftrag, projekt, ordner);
 
     let prompt = fremd
       // Fremde Werkzeuge: immer der ganze Auftrag mit Verlauf (keine Sitzung zum Fortsetzen); Commit/PR macht die Werkstatt
@@ -783,6 +802,7 @@ async function fuehreAus(auftrag, { fortsetzen = false, nacharbeit = false } = {
       await db.from("ws_auftraege").update({ stand: "frage" }).eq("id", auftrag.id);
     } catch { /* Datenbank nicht erreichbar – nächster Durchlauf versucht es wieder */ }
   } finally {
+    if (codeLiveStopp) await codeLiveStopp().catch(() => {});
     if (anhangOrdner) await rm(anhangOrdner, { recursive: true, force: true }).catch(() => {});
     if (einstellDatei) await rm(einstellDatei, { force: true }).catch(() => {});
     // G3: Endete der Lauf mit Fehler, Abbruch oder Limit, wird der Git-Ordner trotzdem geprüft, bevor der Dienst ihn wieder benutzt
@@ -799,6 +819,46 @@ async function fuehreAus(auftrag, { fortsetzen = false, nacharbeit = false } = {
     laeuft = null;
   }
 }
+// ---------- Code live (Konzept docs/KONZEPT-ARBEITSPLATZ.md, Datenbank 0059) ----------
+// Während der Lauf läuft: alle 5 Sekunden den gefilterten Diff des Arbeitsordners gegen den Startstand (merge-base mit origin/main)
+// sammeln (lib/codeLive.mjs) und – nur wenn er sich geändert hat – über ws_code_live_melden in die flüchtige Tabelle ws_code_live schreiben.
+// Nur Git-Lesebefehle und echte Dateien im Arbeitsordner; kein Projekt-Code läuft. Nach dem Lauf: ws_code_live_ende (Zeile weg).
+const CODE_LIVE_TAKT = 5000;
+// Härtung (Sicherheitsprüfung 02.11.2026, H1): git läuft fest mit --git-dir=<code>/.git/worktrees/<auftrag> und --work-tree=<ordner>, nie über die
+// .git-Datei; vor jeder Runde prüft diffSammeln .git-Datei, Verwaltung, config/config.worktree und info/attributes. Ein Treffer schaltet Code live
+// für diesen Auftrag ab (Hinweis in der Oberfläche und im Live-Log); Filter aus .gitattributes sind neutralisiert, Untermodule werden nie angesehen.
+async function codeLiveStarten(auftrag, projekt, ordner) {
+  let ort; try { ort = await repoOrt(projekt, { altErlaubt: true }); } catch { return null; }
+  const common = path.join(ort.repo, ".git");
+  const gitDir = path.join(common, "worktrees", path.basename(ordner));
+  let basis = null;
+  try { basis = await gitLive(common, `--git-dir=${gitDir}`, "merge-base", "HEAD", "origin/main"); } catch { /* ohne Startstand kein Code live */ }
+  if (!/^[0-9a-f]{40}$/.test(basis || "")) return null;
+  let letzter = ""; let busy = false; let aus = false;
+  const abschalten = async (grund) => {
+    aus = true;
+    await log(auftrag.id, "fehler", `Code live abgeschaltet: verdächtige Git-Einstellung (${kuerzen(grund, 200)})`).catch(() => {});
+    await db.rpc("ws_code_live_melden", { p_pc: pcId, p_auftrag: auftrag.id, p_basis: basis, p_dateien: [], p_gekuerzt: false, p_abgeschaltet: true }).then(() => {}, () => {});
+  };
+  const runde = async () => {
+    if (busy || aus || stopp) return; busy = true;
+    try {
+      const r = await diffSammeln({ git: gitLive, ordner, von: basis, gitDir, common });
+      const fp = fingerabdruck(r); if (fp === letzter) return;
+      const { error } = await db.rpc("ws_code_live_melden", { p_pc: pcId, p_auftrag: auftrag.id, p_basis: basis, p_dateien: r.dateien, p_gekuerzt: r.gekuerzt, p_abgeschaltet: false });
+      if (!error) letzter = fp;
+      else if (/does not exist|schema cache/i.test(error.message)) aus = true;   // Datenbank 0059 noch nicht eingespielt
+    } catch (e) { if (e instanceof GitVerdaechtig) await abschalten(e.message); /* sonst: nächste Runde */ } finally { busy = false; }
+  };
+  const t = setInterval(runde, CODE_LIVE_TAKT);
+  runde();
+  return async () => {
+    aus = true; clearInterval(t);
+    for (let i = 0; busy && i < 50; i++) await new Promise((r) => setTimeout(r, 100));
+    await db.rpc("ws_code_live_ende", { p_pc: pcId, p_auftrag: auftrag.id }).then(() => {}, () => {});
+  };
+}
+
 /** Git-Ordner und Verknüpfungen nach einem Lauf prüfen (R5/G3). */
 async function nachLaufPruefen(projekt, ordner) {
   const ort = await repoOrt(projekt, { altErlaubt: true });
@@ -1505,7 +1565,13 @@ async function codeArbeit() {
           codeAbruf.set(k, Date.now());
         }
         const stand = await zweigStand(git, repo, a.zweig);
-        if (a.art === "baum") await antwort({ stand_sha: stand, baum: await codeBaum(git, repo, stand) });
+        if (a.art === "diff") {
+          // Diff des letzten Auftrags (0059): Zweig gegen main, nur aus dem Abgleich-Klon (Git-Daten), gleicher Filter wie Code live
+          await mitSperre(repo, () => git(repo, "fetch", "-q", "origin", "+refs/heads/main:refs/heads/main"));
+          const basis = await gitLive(repo, "merge-base", await zweigStand(git, repo, "main"), stand);
+          const r = await diffSammeln({ git: gitLive, ordner: repo, von: basis, bis: stand });
+          await antwort({ stand_sha: stand, baum: r.dateien, nur_lesen: true, hinweis: r.gekuerzt ? "Gekürzt – große Änderungen nur teilweise" : null });
+        } else if (a.art === "baum") await antwort({ stand_sha: stand, baum: await codeBaum(git, repo, stand) });
         else await antwort({ stand_sha: stand, ...(await codeDatei(git, gitRoh, repo, stand, a.pfad)) });
       } catch (e) {
         await antwortRoh({ fehler: true, hinweis: kuerzen(ohneGeheimnisse(e?.stderr?.toString?.() || e?.message || String(e)), 280) }).catch(() => {});

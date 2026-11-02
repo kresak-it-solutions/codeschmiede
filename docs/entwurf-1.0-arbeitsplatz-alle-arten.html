@@ -1,0 +1,234 @@
+<title>Arbeitsplatz für alle Arten</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&display=swap">
+<style>
+:root{--bg:#f1f5f4;--card:#fff;--line:#dbe5e0;--fg:#13201b;--mut:#5b6b64;--acc:#047857;--acc-soft:#ecfdf5;--orange:#f97316;--or-soft:#fff7ed;--blue:#2563eb;--term:#0b1220;--termfg:#d1fae5;--add:#10b98126;--del:#ef444426}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0b1220;--card:#111a2b;--line:#1f2a3d;--fg:#e6edf6;--mut:#93a3b8;--acc:#10b981;--acc-soft:#10b98122;--or-soft:#f973161f;--blue:#60a5fa;--term:#050a14;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#0b1220;--card:#111a2b;--line:#1f2a3d;--fg:#e6edf6;--mut:#93a3b8;--acc:#10b981;--acc-soft:#10b98122;--or-soft:#f973161f;--blue:#60a5fa;--term:#050a14;color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:Barlow,system-ui,sans-serif;font-size:15px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:18px 48px}
+h1{font-size:22px;margin:0;text-wrap:balance}.sub{color:var(--mut);font-size:14px;margin:4px 0 14px;max-width:84ch;line-height:1.45}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+.tab{font:inherit;font-size:13.5px;font-weight:700;border-radius:999px;padding:6px 12px;border:1px solid var(--line);background:var(--card);color:var(--fg);cursor:pointer}
+.tab.on{background:var(--acc);border-color:var(--acc);color:#fff}
+.platz{display:grid;grid-template-columns:minmax(210px,240px) minmax(280px,33%) minmax(0,1fr);gap:10px;min-height:600px}
+@media (max-width:1050px){.platz{grid-template-columns:1fr}}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:12px;display:flex;flex-direction:column;gap:9px;min-width:0}
+.h4{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--mut)}
+.tree{font-size:14px;display:flex;flex-direction:column;gap:1px}
+.tree .b{font-weight:700;margin-top:7px}
+.tree .g{padding-left:10px;color:var(--mut)}
+.tree .f{padding-left:22px;border-radius:8px;padding-block:3px;cursor:pointer;display:flex;gap:6px;align-items:center}
+.tree .f:hover{background:var(--bg)}
+.tree .f.on{background:var(--acc-soft);color:var(--acc);font-weight:700}
+.dot{width:8px;height:8px;border-radius:50%;flex:none;background:var(--line)}
+.dot.arbeit{background:var(--blue);animation:p 1.2s infinite}.dot.offen{background:var(--orange)}.dot.fertig{background:var(--acc)}
+@keyframes p{50%{opacity:.35}}
+@media (prefers-reduced-motion:reduce){.dot.arbeit{animation:none}}
+.punkte{display:flex;flex-direction:column;gap:5px}
+.pk{display:flex;gap:8px;align-items:center;font-size:13.5px;border:1px solid var(--line);border-radius:10px;padding:6px 9px;cursor:pointer}
+.pk.sel{outline:2px solid var(--acc);outline-offset:1px}
+.pk small{margin-left:auto;color:var(--mut);font-size:12px;white-space:nowrap}
+.msg{font-size:13.5px;padding:8px 11px;border-radius:12px;background:var(--bg);border:1px solid var(--line);line-height:1.4;max-width:94%}
+.msg.me{align-self:flex-end;background:var(--acc);border-color:var(--acc);color:#fff}
+.msg small{display:block;font-size:11.5px;color:var(--mut);margin-bottom:2px}
+.weg{font-size:12.5px;border:1px dashed var(--acc);border-radius:10px;padding:6px 9px;color:var(--acc)}
+.send{display:flex;gap:8px;align-items:flex-end;margin-top:auto}
+textarea{font:inherit;font-size:14px;border:1px solid var(--line);border-radius:9px;background:var(--bg);color:var(--fg);padding:7px 9px;width:100%;min-height:52px;resize:vertical}
+.top{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+.seg{display:flex;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.seg button{font:inherit;font-size:13px;font-weight:700;border:0;background:var(--card);color:var(--fg);padding:6px 11px;cursor:pointer}
+.seg button.on{background:var(--acc);color:#fff}
+.ziel{display:flex;gap:6px;flex-wrap:wrap}
+.ziel span{font-size:12px;font-weight:700;padding:3px 9px;border-radius:999px;border:1px solid var(--line);cursor:pointer}
+.ziel span.on{border-color:var(--acc);color:var(--acc);background:var(--acc-soft)}
+.screen{flex:1;border-radius:12px;background:#e8edf1;padding:12px;display:flex;flex-direction:column;gap:10px;color:#13201b;min-height:330px}
+.win{background:#fff;border-radius:10px;border:1px solid #cbd5d1;overflow:hidden;display:flex;flex-direction:column;flex:1}
+.win .tb{background:#f3f6f5;border-bottom:1px solid #cbd5d1;font-size:12.5px;padding:6px 10px;display:flex;justify-content:space-between;gap:8px}
+.win .menu{font-size:13px;padding:6px 10px;border-bottom:1px solid #e2e8e5;display:flex;gap:14px;flex-wrap:wrap}
+.win .menu b{color:#047857}
+.win .body{padding:12px;font-size:13.5px;color:#334;flex:1;display:flex;flex-direction:column;gap:8px}
+.mark{outline:2px dashed #f97316;outline-offset:3px;border-radius:6px}
+.grid2{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:10px}
+@media (max-width:600px){.grid2{grid-template-columns:1fr}}
+.plan{background:#f8fafc;border:1px solid #cbd5d1;border-radius:8px;aspect-ratio:4/3;position:relative;max-width:100%}
+.raum{position:absolute;border:2px solid #047857;background:#04785714;font-size:11px;padding:2px 4px;color:#064e3b}
+.tbl{font-size:12.5px;border-collapse:collapse;width:100%}
+.tbl td,.tbl th{border-bottom:1px solid #e2e8e5;padding:4px 6px;text-align:left}
+.tbl th{font-size:11px;color:#5b6b64}
+.phone{width:210px;max-width:100%;margin:0 auto;border:8px solid #13201b;border-radius:28px;background:#fff;min-height:350px;padding:14px 10px;font-size:13px;display:flex;flex-direction:column;gap:8px}
+.big{background:#047857;color:#fff;border-radius:999px;width:120px;height:120px;display:grid;place-items:center;margin:8px auto;font-weight:700;font-size:20px}
+.term{background:var(--term);color:var(--termfg);font-family:ui-monospace,Consolas,monospace;font-size:12.5px;border-radius:10px;padding:10px 12px;line-height:1.55;white-space:pre-wrap;flex:1;overflow:auto;min-height:220px}
+.code{background:var(--term);color:#cbd5e1;font-family:ui-monospace,Consolas,monospace;font-size:12.5px;border-radius:10px;line-height:1.6;overflow:auto;flex:1;min-height:260px}
+.code .ln{display:flex;gap:10px;padding:0 10px;white-space:pre}
+.code .ln i{color:#475569;font-style:normal;width:26px;text-align:right;flex:none}
+.code .add{background:var(--add)}.code .del{background:var(--del);text-decoration:line-through;opacity:.8}
+.code .cur{border-left:3px solid #f97316}
+.files{display:flex;gap:6px;flex-wrap:wrap}
+.files span{font-family:ui-monospace,Consolas,monospace;font-size:12px;padding:3px 8px;border-radius:7px;border:1px solid var(--line);cursor:pointer}
+.files span.on{border-color:var(--acc);color:var(--acc);background:var(--acc-soft)}
+.files span em{font-style:normal;color:var(--blue)}
+.schritte{font-size:13px;display:flex;flex-direction:column;gap:4px}
+.schritte div{display:flex;gap:8px;align-items:center}
+.doc{background:#fff;border:1px solid #cbd5d1;border-radius:6px;width:min(280px,100%);margin:0 auto;aspect-ratio:1/1.414;max-width:100%;padding:18px;font-size:11.5px;color:#4b5d55;box-shadow:0 4px 14px #0001;display:flex;flex-direction:column;gap:6px}
+.btns{display:flex;gap:8px;flex-wrap:wrap}
+button.b{font:inherit;font-size:13px;font-weight:700;border-radius:9px;padding:7px 11px;cursor:pointer;border:1px solid var(--line);background:var(--card);color:var(--fg)}
+button.p{background:var(--acc);border-color:var(--acc);color:#fff}
+.note{font-size:13px;border-radius:12px;padding:9px 11px;line-height:1.45;background:var(--or-soft);border:1px solid var(--orange)}
+.stufe{font-size:12px;font-weight:700;color:var(--mut)}
+.live{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700;color:var(--blue)}
+table.t{border-collapse:collapse;font-size:13.5px;width:100%}
+table.t td,table.t th{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+table.t th{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--mut)}
+.tw{overflow-x:auto}
+select{font:inherit;font-size:13px;border:1px solid var(--line);border-radius:9px;padding:6px;background:var(--bg);color:var(--fg)}
+</style>
+
+<h1>Ein Arbeitsplatz für jede Art von Programm</h1>
+<p class="sub">Entwurf zum Konzept, mit Beispielen gefüllt. Links siehst du die Zentrale, in der Mitte die <b>offenen Punkte</b> des Features und den Chat, rechts drei Ansichten: <b>Vorschau</b> (was du baust), <b>Code live</b> (welche Dateien die Werkstatt gerade ändert, Zeile für Zeile) und <b>Verlauf</b>. Das gilt für jede Art. Klick auf einen Punkt: Der Chat bezieht sich darauf und „Weiterarbeiten“ gibt genau diesen Punkt als Auftrag. Beim Thermax Planer läuft im Beispiel gerade ein Auftrag. Alle Inhalte sind ausgedacht.</p>
+
+<div class="tabs" id="tabs"></div>
+<div class="platz">
+ <div class="card"><div class="h4">Zentrale · <span id="pname"></span></div><div class="tree" id="tree"></div></div>
+ <div class="card">
+  <div class="h4">Feature · <span id="fname"></span></div>
+  <div class="weg" id="weg"></div>
+  <div class="h4" style="margin-top:4px">Offene Punkte</div>
+  <div class="punkte" id="punkte"></div>
+  <div class="h4" style="margin-top:4px">Chat <span id="bezug" style="text-transform:none;letter-spacing:0;font-weight:600"></span></div>
+  <div id="chat" style="display:flex;flex-direction:column;gap:7px"></div>
+  <div class="send"><textarea id="txt" placeholder="Frage oder Auftrag …"></textarea><div style="display:flex;flex-direction:column;gap:6px"><button class="b p" id="weiter">Weiterarbeiten</button><button class="b" id="frage">Fragen</button></div></div>
+ </div>
+ <div class="card">
+  <div class="top"><div class="seg" id="seg"><button data-v="vor">Vorschau</button><button data-v="code">Code live</button><button data-v="verlauf">Verlauf</button></div><div class="ziel" id="ziele"></div></div>
+  <div id="rechts" style="display:flex;flex-direction:column;gap:10px;flex:1"></div>
+ </div>
+</div>
+
+<div class="card" style="margin-top:14px">
+ <div class="h4">Technik-Empfehlung beim neuen Projekt</div>
+ <div class="tw"><table class="t">
+  <tr><th>Du willst</th><th>Empfohlene Technik</th><th>Vorschau rechts</th></tr>
+  <tr><td>Web-App oder Webseite</td><td>React + Vite, Testseite auf Cloudflare</td><td>Live-Vorschau</td></tr>
+  <tr><td>Handy-App</td><td>zuerst als PWA, für die Stores später Tauri Mobile oder Capacitor</td><td>Handy-Rahmen und QR-Code</td></tr>
+  <tr><td>Windows- und Mac-Programm</td><td><b>Tauri</b> (wie die Codeschmiede selbst)</td><td>Stufe 1: Oberfläche als Testseite · Stufe 2: Sandbox</td></tr>
+  <tr><td>Alles zusammen</td><td>ein Code mit React + Vite, daraus Web, PWA und Tauri</td><td>Ziel-Umschalter rechts</td></tr>
+  <tr><td>Tief in Windows (Office, Geräte, Treiber, Altsysteme)</td><td>Sonderfall .NET (WinUI oder WPF)</td><td>Sandbox mit Bildschirmfotos</td></tr>
+  <tr><td>Werkzeug, Skript, Dienst</td><td>Node oder Python, Läufe in der Cloud</td><td>Testlauf-Konsole</td></tr>
+  <tr><td>Dokumente (Handbuch, PDF-Layouts)</td><td>Markdown oder HTML, daraus PDF</td><td>Seiten-Vorschau</td></tr>
+ </table></div>
+</div>
+
+<script>
+const P={
+ thermax:{n:"Thermax Planer",art:"Web + Windows (Tauri)",ziele:["Windows","Web"],
+  tree:[["App","Pläne",[["Plan auslesen","arbeit"],["Planliste","fertig"],["Plan vergleichen","offen"]]],["App","Angebote",[["Angebot erstellen","fertig"],["Preisliste","offen"]]],["App","Einstellungen",[["Firmendaten","fertig"]]]],
+  f:"Plan auslesen",weg:"Fenster Hauptfenster › Pläne › Plan auslesen",
+  punkte:[["Räume aus PDF erkennen","fertig","erledigt #12"],["Maßstab automatisch erkennen","arbeit","läuft, Auftrag #14"],["Mehrseitige Pläne","offen","offen"],["Flächen in Tabelle exportieren","offen","offen"]],
+  chat:[["me","Der Maßstab steht unten rechts im Plankopf, meist 1:50 oder 1:100."],["ki","Verstanden. Ich lese den Plankopf zuerst und nehme den Maßstab daraus; gibt es keinen, fragt das Programm nach."],["me","Weiterarbeiten an „Maßstab automatisch erkennen“"],["ki","Auftrag #14 läuft. Rechts unter „Code live“ siehst du mit."]],
+  vor:{Windows:"thermax",Web:"thermaxweb"},
+  dateien:["src/plan/auslesen.ts","src/plan/massstab.ts","src/fenster/PlanAuslesen.tsx","tests/massstab.test.ts"],
+  code:{"src/plan/massstab.ts":[["","export function massstabAusPlankopf(text: string): number | null {"],["add","  // Plankopf unten rechts: „M 1:50“, „Maßstab 1:100“ …"],["add","  const treffer = text.match(/(?:M|Maßstab)\\s*1\\s*:\\s*(\\d{2,4})/i);"],["add","  if (!treffer) return null;"],["add","  const wert = Number(treffer[1]);"],["add","  return [20, 25, 50, 100, 200, 500].includes(wert) ? wert : null;"],["del","  return 100; // fest"],["cur","}"]],
+   "src/plan/auslesen.ts":[["","import { massstabAusPlankopf } from './massstab';"],["","export async function planAuslesen(pdf: PdfDatei) {"],["","  const seiten = await pdf.seiten();"],["add","  const kopf = await seiten[0].textImBereich('unten-rechts');"],["add","  const massstab = massstabAusPlankopf(kopf) ?? await fragMassstab();"],["","  return erkenneRaeume(seiten[0], { massstab });"],["","}"]],
+   "src/fenster/PlanAuslesen.tsx":[["","<Feld label=\"Maßstab\">"],["add","  {massstab ? `1:${massstab} (aus Plankopf)` : <MassstabWahl />}"],["","</Feld>"]],
+   "tests/massstab.test.ts":[["add","test('M 1:50 im Plankopf', () => expect(massstabAusPlankopf('M 1:50')).toBe(50));"],["add","test('kein Maßstab', () => expect(massstabAusPlankopf('Grundriss EG')).toBe(null));"]]},
+  schritte:[["fertig","Regeln geladen (Projekt, global)"],["fertig","src/plan/auslesen.ts gelesen"],["fertig","src/plan/massstab.ts geändert"],["arbeit","Tests schreiben"],["","Prüf-Station"],["","Testseite und Sandbox-Bau"]],
+  verlauf:[["11:52","Auftrag #14 gestartet: Maßstab automatisch erkennen"],["11:20","#12 live: Räume aus PDF erkennen"],["10:05","Gerhard: Plan von Muster GmbH lässt sich nicht öffnen (Bildschirmfoto)"]]},
+ ttg:{n:"Trainer to go",art:"Web-App",ziele:["Web","Handy (PWA)"],
+  tree:[["Sport","Planung",[["Termine","offen"],["Wochenplan","fertig"]]],["Sport","Mannschaft & Kader",[["Spielerliste","fertig"],["Rückennummern","offen"]]],["Verein","Kommunikation",[["Kantine","fertig"]]]],
+  f:"Termine",weg:"Seite /calendar",
+  punkte:[["Wochenansicht als Standard","offen","offen"],["Termine aus Verbands-Spielplan","offen","offen"],["Erinnerung 2 h vorher","fertig","erledigt #41"]],
+  chat:[["me","Wochenansicht als Standard?"],["ki","Ja. Monat bleibt per Knopf erreichbar; die Wahl merkt sich jeder Trainer selbst."]],
+  vor:{Web:"ttg","Handy (PWA)":"ttghandy"},
+  dateien:["src/pages/Calendar.jsx"],code:{"src/pages/Calendar.jsx":[["","const [ansicht, setAnsicht] = useState("],["del","  'monat'"],["add","  gemerkt('kalender-ansicht') ?? 'woche'"],["",");"]]},
+  schritte:[["","Wartet auf „Weiterarbeiten“"]],verlauf:[["Fr","#41 live: Erinnerung 2 h vorher"]]},
+ stopp:{n:"Lauf-Stoppuhr",art:"Handy-App (PWA)",ziele:["Handy (PWA)"],
+  tree:[["App","Training",[["Stoppuhr","arbeit"],["Rundenzeiten","offen"]]],["App","Auswertung",[["Diagramm","offen"]]]],
+  f:"Stoppuhr",weg:"Seite /timer",
+  punkte:[["Große Start-Taste","fertig","erledigt"],["Weiterlaufen bei gesperrtem Handy","arbeit","läuft, #3"],["Ton bei Runde","offen","offen"]],
+  chat:[["me","Die Zeit muss weiterlaufen, auch wenn das Handy gesperrt ist."]],
+  vor:{"Handy (PWA)":"stopp"},dateien:["src/timer.ts"],code:{"src/timer.ts":[["del","setInterval(tick, 100);"],["add","const start = performance.now(); // Zeit aus Startpunkt rechnen, nicht zählen"],["add","document.addEventListener('visibilitychange', neuZeichnen);"]]},
+  schritte:[["fertig","src/timer.ts geändert"],["arbeit","Tests"]],verlauf:[["11:40","#3 gestartet"]]},
+ waage:{n:"Lager-Waage",art:"Windows-Sonderfall (.NET)",ziele:["Windows"],
+  tree:[["Programm","Geräte",[["Waage auslesen","arbeit"]]],["Programm","Office",[["Excel-Import","offen"],["Etikett drucken","fertig"]]]],
+  f:"Waage auslesen",weg:"Fenster Wiegen · Knopf „Gewicht holen“",
+  punkte:[["COM-Port wählen","fertig","erledigt"],["Gewicht stabil abwarten","arbeit","läuft, #7"],["Fehler bei getrennter Waage","offen","offen"]],
+  chat:[["me","Das Gewicht springt am Anfang, erst nach 2 Sekunden ist es ruhig."]],
+  vor:{Windows:"waage"},dateien:["Waage/Leser.cs"],code:{"Waage/Leser.cs":[["","public async Task<decimal> GewichtAsync() {"],["add","    var werte = await LeseWerteAsync(TimeSpan.FromSeconds(2));"],["add","    if (werte.Max() - werte.Min() > 0.005m) throw new UnruhigException();"],["","    return werte.Last();"],["","}"]]},
+  schritte:[["fertig","Waage/Leser.cs geändert"],["arbeit","Bau für Windows-Sandbox"]],verlauf:[["11:31","#7 gestartet"]]},
+ tool:{n:"Daten-Abgleich",art:"Werkzeug",ziele:["Cloud-Lauf"],
+  tree:[["Werkzeug","Befehle",[["Daten abgleichen","offen"],["Bericht erstellen","fertig"]]]],
+  f:"Daten abgleichen",weg:"Befehl abgleichen · Beispiel-Eingabe klein.csv",
+  punkte:[["Doppelte melden statt löschen","offen","offen"],["Große Dateien (1 Mio. Zeilen)","offen","offen"]],
+  chat:[["me","Doppelte Zeilen sollen gemeldet, nicht gelöscht werden."]],
+  vor:{"Cloud-Lauf":"tool"},dateien:["abgleich.py"],code:{"abgleich.py":[["del","df = df.drop_duplicates()"],["add","doppelt = df[df.duplicated(keep=False)]"],["add","melde(doppelt)"]]},
+  schritte:[["","Wartet auf „Weiterarbeiten“"]],verlauf:[["Mo","Bericht erstellen live"]]},
+ doku:{n:"Handbuch Trainer to go",art:"Dokumente",ziele:["PDF"],
+  tree:[["Dokumente","Handbuch",[["Kapitel Training","arbeit"],["Kapitel Kader","fertig"]]]],
+  f:"Kapitel Training",weg:"Kapitel 3 · Seite 12",
+  punkte:[["Bilder größer","arbeit","läuft, #2"],["Abschnitt Übungsbibliothek","offen","offen"]],
+  chat:[["me","Bilder im Kapitel größer, mit Bildunterschrift."]],
+  vor:{PDF:"doku"},dateien:["kapitel/03-training.md"],code:{"kapitel/03-training.md":[["del","![Übung](bilder/uebung.png){width=40%}"],["add","![Übung: Passdreieck](bilder/uebung.png){width=80%}"]]},
+  schritte:[["arbeit","PDF neu bauen"]],verlauf:[["11:10","#2 gestartet"]]}
+};
+let pk="thermax", ziel=0, ansicht="vor", datei=null, punkt=1, zeile=0, timer=null;
+const $=id=>document.getElementById(id);
+const esc=s=>s.replace(/&/g,"&amp;").replace(/</g,"&lt;");
+const status={fertig:"fertig",arbeit:"arbeit",offen:"offen","":""};
+function vorschau(key){
+ switch(key){
+  case "thermax":return `<div class="stufe">Stufe 1: Oberfläche als Testseite (Dateien öffnen wird nachgespielt)</div><div class="screen"><div class="win"><div class="tb"><span>Thermax Planer – Plan auslesen</span><span>Testseite · Zweig #14</span></div><div class="menu"><b>Pläne</b><span>Angebote</span><span>Einstellungen</span></div><div class="body"><div class="grid2"><div class="plan"><div class="raum" style="left:6%;top:8%;width:42%;height:40%">Wohnen 24,6 m²</div><div class="raum" style="left:52%;top:8%;width:40%;height:40%">Küche 12,1 m²</div><div class="raum" style="left:6%;top:54%;width:30%;height:38%">Bad 6,4 m²</div><div class="raum" style="left:40%;top:54%;width:52%;height:38%">Schlafen 15,8 m²</div><div style="position:absolute;right:4px;bottom:4px;font-size:10px;background:#fff;border:1px solid #cbd5d1;padding:2px 4px" class="mark">M 1:50</div></div><div style="display:flex;flex-direction:column;gap:6px"><div style="font-size:12.5px"><b>Plan:</b> EG_Muster.pdf</div><div style="font-size:12.5px" class="mark"><b>Maßstab:</b> 1:50 (aus Plankopf)</div><table class="tbl"><tr><th>Raum</th><th>Fläche</th></tr><tr><td>Wohnen</td><td>24,6 m²</td></tr><tr><td>Küche</td><td>12,1 m²</td></tr><tr><td>Bad</td><td>6,4 m²</td></tr><tr><td>Schlafen</td><td>15,8 m²</td></tr></table></div></div></div></div></div><div class="stufe">Stufe 2: echtes Programm</div><div class="btns"><button class="b p">In Windows-Sandbox starten</button><button class="b">Bildschirmfoto an den Chat</button><button class="b">Zeigen & kommentieren</button></div>`;
+  case "thermaxweb":return `<div class="screen"><div class="win"><div class="tb"><span>planer-test.pages.dev/plaene/auslesen</span><span>PC</span></div><div class="body"><b>Plan auslesen</b><span>Dieselbe Oberfläche im Browser, aus demselben Code wie das Windows-Programm.</span><div class="plan" style="max-width:320px"><div class="raum" style="left:8%;top:10%;width:80%;height:35%">Wohnen 24,6 m²</div></div></div></div></div>`;
+  case "ttg":return `<div class="screen"><div class="win"><div class="tb"><span>main.trainer-to-go.pages.dev/calendar</span><span>PC</span></div><div class="body"><b>Termine · Woche 45</b><table class="tbl"><tr><th>Tag</th><th>Termin</th></tr><tr><td>Di</td><td>Training U7 · 17:00</td></tr><tr><td>Do</td><td>Training U7 · 17:00</td></tr><tr><td>Sa</td><td>Turnier Fieberbrunn · 9:30</td></tr></table></div></div></div>`;
+  case "ttghandy":return `<div class="screen"><div class="phone"><b>Termine</b><div>Di · Training 17:00</div><div>Do · Training 17:00</div><div>Sa · Turnier 9:30</div></div></div><div class="btns"><button class="b">QR-Code: am echten Handy öffnen</button></div>`;
+  case "stopp":return `<div class="screen"><div class="phone"><b>Stoppuhr</b><div style="text-align:center;font-size:30px;font-weight:700;font-variant-numeric:tabular-nums">03:41,2</div><div class="big">Runde</div><div style="font-size:12px;color:#5b6b64">Runde 3 · 1:12,4</div></div></div><div class="btns"><button class="b">QR-Code: am echten Handy öffnen</button></div>`;
+  case "waage":return `<div class="stufe">Nur Stufe 2: echtes Programm in der Windows-Sandbox</div><div class="screen"><div class="win"><div class="tb"><span>Bildschirmfoto · 11:44 · Bau #7</span><span>Windows-Sandbox</span></div><div class="body"><b>Wiegen</b><div>Port: COM3 · Waage: Muster W-200</div><div class="mark" style="font-size:22px;font-weight:700">12,345 kg <span style="font-size:12px;color:#047857">ruhig</span></div><div>Artikel: Schrauben M6 · 1.240 Stück</div></div></div></div><div class="btns"><button class="b p">In Windows-Sandbox starten</button><button class="b">Bildschirmfoto an den Chat</button></div><div class="note">Bei .NET kann die Codeschmiede die Oberfläche nicht als Testseite zeigen. Du siehst den letzten Bau und Bildschirmfotos aus der Sandbox; die Waage selbst wird dort nachgespielt.</div>`;
+  case "tool":return `<div class="btns"><select><option>Beispiel-Eingabe: klein.csv</option><option>Beispiel-Eingabe: gross.csv</option></select><button class="b p">Testlauf in der Cloud</button></div><div class="term">$ abgleichen klein.csv
+Lese 240 Zeilen …
+Doppelte Zeilen: 3 (Zeile 18, 77, 190) – gemeldet, nicht gelöscht
+Ergebnis: ergebnis.csv (240 Zeilen), doppelte.csv (3 Zeilen)
+Fertig in 1,4 s</div><div class="btns"><button class="b">Ergebnisdatei ansehen</button><button class="b">Ausgabe an den Chat</button></div>`;
+  case "doku":return `<div class="screen" style="align-items:center"><div class="doc"><b style="color:#13201b;font-size:14px">3 Training</b><div style="background:#e2e8e5;border-radius:4px;height:110px" class="mark"></div><i>Übung: Passdreieck</i><p>Drei Spieler bilden ein Dreieck und passen im Uhrzeigersinn …</p><div style="margin-top:auto;text-align:right">Seite 12</div></div></div>`;
+ }
+}
+function codeAnsicht(){
+ const p=P[pk]; if(!datei||!p.code[datei]) datei=Object.keys(p.code)[0];
+ const laeuft=p.schritte.some(s=>s[0]==="arbeit");
+ const zeilen=p.code[datei];
+ return `<div class="top"><span class="live">${laeuft?'<span class="dot arbeit"></span>Werkstatt arbeitet · live':'Kein Auftrag läuft – letzter Stand'}</span><span style="font-size:12.5px;color:var(--mut)">Nur ansehen; eigene Änderungen über „Code“ als Auftrag</span></div>
+ <div class="files">${p.dateien.map(d=>`<span class="${d===datei?'on':''}" data-d="${d}">${d}${p.code[d]?' <em>geändert</em>':''}</span>`).join("")}</div>
+ <div class="code" id="codebox">${zeilen.map((z,i)=>`<div class="ln ${z[0]} ${laeuft&&i>=zeile?'':''}" ${laeuft&&i>zeile?'style="opacity:.15"':''}><i>${i+1}</i>${z[0]==="add"?"+ ":z[0]==="del"?"- ":"  "}${esc(z[1])}</div>`).join("")}</div>
+ <div class="h4">Schritte</div><div class="schritte">${p.schritte.map(s=>`<div><span class="dot ${status[s[0]]}"></span>${s[1]}</div>`).join("")}</div>`;
+}
+function rechts(){
+ const p=P[pk], z=p.ziele[ziel];
+ document.querySelectorAll("#seg button").forEach(b=>b.classList.toggle("on",b.dataset.v===ansicht));
+ $("ziele").innerHTML=ansicht==="vor"&&p.ziele.length>1?p.ziele.map((x,i)=>`<span class="${i===ziel?'on':''}" data-i="${i}">${x}</span>`).join(""):"";
+ document.querySelectorAll("#ziele span").forEach(s=>s.onclick=()=>{ziel=+s.dataset.i;rechts()});
+ if(ansicht==="vor") $("rechts").innerHTML=vorschau(p.vor[z]);
+ else if(ansicht==="code"){ $("rechts").innerHTML=codeAnsicht(); document.querySelectorAll(".files span").forEach(s=>s.onclick=()=>{datei=s.dataset.d;zeile=0;rechts()}); }
+ else $("rechts").innerHTML=`<div class="schritte" style="gap:8px">${p.verlauf.map(v=>`<div><b style="width:44px">${v[0]}</b>${v[1]}</div>`).join("")}</div><div class="btns"><button class="b">Auf diesen Stand zurück …</button></div>`;
+}
+function tick(){ const p=P[pk]; if(ansicht!=="code"||!p.code[datei]) return; const n=p.code[datei].length; if(p.schritte.some(s=>s[0]==="arbeit")){ zeile=(zeile+1)%(n+3); rechts(); } }
+function mitte(){
+ const p=P[pk];
+ $("fname").textContent=p.f; $("weg").innerHTML=`<b>Prüfweg:</b> ${p.weg}`;
+ $("punkte").innerHTML=p.punkte.map((x,i)=>`<div class="pk ${i===punkt?'sel':''}" data-i="${i}"><span class="dot ${status[x[1]]}"></span>${x[0]}<small>${x[2]}</small></div>`).join("");
+ document.querySelectorAll(".pk").forEach(e=>e.onclick=()=>{punkt=+e.dataset.i;mitte()});
+ $("bezug").textContent=`· zu „${p.punkte[punkt]?.[0]||p.f}“`;
+ $("chat").innerHTML=p.chat.map(m=>`<div class="msg ${m[0]==='me'?'me':''}">${m[0]==='ki'?'<small>KI</small>':''}${esc(m[1])}</div>`).join("");
+}
+$("weiter").onclick=()=>{const p=P[pk],x=p.punkte[punkt];if(!x)return;const t=$("txt").value.trim();p.chat.push(["me",`Weiterarbeiten an „${x[0]}“${t?": "+t:""}`]);p.chat.push(["ki",`Auftrag gestartet. Rechts unter „Code live“ siehst du mit.`]);x[1]="arbeit";x[2]="läuft";p.schritte=[["arbeit","Regeln geladen, Dateien werden gelesen"],["","Ändern"],["","Prüf-Station"]];$("txt").value="";ansicht="code";zeile=0;zeig()};
+$("frage").onclick=()=>{const p=P[pk],t=$("txt").value.trim();if(!t)return;p.chat.push(["me",t]);p.chat.push(["ki","(Antwort der eingestellten KI, nur lesend – es wird nichts gebaut.)"]);$("txt").value="";mitte()};
+document.querySelectorAll("#seg button").forEach(b=>b.onclick=()=>{ansicht=b.dataset.v;zeile=0;rechts()});
+function zeig(){
+ const p=P[pk];
+ $("tabs").innerHTML=Object.entries(P).map(([k,v])=>`<button class="tab ${k===pk?'on':''}" data-k="${k}">${v.n} · ${v.art}</button>`).join("");
+ document.querySelectorAll(".tab").forEach(b=>b.onclick=()=>{pk=b.dataset.k;ziel=0;datei=null;punkt=Math.min(1,P[pk].punkte.length-1);ansicht="vor";zeig()});
+ $("pname").textContent=p.n;
+ let last="";$("tree").innerHTML='<div class="b">Konzept</div>'+p.tree.map(([b,g,fs])=>{const s=(b!==last?`<div class="b">${b}</div>`:"")+`<div class="g">${g}</div>`+fs.map(([f,st])=>`<div class="f ${f===p.f?'on':''}"><span class="dot ${st}"></span>${f}</div>`).join("");last=b;return s}).join("");
+ mitte(); rechts();
+}
+zeig(); timer=setInterval(tick,700);
+</script>

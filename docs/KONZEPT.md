@@ -240,6 +240,12 @@ Klick auf ein Feature = Kurzinfo; Doppelklick = Chat links, Live-Vorschau rechts
 (nur Testseiten; seit 0.10.1 nur Name, Seite und Pfad des Elements – nie sein sichtbarer Text, Befund S4). Zweig-Testseiten laden erst nach
 dem Klick „Verstanden, Vorschau anzeigen“ und zeigen dauerhaft „hier nicht anmelden“ (Befund S5), im Rahmen mit Sandbox (S7). Nachrichten aus Gruppen-Chat und Claude-Chat erscheinen beim Feature mit Herkunft.
 
+### Arbeitsplatz für alle Arten (seit 0.15.0 vorläufig, Stufe 1, Entwurf frei von Gerhard 2026-11-02, Datenbank 0059)
+Gleicher Baum für alle Arten; je Feature ein **Prüfweg** (Seite · Fenster · Befehl · Kapitel; „Seite“ = `vorschau_pfad`); je Projekt mehrere **Ziele**
+(web, handy_pwa, windows, mac, cloud_lauf, pdf). In der Mitte **offene Punkte** (= Aufgaben am Feature) über dem Chat mit **Fragen** / **Weiterarbeiten**,
+rechts **Vorschau | Code live | Verlauf**, Status-Punkt vor jedem Feature. Code live: flüchtiger, gefilterter Diff des laufenden Auftrags (`ws_code_live`).
+Tauri ist der Standard für Windows/Mac, .NET nur Sonderfall. Alles Weitere und Handbuch: `docs/KONZEPT-ARBEITSPLATZ.md`.
+
 ## Live-Vorschau (Menüpunkt): links folgt der Chat der Seite (seit 0.13.2)
 Entwurf 1.0 freigegeben von Gerhard 02.11.2026 (`docs/entwurf-1.0-vorschau-folgt.html`). Gilt **nur im Menüpunkt Live-Vorschau**, nicht im Feature-Arbeitsplatz.
 Die Testseite meldet jeden Seitenwechsel (`{cs:"seite", pfad}`); `LiveVorschau` reicht ihn über `onSeite` nach oben, die Zuordnung ist eine
@@ -298,6 +304,7 @@ Fokusfalle), `BestaetigenRahmen`/`useBestaetigen`, `useFokusfalle` · `web/src/b
 | Menü „Chat“ | Projekt bzw. Konzept | Besprechen | `ws_claude_chat` (Unterhaltung), Anhänge `ws-chat` |
 | Konzept-Chat | Projekt · Konzept | Besprechen | `ws_claude_chat` ohne Unterhaltung |
 | Gruppen-/Feature-Chat (Zentrale, Live-Vorschau) | Gruppe bzw. Feature (+ Baustein) | Besprechen · Antworten (offene Rückfrage) · Als Auftrag (nur mit Baustein aus „Zeigen & kommentieren“) | Konzept-Chat · `ws_nachrichten` · `ws_auftraege` |
+| Feature-Arbeitsplatz mit gewähltem Punkt (seit 0.15.0) | Feature · Punkt | Fragen (Enter, wie Besprechen) · Weiterarbeiten (Punkt als Auftrag, auch ohne Text) | Konzept-Chat · `ws_punkt_weiterarbeiten` |
 | Design-Chat | Projekt · Design/Marke/Bausteine | Besprechen (Entwurf oben „Als Auftrag“) | `ws_design_chat` |
 | Baustein-Chat (Inspektor) | Baustein | Besprechen | `ws_design_chat` mit `[Baustein …]` |
 | Umdesign | Symbol bzw. Baustein | Besprechen (Entwurf unten „Als Auftrag …“) | `ws_design_chat` mit `[Umdesign …]` |
