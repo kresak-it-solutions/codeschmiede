@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowLeft, ArrowRightLeft, CircleCheck, ExternalLink, Eye, Info, Monitor, MousePointerClick, Pin, RefreshCw, ShieldAlert, Smartphone, Tablet, Trash2, Undo2, X } from "lucide-react";
 import { ABGESCHLOSSEN, btn, card, fehler, ghost, input, merke, mitCs, oeffneExtern, seiteOk, vorschauUrl } from "../bausteine/grund";
-import { pfadNorm, zuordnung } from "../bausteine/vorschauZuordnung";
+import { pfadNorm, seitenFilter, zuordnung } from "../bausteine/vorschauZuordnung";
 import { AuftragsChat } from "./Zentrale";
 import GeraeteRahmen from "../GeraeteRahmen";
 import { supabase } from "../supabase";
@@ -164,6 +164,8 @@ export function FeatureArbeitsplatz({ f, g, d, ich, darf, toast, onZurueck, onLo
 export function LiveVorschau({ projekt, a, f, darfMerken, toast, onBaustein, baustein, onSeite }) {
   const url = vorschauUrl(projekt, a);
   const onSeiteRef = useRef(onSeite); onSeiteRef.current = onSeite;
+  // Erste Seiten-Meldung je Laden des Rahmens nicht weiterreichen – links folgen nur angeklickte Seitenwechsel (Nachbesserung 0.13.2)
+  const filter = useRef(null); if (!filter.current) filter.current = seitenFilter();
   // Befund S5 (01.11.2026): Zweig-Testseiten zeigen ungeprüften KI-Code und sprechen (Trainer to go) mit der echten Datenbank.
   // Erst nach ausdrücklichem Klick laden, dauerhaft warnen: hier nicht anmelden.
   const istZweig = !!(a?.zweig && projekt?.vorschau_domain && !ABGESCHLOSSEN.includes(a.stand));
@@ -220,7 +222,7 @@ export function LiveVorschau({ projekt, a, f, darfMerken, toast, onBaustein, bau
         const ent = designWahl.startsWith("e:") ? entwuerfe.find((x) => `e:${x.id}` === designWahl) : null;
         if (w && ent?.werte && typeof ent.werte === "object") w.postMessage({ cs: "design", werte: ent.werte }, herkunft);
       }
-      if (e.data.cs === "seite" && seiteOk(e.data.pfad)) { setJetztSeite(e.data.pfad); onSeiteRef.current?.(e.data.pfad); }
+      if (e.data.cs === "seite" && seiteOk(e.data.pfad)) { setJetztSeite(e.data.pfad); if (filter.current.folgen(e.data.pfad)) onSeiteRef.current?.(e.data.pfad); }
       if (e.data.cs === "baustein") {
         // Befund S4: nie den sichtbaren Text des Elements übernehmen (kann Namen von Kindern/Mitgliedern enthalten) – nur Name, Seite, Pfad
         // Review M1: Name nur als Baustein-Kennung (data-ds/data-cs bzw. Komponentenname), Seite nur der Pfad, Pfad nur Selektor-Zeichen
@@ -277,7 +279,7 @@ export function LiveVorschau({ projekt, a, f, darfMerken, toast, onBaustein, bau
           {/* Befund S7: Sandbox ohne allow-top-navigation – die Testseite kann das Programmfenster nicht umleiten */}
           <iframe key={schluessel} ref={frame} title="Live-Vorschau" src={`${url}${mitCs(startSeite)}`} className="block w-full h-full bg-white"
             sandbox="allow-scripts allow-same-origin allow-forms allow-popups" referrerPolicy="strict-origin-when-cross-origin"
-            onLoad={() => { setHelfer(false); frame.current?.contentWindow?.postMessage({ cs: "hallo" }, herkunft); }} />
+            onLoad={() => { setHelfer(false); filter.current.geladen(); frame.current?.contentWindow?.postMessage({ cs: "hallo" }, herkunft); }} />
         </GeraeteRahmen>}
       </div>
     </div>);

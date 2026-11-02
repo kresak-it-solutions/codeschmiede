@@ -2,7 +2,7 @@
 // Reine Zuordnung Pfad → Feature und Vorschlag (web/src/bausteine/vorschauZuordnung.js, ohne Abhängigkeiten).
 import test from "node:test";
 import assert from "node:assert/strict";
-import { pfadNorm, passendeFeatures, pfadBegriffe, vorschlag, zuordnung, aehnlich } from "../../../web/src/bausteine/vorschauZuordnung.js";
+import { pfadNorm, passendeFeatures, pfadBegriffe, vorschlag, zuordnung, aehnlich, seitenFilter } from "../../../web/src/bausteine/vorschauZuordnung.js";
 
 const G = [{ id: "planung", app_key: "calendar" }, { id: "kader", app_key: "roster" }, { id: "kommunikation", app_key: "chat" }, { id: "home", app_key: "home" }];
 const F = [
@@ -98,4 +98,22 @@ test("Gleichstand: Feature der gewählten Gruppe zuerst", () => {
   const zwei = [{ id: "A-1", name: "Liste", gruppe_id: "a" }, { id: "B-1", name: "Liste", gruppe_id: "b" }];
   assert.equal(vorschlag("/liste", zwei, { aktuelleGruppe: "b" }).feature.id, "B-1");
   assert.equal(vorschlag("/liste", zwei, { aktuelleGruppe: "a" }).feature.id, "A-1");
+});
+
+test("Nur angeklickte Seitenwechsel folgen: erste Meldung je Laden des Rahmens zählt nicht", () => {
+  const fl = seitenFilter();
+  fl.geladen();
+  assert.equal(fl.folgen("/home"), false);        // erstes Laden: Startseite
+  assert.equal(fl.folgen("/calendar"), true);     // angeklickt
+  assert.equal(fl.folgen("/squad"), true);
+  fl.geladen();                                   // „Neu laden“, Gerätewechsel, „Zurück zur Feature-Seite“ …
+  assert.equal(fl.folgen("/home"), false);
+  assert.equal(fl.folgen("/home?tab=x"), true);
+  fl.geladen(); fl.geladen();                     // doppeltes onLoad: trotzdem nur eine Meldung verschluckt
+  assert.equal(fl.folgen("/a"), false);
+  assert.equal(fl.folgen("/b"), true);
+  const neu = seitenFilter();                     // auch ohne geladen() ist die erste Meldung die geladene Seite
+  assert.equal(neu.folgen("kein-pfad"), false);   // ungültig zählt nicht als erste Meldung
+  assert.equal(neu.folgen("/home"), false);
+  assert.equal(neu.folgen("/x"), true);
 });

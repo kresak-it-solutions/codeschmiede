@@ -244,6 +244,8 @@ dem Klick „Verstanden, Vorschau anzeigen“ und zeigen dauerhaft „hier nicht
 Entwurf 1.0 freigegeben von Gerhard 02.11.2026 (`docs/entwurf-1.0-vorschau-folgt.html`). Gilt **nur im Menüpunkt Live-Vorschau**, nicht im Feature-Arbeitsplatz.
 Die Testseite meldet jeden Seitenwechsel (`{cs:"seite", pfad}`); `LiveVorschau` reicht ihn über `onSeite` nach oben, die Zuordnung ist eine
 reine Funktion (`web/src/bausteine/vorschauZuordnung.js`, Test `desktop/dienst/test/vorschauZuordnung.test.mjs`).
+Links folgen **nur angeklickte Seitenwechsel**: Die erste Meldung nach jedem Laden des Rahmens (erstes Laden, „Neu laden“, Gerätewechsel,
+„Zurück zur Feature-Seite“, Design-Wahl) ist die geladene Seite selbst und wird nicht weitergereicht (`seitenFilter`).
 - **Grundlage** ist die gemerkte Seite des Features (`ws_features.vorschau_pfad`, Datenbank 0028). Verglichen wird ohne Groß/Klein, ohne Schrägstrich am Ende
   und ohne `cs=…`; zuerst genau mit Abfrage (z. B. `/platform-admin?m=vereine`), sonst die gemerkte Seite ohne Abfrage gegen den Pfad ohne Abfrage.
   Es zählen nur Features, die nicht ausgebaut oder ausgeblendet sind, in Gruppen, in denen ich Aufträge geben darf (`darf(bereich,"auftraege")`).

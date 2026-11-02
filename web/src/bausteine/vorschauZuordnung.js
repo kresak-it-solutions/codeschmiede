@@ -121,3 +121,18 @@ export function zuordnung({ pfad, features = [], gruppen = [], gruppeId = null, 
   const v = vorschlag(pfad, erlaubt, { gruppen, aktuelleGruppe: gruppeId });
   return { art: "vorschlag", vorschlag: v.feature, auswahl: v.liste.map((x) => x.feature) };
 }
+
+/**
+ * Nur angeklickte Seitenwechsel folgen (Nachbesserung 0.13.2): Nach jedem Laden des Vorschau-Rahmens (erstes Laden, „Neu laden“,
+ * Gerätewechsel, „Zurück zur Feature-Seite“, Design-Wahl …) meldet der Vorschau-Helfer die geladene Seite einmal von selbst
+ * (Antwort auf „hallo“, das die Codeschmiede im onLoad schickt). Diese erste Meldung je Laden wird nicht weitergereicht.
+ *   geladen()      – im onLoad des Rahmens aufrufen
+ *   folgen(pfad)   – true, wenn der Pfad links folgen soll
+ */
+export function seitenFilter() {
+  let ersteOffen = true;
+  return {
+    geladen() { ersteOffen = true; },
+    folgen(pfad) { if (!pfadNorm(pfad)) return false; if (ersteOffen) { ersteOffen = false; return false; } return true; },
+  };
+}
