@@ -1,7 +1,7 @@
 # Programmier-Werkzeug je Projekt (seit 0.14.0)
 
 **Stand:** 2026-11-02 (0.14.0) · **Wer:** Gerhard Kresak (Entscheidungen, Entwurf freigegeben 02.11.2026), Claude (Konzept, Umsetzung)
-**Datenbank:** 0057 (`supabase/migrations/0057_programmier_werkzeug.sql`, Test `supabase/tests/t46_programmier_werkzeug.sql`) – **noch nicht** in `supabase/einspielen.txt` (erst nach der Sicherheitsprüfung)
+**Datenbank:** 0057 (`supabase/migrations/0057_programmier_werkzeug.sql`, Test `supabase/tests/t46_programmier_werkzeug.sql`) – nach der Sicherheitsprüfung (GRÜN 02.11.2026) in `supabase/einspielen.txt`
 **Code:** `desktop/dienst/lib/werkzeuge.mjs` (Katalog, Einstellungen je Werkzeug, reine Regeln), `lib/werkzeugLauf.mjs` (Installieren, Programm finden, Anmelde-Stand, Lauf, Sperren-Test), `lib/sandbox.mjs` › `werkzeugSandbox` (Betriebssystem-Sperre), `index.mjs` › `werkzeugBau`, `werkzeugBereit`, `werkzeugAbgleich`; Oberfläche `web/src/seiten/ProgrammierWerkzeug.jsx`, `web/src/daten/werkzeuge.js`; Test `desktop/dienst/test/werkzeuge.test.mjs`
 
 ## Entscheidungen (Gerhard, 02.11.2026)
