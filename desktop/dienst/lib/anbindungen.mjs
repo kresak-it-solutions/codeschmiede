@@ -66,7 +66,7 @@ export async function ampelPruefen({ sh, projekt, plattform = process.platform, 
   }
   if (art === "web" || art === "handy") {
     const ziel = projekt.test_url || (projekt.vorschau_domain ? `https://${projekt.vorschau_domain}` : null) || projekt.live_url;
-    if (!ziel) a.testseite = lampe("gelb", "Testseite fehlt: Cloudflare Pages mit dem Repository verbinden und die Adresse unter „Projekte verwalten“ eintragen");
+    if (!ziel) a.testseite = lampe("gelb", "Testseite fehlt – unter „Anbindungen“ auf „Testseite einrichten“ klicken (Cloudflare, kostenlos)");
     else await versuch("testseite", async () => {
       if (!/^https:\/\/[A-Za-z0-9.-]+(\/.*)?$/.test(ziel)) return lampe("rot", "Ungültige Adresse");
       const r = await holen(ziel, { method: "GET", redirect: "manual", signal: AbortSignal.timeout(8000) });
