@@ -5,10 +5,17 @@
 --     erkannten Regel-Konflikte. Hinweise sind feste Texte ohne Pfade (Schrägstriche werden abgelehnt).
 --   * Ampel: neue Lampen „projektordner“ und „regeln“ (Konflikt Projektregel ↔ Sicherheit) – meldet die Werkstatt des Admins.
 --   * Testseite per Knopf (Cloudflare Pages mit Git-Anbindung, kostenlos): neue Projekt-Aktion „testseite“, Ergebnis über
---     ws_testseite_melden (trägt vorschau_domain, test_url, live_url ein; Lotse, wenn die Git-Anbindung per Schnittstelle nicht geht).
+--     ws_testseite_melden (trägt vorschau_domain und test_url ein – live_url nie automatisch; Lotse, wenn die Git-Anbindung per Schnittstelle nicht geht).
 --   * Datenbank „gewünscht“: ws_datenbank_wuenschen vermerkt den Wunsch nach Bestätigung der Kosten – angelegt wird noch nichts.
+--   * REGELN.md bestätigen (Prüfung 02.11.2026, M1): Die Werkstatt meldet Prüfsumme und Text der REGELN.md; der Auftrag nutzt nur die zuletzt
+--     vom Admin bestätigte Fassung (ws_regeln_bestaetigen).
+--   * Projekt-Kennungen dürfen keine reservierten Windows-Namen sein (con, nul, aux, prn, com1–9, lpt1–9) – sie werden zu Ordnernamen (N4).
 -- Mehrfach ausführbar. Reihenfolge 0001 → … → 0055.
 begin;
+
+-- ---------- Kennungen werden Ordnernamen: keine reservierten Windows-Namen ----------
+alter table public.ws_projekte drop constraint if exists ws_projekte_id_windows_check;
+alter table public.ws_projekte add constraint ws_projekte_id_windows_check check (id !~ '^(con|prn|aux|nul|com[0-9]|lpt[0-9])$');
 
 -- ---------- Stand der Projektordner je Werkstatt-PC ----------
 create table if not exists public.ws_projektordner_stand (
@@ -45,6 +52,53 @@ begin
 end $$;
 revoke execute on function public.ws_projektordner_melden(uuid, jsonb) from public, anon;
 grant execute on function public.ws_projektordner_melden(uuid, jsonb) to authenticated;
+
+-- ---------- REGELN.md: gemeldete und bestätigte Fassung je Projekt ----------
+create table if not exists public.ws_regeln_stand (
+  projekt_id text primary key references public.ws_projekte(id) on delete cascade,
+  sha text check (sha is null or sha ~ '^[0-9a-f]{64}$'),
+  text text check (text is null or char_length(text) <= 30000),
+  konflikte smallint not null default 0 check (konflikte between 0 and 50),
+  gemeldet timestamptz,
+  bestaetigt_sha text check (bestaetigt_sha is null or bestaetigt_sha ~ '^[0-9a-f]{64}$'),
+  bestaetigt_von uuid references auth.users(id) on delete set null,
+  bestaetigt_am timestamptz
+);
+alter table public.ws_regeln_stand enable row level security;
+revoke all on public.ws_regeln_stand from anon, authenticated;
+grant select on public.ws_regeln_stand to authenticated;
+drop policy if exists ws_regeln_stand_lesen on public.ws_regeln_stand;
+create policy ws_regeln_stand_lesen on public.ws_regeln_stand for select to authenticated using (public.ws_sieht_projekt(projekt_id));
+do $$ begin alter publication supabase_realtime add table public.ws_regeln_stand; exception when others then null; end $$;
+
+-- Werkstatt (Admin oder Entwickler im Projekt, eigener PC) meldet die aktuelle REGELN.md
+create or replace function public.ws_regeln_melden(p_pc uuid, p_projekt text, p_sha text, p_text text, p_konflikte int default 0) returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  if auth.uid() is null then raise exception 'Nicht angemeldet'; end if;
+  if not exists (select 1 from public.ws_werkstatt_pcs w where w.id = p_pc and w.benutzer_id = auth.uid()) then raise exception 'Unbekannter Werkstatt-PC'; end if;
+  if coalesce(public.ws_rolle_im_projekt(p_projekt), '') not in ('admin','entwickler') then raise exception 'Kein Recht in diesem Projekt'; end if;
+  if p_sha is null or p_sha !~ '^[0-9a-f]{64}$' then raise exception 'Ungültige Prüfsumme'; end if;
+  insert into public.ws_regeln_stand (projekt_id, sha, text, konflikte, gemeldet)
+  values (p_projekt, p_sha, left(p_text, 30000), least(greatest(coalesce(p_konflikte, 0), 0), 50), now())
+  on conflict (projekt_id) do update set sha = excluded.sha, text = excluded.text, konflikte = excluded.konflikte, gemeldet = now()
+   where ws_regeln_stand.sha is distinct from excluded.sha or ws_regeln_stand.konflikte is distinct from excluded.konflikte;
+end $$;
+revoke execute on function public.ws_regeln_melden(uuid, text, text, text, int) from public, anon;
+grant execute on function public.ws_regeln_melden(uuid, text, text, text, int) to authenticated;
+
+-- Nur der Admin bestätigt – und nur genau die zuletzt gemeldete Fassung
+create or replace function public.ws_regeln_bestaetigen(p_projekt text, p_sha text) returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  if not public.ws_ist_admin() then raise exception 'Projektregeln bestätigt nur der Admin'; end if;
+  update public.ws_regeln_stand set bestaetigt_sha = sha, bestaetigt_von = auth.uid(), bestaetigt_am = now()
+   where projekt_id = p_projekt and sha = p_sha;
+  if not found then raise exception 'Diese Fassung ist nicht mehr aktuell – bitte neu laden'; end if;
+  insert into public.ws_protokoll (wer, was, details) values (auth.uid(), 'regeln_bestaetigt', jsonb_build_object('projekt', p_projekt, 'sha', p_sha));
+end $$;
+revoke execute on function public.ws_regeln_bestaetigen(text, text) from public, anon;
+grant execute on function public.ws_regeln_bestaetigen(text, text) to authenticated;
 
 -- ---------- Ampel: neue Lampen ----------
 create or replace function public.ws_anbindungen_ok(w jsonb) returns boolean
@@ -98,7 +152,7 @@ begin
   return n;
 end $$;
 
--- Ergebnis der Testseite: eingerichtet (mit Adresse), Lotse (Git-Anbindung von Hand) oder Fehler. Mit p_aktion schließt es die Aktion ab;
+-- Ergebnis der Testseite: eingerichtet (mit Adresse), Lotse (Git-Anbindung von Hand) oder Fehler. live_url wird NIE automatisch gesetzt (N3). Mit p_aktion schließt es die Aktion ab;
 -- ohne Aktion (Lotse erledigt, Adresse erreichbar) nur aus dem Stand „lotse“ heraus.
 create or replace function public.ws_testseite_melden(p_pc uuid, p_projekt text, p_stand text, p_domain text default null, p_hinweis text default null, p_aktion bigint default null) returns void
 language plpgsql security definer set search_path = public as $$
@@ -120,8 +174,7 @@ begin
   end if;
   update public.ws_projekte set testseite_stand = p_stand, testseite_hinweis = left(p_hinweis, 400),
          vorschau_domain = case when p_stand = 'eingerichtet' then p_domain else vorschau_domain end,
-         test_url = case when p_stand = 'eingerichtet' then coalesce(test_url, 'https://' || p_domain) else test_url end,
-         live_url = case when p_stand = 'eingerichtet' then coalesce(live_url, 'https://' || p_domain) else live_url end
+         test_url = case when p_stand = 'eingerichtet' then coalesce(test_url, 'https://' || p_domain) else test_url end
    where id = p_projekt;
   insert into public.ws_protokoll (wer, was, details) values (auth.uid(), 'testseite', jsonb_build_object('projekt', p_projekt, 'stand', p_stand, 'domain', p_domain));
 end $$;

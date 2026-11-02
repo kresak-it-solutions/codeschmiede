@@ -1,8 +1,8 @@
 // Ein-Klick-Anbindungen (Entwurf 1.0 „Projektordner“, Bildschirm 4, freigegeben von Gerhard 02.11.2026 07:04):
 // Projektordner · GitHub · Testseite (Cloudflare Pages, kostenlos, per Knopf) · Datenbank (Wunsch vermerken, Kosten vorher bestätigen) ·
 // Fehler-Meldungen · Seiten-Designer (folgt). Ausgeführt wird von der Werkstatt des Admins; hier wird nur gewünscht und angezeigt.
-import React, { useState } from "react";
-import { ExternalLink, Loader2, Rocket, Database, RefreshCw, X } from "lucide-react";
+import React, { useEffect, useState } from "react";
+import { ExternalLink, Loader2, Rocket, Database, RefreshCw, X, ShieldCheck, Globe } from "lucide-react";
 import { supabase } from "./supabase";
 import { btn, card, fehler, ghost, oeffneExtern, useBestaetigen } from "./bausteine/grund";
 import { useOrdnerStandDb, useProjektordner } from "./daten/projektordner";
@@ -23,11 +23,31 @@ function Lampe({ stand, titel, text, children }) {
     </li>);
 }
 
+/** Gemeldete und bestätigte REGELN.md (ws_regeln_stand, Datenbank 0055). */
+function useRegelnStand(projektId) {
+  const [z, setZ] = useState(null);
+  useEffect(() => {
+    let aus = false;
+    const holen = () => supabase.from("ws_regeln_stand").select("*").eq("projekt_id", projektId).maybeSingle().then(({ data, error }) => { if (!aus && !error) setZ(data || null); });
+    holen();
+    const ch = supabase.channel(`regeln-${projektId}-${Math.random()}`).on("postgres_changes", { event: "*", schema: "public", table: "ws_regeln_stand" }, holen).subscribe();
+    return () => { aus = true; supabase.removeChannel(ch); };
+  }, [projektId]);
+  return z;
+}
+
 export default function AnbindungenKacheln({ projekt, d, admin, toast }) {
   const ampel = projekt.anbindungen || {};
   const [ort] = useProjektordner([projekt.id]);
   const dbStand = useOrdnerStandDb(projekt.id);
   const bestaetigen = useBestaetigen();
+  const regeln = useRegelnStand(projekt.id);
+  const regelnOffen = !!regeln?.sha && regeln.sha !== regeln.bestaetigt_sha;
+  const regelnBestaetigen = async () => {
+    setBusy("regeln");
+    try { const { error } = await supabase.rpc("ws_regeln_bestaetigen", { p_projekt: projekt.id, p_sha: regeln.sha }); if (error) throw error; toast("Projektregeln bestätigt – ab dem nächsten Auftrag gilt diese Fassung"); }
+    catch (e) { toast(fehler(e)); } finally { setBusy(""); }
+  };
   const [busy, setBusy] = useState("");
   const web = !projekt.technik_art || ["web", "handy"].includes(projekt.technik_art);
   const pcName = (id) => (d.pcs || []).find((p) => p.id === id)?.name || "Werkstatt-PC";
@@ -68,7 +88,7 @@ export default function AnbindungenKacheln({ projekt, d, admin, toast }) {
     : ts === "laeuft" ? ["gelb", "Wird eingerichtet … (Werkstatt des Admins)"]
     : ts === "lotse" ? ["gelb", projekt.testseite_hinweis || "Cloudflare braucht einmal deine Hilfe"]
     : ts === "fehler" ? ["rot", projekt.testseite_hinweis || "Hat nicht geklappt"]
-    : ["gelb", "Noch nicht eingerichtet. Kostenlos: Cloudflare baut selbst (bis 500 Bauläufe im Monat), jeder Zweig bekommt eine eigene Testadresse."];
+    : ["gelb", "Noch nicht eingerichtet. Kostenlos: Cloudflare baut selbst (bis 500 Bauläufe im Monat), main ist die Testfassung, Werkstatt-Zweige bekommen eine eigene Vorschau."];
 
   // Datenbank
   const db = projekt.datenbank && projekt.datenbank !== "keine"
@@ -80,7 +100,17 @@ export default function AnbindungenKacheln({ projekt, d, admin, toast }) {
     <section className="flex flex-col gap-3" aria-label="Einrichten">
       {regelnRot && <p className="text-sm rounded-xl border border-red-300 dark:border-red-800 bg-red-50 dark:bg-red-950/40 text-red-900 dark:text-red-200 px-3 py-2.5" role="alert">
         <b>Regel-Konflikt:</b> {regelnRot}. Die Sicherheitsregel der Codeschmiede gilt – bitte <span className="font-mono">regeln\REGELN.md</span> im Projektordner anpassen.
+        <span className="block text-xs mt-1">Die Erkennung ist nur ein Hinweis – die Sicherheitsregeln gelten fest, auch wenn hier nichts rot ist.</span>
         {konflikte.length > 0 && <span className="block text-xs mt-1">Gemeldet von: {konflikte.map((z) => pcName(z.pc_id)).join(", ")}</span>}</p>}
+      {regelnOffen && (
+        <div className="rounded-xl border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 p-3.5 flex flex-col gap-2 text-sm text-amber-950 dark:text-amber-100" aria-label="Projektregeln bestätigen">
+          <b className="flex items-center gap-1.5"><ShieldCheck className="w-4 h-4" aria-hidden="true" />{regeln.bestaetigt_sha ? "REGELN.md geändert – bestätigen" : "REGELN.md bestätigen"}</b>
+          <span>Die Werkstatt nutzt nur die zuletzt von dir bestätigte Fassung{regeln.bestaetigt_am ? ` (vom ${new Date(regeln.bestaetigt_am).toLocaleString("de-AT", { dateStyle: "short", timeStyle: "short" })})` : " – bisher keine, es gelten die Projektregeln aus AGENTS.md"}. Prüfe den Text und bestätige ihn, wenn er von dir stammt.{regeln.konflikte > 0 ? ` Achtung: ${regeln.konflikte} Stelle(n) widersprechen der Sicherheit – dort gilt trotzdem die Sicherheitsregel.` : ""}</span>
+          <details className="rounded-lg bg-white/70 dark:bg-slate-900/60 border border-amber-200 dark:border-amber-900"><summary className="cursor-pointer px-3 py-1.5 text-xs font-semibold">Text ansehen (Prüfsumme {regeln.sha.slice(0, 12)})</summary>
+            <pre className="px-3 pb-3 text-xs whitespace-pre-wrap break-words max-h-80 overflow-auto font-mono text-slate-800 dark:text-slate-200">{regeln.text || ""}</pre></details>
+          {admin ? <button type="button" className={`${btn} self-start`} disabled={!!busy} onClick={regelnBestaetigen}>{busy === "regeln" ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}Diese Fassung bestätigen</button>
+            : <span className="text-xs">Bestätigen kann nur der Admin.</span>}
+        </div>)}
       <ul className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
         <Lampe stand={po[0]} titel="Projektordner" text={po[1]} />
         <Lampe stand={ampel.github?.stand || (projekt.repo ? "grau" : "rot")} titel="GitHub" text={ampel.github?.text ? `${projekt.repo || ""} · ${ampel.github.text}` : projekt.repo || "Noch kein Repository – unter „Projekte verwalten“ anlegen"} />
@@ -90,6 +120,7 @@ export default function AnbindungenKacheln({ projekt, d, admin, toast }) {
           {ts === "laeuft" && <span className="text-xs text-slate-500 flex items-center gap-1.5"><Loader2 className="w-3.5 h-3.5 animate-spin" />Die Werkstatt des Admins muss an sein.</span>}
           {!admin && !tsDa && <span className="text-xs text-slate-500">Die Testseite richtet der Admin ein.</span>}
           {tsDa && <a className="text-xs underline self-start" href={`https://${projekt.vorschau_domain}`} target="_blank" rel="noopener noreferrer">Testseite im Browser öffnen</a>}
+          <span className="text-xs text-slate-500 flex gap-1.5"><Globe className="w-3.5 h-3.5 shrink-0 mt-0.5" aria-hidden="true" />Öffentlich: Testfassung (main) und Vorschauen der Werkstatt-Zweige (feature/cs-…) sind für jeden mit der Adresse erreichbar – keine echten Daten, in Zweig-Vorschauen nicht anmelden.</span>
         </Lampe>}
         <Lampe stand={db[0]} titel="Datenbank" text={db[1]}>
           {admin && (!projekt.datenbank || projekt.datenbank === "keine") && (projekt.datenbank_wunsch
@@ -108,6 +139,7 @@ export default function AnbindungenKacheln({ projekt, d, admin, toast }) {
             <li><b>GitHub</b> wählen und die Cloudflare-App für <b>kresak-it-solutions</b> installieren – Zugriff auf das Repository <span className="font-mono">{projekt.repo}</span>.</li>
             <li>Repository <span className="font-mono">{projekt.repo}</span> wählen, Projektname <span className="font-mono">{projekt.id}</span>, Produktionszweig <span className="font-mono">main</span>.</li>
             <li>Build-Befehl <span className="font-mono">npm run build</span>, Ausgabeverzeichnis <span className="font-mono">dist</span> › <b>Speichern und bereitstellen</b>.</li>
+            <li>Danach im Pages-Projekt › <b>Einstellungen</b> › <b>Builds</b> › <b>Branch-Steuerung</b>: Vorschau nur für <b>benutzerdefinierte Zweige</b> <span className="font-mono">feature/cs-*</span> (nicht „alle Zweige“) – die Sicherheitsprüfung wartet auf genau diese Bauten.</li>
             <li>Fertig – die Codeschmiede findet die Seite selbst (bei der nächsten Prüfung, spätestens nach 10 Minuten) und trägt die Adresse ein. Oder hier „Nochmal versuchen“ – mit der installierten App klappt es dann automatisch.</li>
           </ol>
           <button type="button" className={`${ghost} self-start bg-white dark:bg-slate-900`} onClick={() => oeffneExtern(LOTSE)}><ExternalLink className="w-4 h-4" />Cloudflare öffnen</button>

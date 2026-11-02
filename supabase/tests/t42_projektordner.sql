@@ -75,7 +75,7 @@ select ws_testseite_melden('00000000-0000-0000-0000-0000000000d1','vereinsheft',
 :ADM
 select ws_testseite_melden('00000000-0000-0000-0000-0000000000a1','vereinsheft','lotse',null,'Git-Anbindung fehlt',(select id from ws_projekt_aktionen where projekt_id='vereinsheft' and art='testseite')) \g /dev/null
 select p.testseite_stand, a.stand aktion from ws_projekte p join ws_projekt_aktionen a on a.projekt_id = p.id and a.art = 'testseite' where p.id = 'vereinsheft';
-\echo [21] Lotse erledigt: ohne Aktion eingerichtet -> OK, Adressen eingetragen
+\echo [21] Lotse erledigt: ohne Aktion eingerichtet -> OK, vorschau_domain und test_url eingetragen, live_url bleibt leer
 select ws_testseite_melden('00000000-0000-0000-0000-0000000000a1','vereinsheft','eingerichtet','vereinsheft-abc.pages.dev','Automatisch eingetragen') \g /dev/null
 select testseite_stand, vorschau_domain, test_url, live_url from ws_projekte where id = 'vereinsheft';
 \echo [22] Ohne Aktion, Stand nicht lotse -> FEHLER
@@ -98,3 +98,27 @@ select ws_datenbank_wuenschen('vereinsheft', false, false) \g /dev/null
 select datenbank_wunsch is not null gewuenscht from ws_projekte where id = 'vereinsheft';
 \echo [27] Protokoll hat Testseite und Datenbank-Wunsch -> testseite 2, datenbank_wunsch 2
 select was, count(*) from ws_protokoll where was in ('testseite','datenbank_wunsch') group by was order by was;
+
+\echo [28] Reservierter Windows-Name als Kennung -> FEHLER (2x)
+select ws_projekt_anlegen('nul','Nul','Test',null,'layers');
+select ws_projekt_anlegen('com1','Com','Test',null,'layers');
+\echo [29] REGELN.md melden: Entwickler im Projekt -> OK; fremdes Projekt -> FEHLER; falsche Prüfsumme -> FEHLER
+:DEV
+select ws_regeln_melden('00000000-0000-0000-0000-0000000000d1','trainer-to-go',repeat('a',64),'# Regeln',0) \g /dev/null
+select ws_regeln_melden('00000000-0000-0000-0000-0000000000d1','vereinsheft',repeat('a',64),'# Regeln',0);
+select ws_regeln_melden('00000000-0000-0000-0000-0000000000d1','trainer-to-go','kurz','# Regeln',0);
+\echo [30] Entwickler bestätigt -> FEHLER; Admin bestätigt alte Prüfsumme -> FEHLER; richtige -> OK (bestaetigt = sha)
+select ws_regeln_bestaetigen('trainer-to-go', repeat('a',64));
+:ADM
+select ws_regeln_bestaetigen('trainer-to-go', repeat('b',64));
+select ws_regeln_bestaetigen('trainer-to-go', repeat('a',64)) \g /dev/null
+select sha = bestaetigt_sha bestaetigt from ws_regeln_stand where projekt_id = 'trainer-to-go';
+\echo [31] Neue Fassung gemeldet -> nicht mehr bestätigt (f), Fremder sieht nichts (0)
+:DEV
+select ws_regeln_melden('00000000-0000-0000-0000-0000000000d1','trainer-to-go',repeat('c',64),'# Regeln neu',1) \g /dev/null
+select sha = bestaetigt_sha bestaetigt, konflikte from ws_regeln_stand where projekt_id = 'trainer-to-go';
+:FREMD
+select count(*) from ws_regeln_stand;
+\echo [32] Direkt schreiben -> FEHLER
+:ADM
+update ws_regeln_stand set bestaetigt_sha = sha;

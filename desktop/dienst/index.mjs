@@ -41,9 +41,10 @@ import { bausteinDatenBlock, anhangBild } from "./lib/bausteinAuftrag.mjs";
 import { kachelAusFrage, kachelPrompt, kachelAntwort, kiZuerst } from "./lib/kachelChat.mjs";
 import { aufgabeDatenBereinigen, aufgabeDatenBlock, anhangDateiOk, MAX_GESAMT } from "./lib/aufgabeAuftrag.mjs";
 import { rm, readdir, lstat, realpath } from "node:fs/promises";
-import { konfigLesen, ordnerStand, sicherOrdner, sicherSchreiben, sicherLesen, sicherLoeschen, dateienSammeln, dateienKopieren, geruestAnlegen, altOrdner, dokuListe, projektregelnAusAgents, regelnVorlage } from "./lib/projektordner.mjs";
+import { kennungPasst, konfigLesen, ordnerStand, sicherOrdner, sicherSchreiben, sicherLesen, sicherLoeschen, dateienSammeln, dateienKopieren, geruestAnlegen, altOrdner, dokuListe, projektregelnAusAgents, regelnVorlage } from "./lib/projektordner.mjs";
 import { konflikteFinden, konfliktKurz, konfliktNachricht, regelBlock } from "./lib/regeln.mjs";
 import { testseiteEinrichten, lotsePruefen, Lotse } from "./lib/testseite.mjs";
+import { laufSperren, gefaehrlicheGitConfig } from "./lib/rechte.mjs";
 
 const HIER = path.dirname(fileURLToPath(import.meta.url));
 // Claude Code finden. Windows: nativer Installer (claude.exe in %USERPROFILE%\.local\bin) oder npm (cli.js) – immer OHNE Shell
@@ -78,7 +79,8 @@ let stopp = false;
 // Lesen nur im Arbeitsordner des Auftrags (Befund S2, 01.11.2026): kein freies „Read“/„Grep“/„Glob“ mehr. Lesen außerhalb geht über die
 // Erlaubnis-Brücke (lib/einstufung.mjs: im Ordner automatisch, außerhalb fragen); Anmeldedaten sperren VERBOTEN und LESE_SPERREN.
 const ERLAUBT = [
-  "Read(./**)", "Edit", "Write", "NotebookEdit", "TodoWrite", "Task",
+  // Schreiben nur IM Arbeitsordner (Sicherheitsprüfung 02.11.2026, H1) – zwei Ebenen darüber liegen seit 0.13.0 Arbeitskopie, Regeln und Material
+  "Read(./**)", "Edit(./**)", "Write(./**)", "NotebookEdit(./**)", "TodoWrite", "Task",
   // feste Lese-Befehle statt Freigabe nach Anfang (git log/diff --output= schreibt Dateien – Prüfung 2026-10-22)
   "Bash(git status)", "Bash(git status --short)", "Bash(git diff)", "Bash(git diff --stat)", "Bash(git diff --cached)",
   "Bash(git log --oneline -20)", "Bash(git log -5)", "Bash(git add -A)", "Bash(git add .)", "Bash(git add -- *)", "Bash(git commit -m *)", "Bash(git fetch origin)",
@@ -131,7 +133,8 @@ const LESE_SPERREN = ["Read(~/.git-credentials)", "Read(~/.npmrc)", "Read(~/.net
 
 // ---------- Hilfen ----------
 async function existiert(p) { try { await access(p); return true; } catch { return false; } }
-async function git(cwd, ...args) { return (await sh("git", args, { cwd, maxBuffer: 20 * 1024 * 1024 })).stdout.trim(); }
+// Jeder git-Aufruf des Dienstes ohne fsmonitor und ohne „ext::“-Transport – eine untergeschobene Einstellung startet so kein Programm (H1)
+async function git(cwd, ...args) { return (await sh("git", ["-c", "core.fsmonitor=false", "-c", "protocol.ext.allow=never", ...args], { cwd, maxBuffer: 20 * 1024 * 1024 })).stdout.trim(); }
 async function log(auftrag, art, text, ausschnitt) {
   await db.from("ws_live_log").insert({ auftrag_id: auftrag, art, text: kuerzen(ohneGeheimnisse(text), 500), ausschnitt: ausschnitt ? kuerzen(ohneGeheimnisse(ausschnitt), 2000) : null });
 }
@@ -329,14 +332,16 @@ async function poKonfigHolen() {
   if (!poKonfig || Date.now() - poKonfigZeit > 5000) { poKonfig = await konfigLesen(cfg.daten_ordner); poKonfigZeit = Date.now(); }
   return poKonfig;
 }
-/** Projektordner dieses PCs: { stand: ok|fehlt|kein|kaputt, wurzel, code, arbeit, eintrag }. Fehlt nur der Ordner selbst (Festplatte da), wird er angelegt. */
+/** Projektordner dieses PCs: { stand: ok|fehlt|kein|kaputt, wurzel, code, arbeit, eintrag }. */
 async function projektOrdner(projektId) {
   const e = (await poKonfigHolen()).projekte.get(projektId);
   if (!e) return { stand: "kein" };
-  let st = await ordnerStand(e.pfad);
-  if (st === "anlegbar") { try { await mkdir(e.pfad); st = "ok"; } catch { st = "fehlt"; } }
-  if (st !== "ok") return { stand: st };
+  // Den Projektordner legt nur das Programm per Klick an – nie der Dienst (Prüfung N1). Fehlt er, ist die Festplatte nicht da.
+  const st = await ordnerStand(e.pfad);
+  if (st !== "ok") return { stand: st === "kaputt" ? "kaputt" : "fehlt" };
   const wurzel = await realpath(e.pfad);
+  // Kennungsdatei muss passen (sonst steckt z. B. eine andere Festplatte mit gleichem Laufwerksbuchstaben) – dann gilt „fehlt“
+  if (!(await kennungPasst(wurzel, projektId, e.kennzeichen))) return { stand: "fehlt", fremd: true };
   return { stand: "ok", wurzel, code: path.join(wurzel, "code"), arbeit: path.join(wurzel, "code-arbeit"), eintrag: e };
 }
 const altRepoDa = (id) => existiert(path.join(altOrdner(cfg.daten_ordner, id), "repo", ".git"));
@@ -375,6 +380,9 @@ async function arbeitsordnerRepo(projekt, o) {
   const keineHooks = path.join(ort.arbeit, "keine-hooks");
   await mkdir(keineHooks, { recursive: true });
   await git(ort.repo, "config", "core.hooksPath", keineHooks);
+  // Gemeinsamer Git-Ordner: keine Einstellung, mit der git ein Programm startet oder Zugänge umlenkt (H1) – sonst abbrechen und melden
+  const boese = gefaehrlicheGitConfig(await git(ort.repo, "config", "--local", "--list").catch(() => ""), { "core.hookspath": keineHooks });
+  if (boese.length) throw new Error(`Gefährliche Git-Einstellung in der Arbeitskopie (${boese.slice(0, 5).join(", ")}) – abgebrochen. Bitte prüfen; „code“ im Projektordner ggf. löschen, die Codeschmiede klont neu.`);
   return ort;
 }
 async function arbeitsordner(projekt, auftrag) {
@@ -486,7 +494,7 @@ async function auftragWartetAufLimit(auftrag, projektId, meldung) {
     + (grund ? `\nEin Ersatz durch ChatGPT ist hier nicht möglich: ${grund}.` : "\nDer Ersatz durch ChatGPT übernimmt beim nächsten Durchlauf.");
   // dieselbe Meldung nicht stündlich wiederholen
   const { data: n } = await db.from("ws_nachrichten").select("text").eq("auftrag_id", auftrag.id).order("id", { ascending: false }).limit(1);
-  if (!String(n?.[0]?.text || "").startsWith("Claudes Abo-Limit ist voll")) await nachricht(auftrag.id, "system", text);
+  if (!String(n?.[0]?.text || "").startsWith("Claudes Abo-Limit ist voll")) await nachricht(auftrag.id, "text", text);   // „system“ lehnt ws_werkstatt_nachricht seit 0051 ab
   await log(auftrag.id, "info", "Claudes Abo-Limit voll – Auftrag zurück in die Warteschlange");
   melde("status", `Abo-Limit voll – Werkstatt wartet bis ${bisText(kiLimitBis.claude)}`, auftrag.id);
 }
@@ -514,6 +522,9 @@ async function fuehreAus(auftrag, { fortsetzen = false, nacharbeit = false, ersa
       .in("gruppe_id", (pgr || []).map((x) => x.id)).in("stand", ["freigabe", "zusammen", "sicherheit", "wissen"]);
     const { ordner, zweig } = await arbeitsordner(projekt, auftrag);
     anhangOrdner = path.join(ordner, ".codeschmiede-anhaenge");
+    // Projektordner dieses Laufs (für die absoluten Schreib-Verbote); liegt der Auftrag noch in der alten Kopie, gelten die relativen
+    const poLauf = await projektOrdner(projekt.id).catch(() => null);
+    const laufWurzel = poLauf?.stand === "ok" && ordner.startsWith(poLauf.arbeit + path.sep) ? poLauf.wurzel : null;
     const merk = (await sitzungen())[auftrag.id] || {};
     const versuch = merk.versuch || 0;
     const lage = await aboLage();
@@ -565,7 +576,8 @@ async function fuehreAus(auftrag, { fortsetzen = false, nacharbeit = false, ersa
       "--setting-sources", "user",
       // „ask“ geht vor „allow“: Bau-/Test-Einstellungen und Websuche laufen immer über die Erlaubnis-Brücke (Befund S1/S2)
       // Lesen außerhalb des Arbeitsordners verweigert Claude Code selbst (Befund S2); Hooks aus (wie in der Prüfung)
-      "--settings", JSON.stringify({ disableAllHooks: true, permissions: { ask: [...FRAGEN, "WebSearch", "WebFetch"], blockReadsOutsideWorkingDirectories: true } })];
+      // Feste Schreib-Verbote je Lauf: Ebenen über dem Arbeitsordner und die Unterordner des Projektordners, absolut (H1)
+      "--settings", JSON.stringify({ disableAllHooks: true, permissions: { ask: [...FRAGEN, "WebSearch", "WebFetch"], deny: laufSperren({ wurzel: laufWurzel }), blockReadsOutsideWorkingDirectories: true } })];
     if ((fortsetzen || nacharbeit) && merk.sitzung) args.push("--resume", merk.sitzung);
     // Ohne API-Schlüssel in der Umgebung arbeitet Claude Code mit dem eigenen Abo-Login dieser Person
     const env = { ...process.env };
@@ -727,20 +739,37 @@ const MATERIAL = ["png", "jpg", "jpeg", "webp", "gif", "svg", "pdf", "md", "txt"
 const nameSauber = (t) => String(t ?? "").replace(/[\u0000-\u001f\u007f]/g, "").slice(0, 160);
 const kb = (n) => (n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
 
-/** REGELN.md lesen (nur echte Datei im Projektordner) und auf Konflikte mit der Sicherheit prüfen. */
-async function regelnLesen(po) {
+/**
+ * REGELN.md lesen (nur echte Datei im Projektordner). Im Auftrag gilt nur die zuletzt vom Admin BESTÄTIGTE Fassung (Prüfsumme in
+ * ws_regeln_stand, Prüfung 02.11.2026 M1); eine Kopie davon liegt im Daten-Ordner dieses PCs. Konflikte werden für die aktuelle Datei (Anzeige)
+ * und für die geltende Fassung (Auftrag) ermittelt.
+ */
+const regelnKopie = (id) => path.join(cfg.daten_ordner, "regeln-bestaetigt", `${id}.json`);
+const sha256 = (b) => createHash("sha256").update(b).digest("hex");
+async function regelnLesen(po, projektId) {
   const b = await sicherLesen(po.wurzel, "regeln/REGELN.md", 256 * 1024).catch(() => null);
-  const text = b ? b.toString("utf8") : "";
+  const aktuell = b ? b.toString("utf8") : "";
+  const sha = b ? sha256(b) : null;
+  let bestaetigtSha = null;
+  try { const { data } = await db.from("ws_regeln_stand").select("bestaetigt_sha").eq("projekt_id", projektId).maybeSingle(); bestaetigtSha = data?.bestaetigt_sha || null; } catch { /* ohne Datenbank 0055 */ }
+  let text = ""; const bestaetigt = !!sha && sha === bestaetigtSha;
+  if (bestaetigt) {
+    text = aktuell;
+    await mkdir(path.dirname(regelnKopie(projektId)), { recursive: true }).catch(() => {});
+    await writeFile(regelnKopie(projektId), JSON.stringify({ sha, text })).catch(() => {});
+  } else if (bestaetigtSha) {
+    try { const c = JSON.parse(await readFile(regelnKopie(projektId), "utf8")); if (c?.sha === bestaetigtSha && sha256(Buffer.from(String(c.text), "utf8")) === c.sha) text = String(c.text); } catch { /* keine bestätigte Kopie auf diesem PC */ }
+  }
   const f = await sicherLesen(po.wurzel, "regeln/regelwerk/FASSUNG.md", 64 * 1024).catch(() => null);
   const fassung = f ? (/Fassung ([0-9a-f]{7,40})/.exec(f.toString("utf8"))?.[1] || "").slice(0, 12) || null : null;
-  return { text, da: !!b, konflikte: konflikteFinden(text), fassung };
+  return { text, aktuell, sha, da: !!b, bestaetigt, konflikte: konflikteFinden(aktuell), konflikteGilt: konflikteFinden(text), fassung };
 }
 
 /** Für einen Bau-Lauf: Regel-Block (Rangfolge), Konflikte und Material als Daten im Anhang-Ordner des Laufs (von Git ausgeschlossen, danach gelöscht). */
 async function regelnFuerAuftrag(projekt, ordner, auftrag) {
   const po = await projektOrdner(projekt.id).catch(() => ({ stand: "fehlt" }));
   if (po.stand !== "ok") return { block: regelBlock({}), konflikte: [], material: "" };
-  const r = await regelnLesen(po);
+  const r = await regelnLesen(po, projekt.id);
   const ziel = path.join(ordner, ".codeschmiede-anhaenge");
   let rw = []; let material = []; let entwuerfe = []; let ausgelassen = 0;
   try {
@@ -752,7 +781,7 @@ async function regelnFuerAuftrag(projekt, ordner, auftrag) {
       await anhangOrdnerSicher(ziel); const z = path.join(ziel, unter); await anhangOrdnerSicher(z);
       return dateienKopieren(po.wurzel, rel, liste, z);
     };
-    if (r.da) { await anhangOrdnerSicher(ziel); const z = path.join(ziel, "regeln"); await anhangOrdnerSicher(z); await dateienKopieren(po.wurzel, "regeln", [{ rel: "REGELN.md", groesse: 256 * 1024 }], z); }
+    if (r.text) { await anhangOrdnerSicher(ziel); const z = path.join(ziel, "regeln"); await anhangOrdnerSicher(z); await writeFile(path.join(z, "REGELN.md"), r.text, { flag: "wx" }); }
     rw = (await kopiere("regeln/regelwerk", "regelwerk", { endungen: ["md"], maxDateien: 120, maxJe: 512 * 1024, maxGesamt: 4 * 1024 * 1024, tiefe: 6 })).filter((d) => d.rel !== "FASSUNG.md");
     material = await kopiere("material", "material", { endungen: MATERIAL, maxDateien: 30, maxJe: 8 * 1024 * 1024, maxGesamt: 25 * 1024 * 1024, tiefe: 4 });
     entwuerfe = await kopiere("konzept/entwuerfe", "entwuerfe", { endungen: [...MATERIAL, "html", "htm"], maxDateien: 10, maxJe: 4 * 1024 * 1024, maxGesamt: 10 * 1024 * 1024, tiefe: 3 });
@@ -765,8 +794,9 @@ async function regelnFuerAuftrag(projekt, ordner, auftrag) {
     ...liste("material", material), ...liste("entwuerfe", entwuerfe),
     ausgelassen ? `(${ausgelassen} Datei(en) ausgelassen: Verknüpfung, falsche Art oder zu groß.)` : "",
     "--- Ende Material ---"].filter(Boolean).join("\n") : "";
-  return { block: regelBlock({ projektregeln: r.text, voll: r.da ? ".codeschmiede-anhaenge/regeln/REGELN.md" : null, regelwerk: { fassung: r.fassung, dateien: rw.map((d) => `.codeschmiede-anhaenge/regelwerk/${nameSauber(d.rel)}`) }, konflikte: r.konflikte }),
-    konflikte: r.konflikte, material: materialText };
+  return { block: regelBlock({ projektregeln: r.text, voll: r.text ? ".codeschmiede-anhaenge/regeln/REGELN.md" : null, unbestaetigt: r.da && !r.bestaetigt,
+    regelwerk: { fassung: r.fassung, dateien: rw.map((d) => `.codeschmiede-anhaenge/regelwerk/${nameSauber(d.rel)}`) }, konflikte: r.konflikteGilt }),
+    konflikte: r.konflikteGilt, material: materialText };
 }
 
 // Regelwerk in der festgelegten Fassung nach regeln/regelwerk kopieren – nur, wenn dort noch keine Kopie liegt (neue Fassung nur nach Gerhards Entscheidung)
@@ -860,11 +890,47 @@ async function altAufraeumen(p, alt) {
   }
   melde("status", `Projektordner: ${p.name} umgezogen, alte Kopie aufgeräumt`);
 }
+/**
+ * Hindert etwas den Umzug bzw. das Aufräumen der alten Kopie? (Prüfung 02.11.2026, M2) – offene Aufträge (läuft, Rückfrage, Nacharbeit) des
+ * Projekts auf meinen PCs (nurAlte: nur die, deren Ordner noch in der alten Kopie liegt), ungesicherte Änderungen bzw. nicht hochgeladene Commits
+ * in alten Auftrags-Ordnern. Gibt den Hinweis zurück oder null.
+ */
+async function umzugHindernis(p, alt, { nurAlte = false } = {}) {
+  if (laeuft) return "Umzug wartet, bis die Werkstatt frei ist";
+  const ordner = (await readdir(alt).catch(() => [])).filter((o) => /^auftrag-\d+$/.test(o));
+  const ids = ordner.map((o) => Number(o.slice(8)));
+  const { data: meinePcs } = await db.from("ws_werkstatt_pcs").select("id").eq("benutzer_id", cfg.user_id);
+  const pcIds = [...new Set([pcId, ...(meinePcs || []).map((x) => x.id)])];
+  const { data: gr, error: eg } = await db.from("ws_gruppen").select("id, ws_bereiche!inner(projekt_id)").eq("ws_bereiche.projekt_id", p.id);
+  if (eg) return "Umzug wartet: Aufträge nicht prüfbar";
+  const gids = (gr || []).map((g) => g.id);
+  const { data: offen, error: eo } = gids.length ? await db.from("ws_auftraege").select("id").in("gruppe_id", gids).in("werkstatt_pc", pcIds).in("stand", ["laeuft", "frage", "nacharbeit"]).order("id").limit(50) : { data: [] };
+  if (eo) return "Umzug wartet: Aufträge nicht prüfbar";
+  const relevant = (offen || []).filter((a) => !nurAlte || ids.includes(a.id));
+  if (relevant.length) return `Umzug wartet auf Auftrag #${relevant.slice(0, 5).map((a) => a.id).join(", #")}`.slice(0, 200);
+  const { data: staende } = ids.length ? await db.from("ws_auftraege").select("id, stand").in("id", ids) : { data: [] };
+  const fertig = new Set((staende || []).filter((a) => ["wissen", "erledigt", "abgebrochen"].includes(a.stand)).map((a) => a.id));
+  for (const o of ordner) {
+    if (fertig.has(Number(o.slice(8)))) continue;   // abgeschlossen: der Ordner wird nicht mehr gebraucht
+    const wt = path.join(alt, o);
+    const geaendert = await git(wt, "status", "--porcelain").catch(() => "?");
+    const ungepusht = await git(wt, "log", "--oneline", "-1", "HEAD", "--not", "--remotes").catch(() => "?");
+    if (geaendert.trim() || ungepusht.trim()) return `Umzug wartet: Auftrag #${o.slice(8)} hat noch nicht hochgeladene Änderungen`;
+  }
+  return null;
+}
+const umzugLaeuft = new Set();   // Projekte, die gerade umziehen – gesperrt für alles (neu, Fortsetzung, Nacharbeit, Station)
 async function umziehen(p, po) {
   const alt = altOrdner(cfg.daten_ordner, p.id);
   if (await existiert(path.join(po.code, ".git"))) {
-    // Umgezogen; die alte Kopie wird erst gelöscht, wenn auf diesem PC nichts mehr läuft (eine Station könnte noch darin prüfen)
-    if (!laeuft && await existiert(path.join(alt, "repo"))) await altAufraeumen(p, alt);
+    // Umgezogen; die alte Kopie wird erst gelöscht, wenn nichts mehr darauf angewiesen ist (unmittelbar davor erneut geprüft)
+    if (await existiert(path.join(alt, "repo"))) {
+      const h = await umzugHindernis(p, alt, { nurAlte: true });
+      if (h) return { stand: "ok", hinweis: `Alte Kopie bleibt noch: ${h}`.slice(0, 200) };
+      if (laeuft) return { stand: "ok" };
+      umzugLaeuft.add(p.id);
+      try { await altAufraeumen(p, alt); } finally { umzugLaeuft.delete(p.id); }
+    }
     return { stand: "ok" };
   }
   if (!(await existiert(path.join(alt, "repo", ".git")))) {
@@ -874,42 +940,32 @@ async function umziehen(p, po) {
     await arbeitsordnerRepo(p, { altErlaubt: false }); klonVersuch.delete(p.id);
     return { stand: "ok" };
   }
+  const h = await umzugHindernis(p, alt);
+  if (h) return { stand: "umzug_wartet", hinweis: h };
   if (laeuft) return { stand: "umzug_wartet", hinweis: "Umzug wartet, bis die Werkstatt frei ist" };
-  const { data: meinePcs } = await db.from("ws_werkstatt_pcs").select("id").eq("benutzer_id", cfg.user_id);
-  const pcIds = [...new Set([pcId, ...(meinePcs || []).map((x) => x.id)])];
-  const { data: gr } = await db.from("ws_gruppen").select("id, ws_bereiche!inner(projekt_id)").eq("ws_bereiche.projekt_id", p.id);
-  const gids = (gr || []).map((g) => g.id);
-  const { data: offen } = gids.length ? await db.from("ws_auftraege").select("id").in("gruppe_id", gids).in("werkstatt_pc", pcIds).in("stand", ["laeuft", "frage", "nacharbeit"]).order("id").limit(5) : { data: [] };
-  if (offen?.length) return { stand: "umzug_wartet", hinweis: `Umzug wartet auf Auftrag #${offen.map((a) => a.id).join(", #")}`.slice(0, 200) };
-  const ordner = (await readdir(alt).catch(() => [])).filter((o) => /^auftrag-\d+$/.test(o));
-  const ids = ordner.map((o) => Number(o.slice(8)));
-  const { data: staende } = ids.length ? await db.from("ws_auftraege").select("id, stand").in("id", ids) : { data: [] };
-  const fertig = new Set((staende || []).filter((a) => ["wissen", "erledigt", "abgebrochen"].includes(a.stand)).map((a) => a.id));
-  for (const o of ordner) {
-    if (fertig.has(Number(o.slice(8)))) continue;   // abgeschlossen: der Ordner wird nicht mehr gebraucht
-    const wt = path.join(alt, o);
-    const geaendert = await git(wt, "status", "--porcelain").catch(() => "?");
-    const ungepusht = await git(wt, "log", "--oneline", "-1", "HEAD", "--not", "--remotes").catch(() => "?");
-    if (geaendert.trim() || ungepusht.trim()) return { stand: "umzug_wartet", hinweis: `Umzug wartet: Auftrag #${o.slice(8)} hat noch nicht hochgeladene Änderungen` };
-  }
-  melde("status", `Projektordner: ${p.name} wird umgezogen`);
-  const keineHooks = path.join(await sicherOrdner(po.wurzel, "code-arbeit"), "keine-hooks");
-  await mkdir(keineHooks, { recursive: true });
-  const tmp = path.join(po.wurzel, "code.neu");
-  await rm(tmp, { recursive: true, force: true });
-  await sh("gh", ["repo", "clone", p.repo, tmp, "--", "-c", `core.hooksPath=${keineHooks}`], { maxBuffer: 50 * 1024 * 1024, timeout: 30 * 60 * 1000 });
-  const kopf = await git(tmp, "rev-parse", "origin/main").catch(() => "");
-  const url = await git(tmp, "remote", "get-url", "origin").catch(() => "");
-  if (!/^[0-9a-f]{40}$/.test(kopf) || !url.toLowerCase().includes(p.repo.toLowerCase())) {
-    await rm(tmp, { recursive: true, force: true }).catch(() => {});
-    throw new Error("Die neue Arbeitskopie stimmt nicht – Umzug abgebrochen, die alte bleibt");
-  }
-  await rename(tmp, po.code);
-  // Claude-Sitzungen der alten Ordner gelten nicht mehr (Nacharbeit startet im neuen Ordner ohne Fortsetzen der Sitzung)
-  const s = await sitzungen(); let neuS = false;
-  for (const id of ids) if (s[id]?.sitzung) { s[id] = { versuch: s[id].versuch || 0 }; neuS = true; }
-  if (neuS) await writeFile(sitzungenDatei(), JSON.stringify(s, null, 2));
-  if (!laeuft) await altAufraeumen(p, alt);   // sonst beim nächsten Durchlauf
+  umzugLaeuft.add(p.id);   // ab hier (ohne await dazwischen) startet für dieses Projekt nichts mehr
+  try {
+    melde("status", `Projektordner: ${p.name} wird umgezogen`);
+    const keineHooks = path.join(await sicherOrdner(po.wurzel, "code-arbeit"), "keine-hooks");
+    await mkdir(keineHooks, { recursive: true });
+    const tmp = path.join(po.wurzel, "code.neu");
+    await rm(tmp, { recursive: true, force: true });
+    await sh("gh", ["repo", "clone", p.repo, tmp, "--", "-c", `core.hooksPath=${keineHooks}`], { maxBuffer: 50 * 1024 * 1024, timeout: 30 * 60 * 1000 });
+    const kopf = await git(tmp, "rev-parse", "origin/main").catch(() => "");
+    const url = await git(tmp, "remote", "get-url", "origin").catch(() => "");
+    if (!/^[0-9a-f]{40}$/.test(kopf) || !url.toLowerCase().includes(p.repo.toLowerCase())) {
+      await rm(tmp, { recursive: true, force: true }).catch(() => {});
+      throw new Error("Die neue Arbeitskopie stimmt nicht – Umzug abgebrochen, die alte bleibt");
+    }
+    await rename(tmp, po.code);
+    // Claude-Sitzungen der alten Ordner gelten nicht mehr (Nacharbeit startet im neuen Ordner ohne Fortsetzen der Sitzung)
+    const ids = (await readdir(alt).catch(() => [])).filter((o) => /^auftrag-\d+$/.test(o)).map((o) => Number(o.slice(8)));
+    const s = await sitzungen(); let neuS = false;
+    for (const id of ids) if (s[id]?.sitzung) { s[id] = { versuch: s[id].versuch || 0 }; neuS = true; }
+    if (neuS) await writeFile(sitzungenDatei(), JSON.stringify(s, null, 2));
+    // Unmittelbar vor dem Aufräumen erneut prüfen (M2) – sonst beim nächsten Durchlauf
+    if (!(await umzugHindernis(p, alt, { nurAlte: true }))) await altAufraeumen(p, alt);
+  } finally { umzugLaeuft.delete(p.id); }
   return { stand: "ok", hinweis: "Arbeitskopie in den Projektordner umgezogen" };
 }
 
@@ -930,15 +986,19 @@ async function projektordnerPflegen(zwingend = false) {
         const po = await projektOrdner(p.id);
         if (po.stand !== "ok") {
           m.stand = po.stand === "kaputt" ? "fehler" : po.stand;
-          m.hinweis = { kein: "Projektordner auf diesem PC noch nicht festgelegt", fehlt: "Festplatte fehlt – Werkstatt pausiert für dieses Projekt", kaputt: "Projektordner ist kein echter Ordner" }[po.stand];
+          m.hinweis = po.fremd ? "Kennungsdatei im Projektordner fehlt oder passt nicht – im Programm neu verknüpfen"
+            : { kein: "Projektordner auf diesem PC noch nicht festgelegt", fehlt: "Festplatte fehlt – Werkstatt pausiert für dieses Projekt", kaputt: "Projektordner ist kein echter Ordner" }[po.stand];
         } else {
           await geruestAnlegen(po.wurzel, { projektName: p.name });
           const u = p.repo ? await umziehen(p, po) : { stand: "ok" };
           m.stand = u.stand; m.hinweis = u.hinweis || null;
           await regelnPflegen(p, po).catch((e) => melde("fehler", `Regeln ${p.name}: ${kuerzen(ohneGeheimnisse(e?.message || String(e)), 200)}`));
-          const r = await regelnLesen(po);
+          const r = await regelnLesen(po, p.id);
           m.konflikte = Math.min(50, r.konflikte.length);
           if (r.konflikte.length) m.hinweis = konfliktKurz(r.konflikte[0], r.konflikte.length);
+          else if (r.da && !r.bestaetigt) m.hinweis = "REGELN.md geändert – unter Anbindungen bestätigen, bis dahin gilt die zuletzt bestätigte Fassung";
+          // Aktuelle Fassung zur Bestätigung durch den Admin melden (Text und Prüfsumme, keine Pfade)
+          if (r.sha) await db.rpc("ws_regeln_melden", { p_pc: pcId, p_projekt: p.id, p_sha: r.sha, p_text: r.aktuell.slice(0, 30000), p_konflikte: Math.min(50, r.konflikte.length) }).then(() => {}, () => {});
           await spiegeln(p, po).catch((e) => melde("fehler", `Spiegel ${p.name}: ${kuerzen(ohneGeheimnisse(e?.message || String(e)), 200)}`));
         }
       } catch (e) {
@@ -959,6 +1019,7 @@ async function projektordnerPflegen(zwingend = false) {
 /** Darf diese Werkstatt jetzt für das Projekt arbeiten? neu = neuer Auftrag/Station (braucht den Projektordner mit Arbeitskopie bzw. Klonen),
  *  auftrag = Fortsetzung/Nacharbeit (darf in der alten Kopie zu Ende laufen). Gibt null (ja) oder den Grund zurück. */
 async function ordnerSperre(projektId, { auftragId = null, station = false } = {}) {
+  if (umzugLaeuft.has(projektId)) return "umzug";   // während des Umzugs auch keine Fortsetzung, Nacharbeit oder Station (M2)
   if (auftragId && await existiert(path.join(altOrdner(cfg.daten_ordner, projektId), `auftrag-${auftragId}`))) return null;
   const po = await projektOrdner(projektId).catch(() => ({ stand: "fehlt" }));
   if (po.stand === "ok" && await existiert(path.join(po.code, ".git"))) return null;
@@ -1955,8 +2016,9 @@ async function ampelMelden(p) {
       } else {
         const umzug = !(await existiert(path.join(po.code, ".git"))) && await altRepoDa(p.id);
         werte.projektordner = umzug ? { stand: "gelb", text: "Verknüpft · Arbeitskopie wird umgezogen, sobald kein Auftrag offen ist" } : { stand: "gruen", text: "Verknüpft · Festplatte angesteckt" };
-        const r = await regelnLesen(po);
+        const r = await regelnLesen(po, p.id);
         werte.regeln = r.konflikte.length ? { stand: "rot", text: konfliktKurz(r.konflikte[0], r.konflikte.length) }
+          : r.da && !r.bestaetigt ? { stand: "gelb", text: "REGELN.md geändert – unter „Anbindungen“ bestätigen (bis dahin gilt die zuletzt bestätigte Fassung)" }
           : r.da ? { stand: "gruen", text: `Projektregeln aktiv · Rangfolge Sicherheit › Projektregeln › Regelwerk${r.fassung ? ` (Fassung ${r.fassung.slice(0, 7)})` : ""}` }
           : { stand: "gelb", text: "REGELN.md fehlt noch – die Werkstatt legt sie aus der Vorlage an" };
       }
@@ -1987,8 +2049,11 @@ const wranglerSh = (_befehl, args, o = {}) => {
 /** Werte für den Fehler-Melder der App (VITE_CS_FEHLER_*): Adresse und öffentlicher Schlüssel der Codeschmiede, Melde-Schlüssel des Projekts. */
 async function fehlerWerteFuer(projektId) {
   if (!cfg.admin) return null;
-  const { data: k } = await db.from("ws_fehler_schluessel").select("schluessel, aktiv").eq("projekt_id", projektId).maybeSingle();
-  let schluessel = k?.aktiv ? k.schluessel : null;
+  const { data: k, error: ek } = await db.from("ws_fehler_schluessel").select("schluessel, aktiv").eq("projekt_id", projektId).maybeSingle();
+  if (ek) return null;
+  // Neu nur, wenn es noch keinen gibt; einen abgeschalteten Schlüssel nicht still wieder einschalten (Prüfung N7)
+  if (k && !k.aktiv) return null;
+  let schluessel = k?.schluessel || null;
   if (!schluessel) { const { data, error } = await db.rpc("ws_fehler_schluessel_erzeugen", { p_projekt: projektId }); if (error) return null; schluessel = data; }
   return { url: cfg.supabase_url, anon: cfg.anon_key, schluessel };
 }

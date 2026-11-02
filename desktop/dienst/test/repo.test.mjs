@@ -22,7 +22,7 @@ test("Grundgerüst aus dem Regelwerk (falls Vorlage vorhanden) plus README/Konze
   if (vorlage) {
     assert.ok(d.includes("AGENTS.md") && d.includes(".github/pull_request_template.md") && !d.some((x) => x.startsWith("github/")));
     const a = await readFile(path.join(ziel, "AGENTS.md"), "utf8");
-    assert.match(a, /Kassenbuch/); assert.doesNotMatch(a, /\[PROJEKTNAME\]/); assert.match(a, /gerhardkresak-code\/kassenbuch/);
+    assert.match(a, /Kassenbuch/); assert.doesNotMatch(a, /\[PROJEKTNAME\]/); assert.match(a, /kresak-it-solutions\/kassenbuch/);   // Repository liegt seit 25.10.2026 in der Organisation
     assert.match(await readFile(path.join(ziel, "docs/CHANGELOG.md"), "utf8"), /Repository angelegt/);
   }
   await rm(ziel, { recursive: true, force: true });

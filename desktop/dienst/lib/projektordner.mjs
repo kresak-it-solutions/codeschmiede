@@ -8,6 +8,11 @@ import { lstat, mkdir, readdir, readFile, realpath, rename, rm, writeFile } from
 import path from "node:path";
 
 export const KENNUNG = /^[a-z0-9][a-z0-9-]{1,39}$/;
+// Kennungen werden Ordnernamen: reservierte Namen von Windows sind verboten (Prüfung 02.11.2026, N4; auch Datenbank 0055 und Programm)
+const WINDOWS_NAME = /^(con|prn|aux|nul|com[0-9]|lpt[0-9])$/;
+export const kennungOk = (k) => typeof k === "string" && KENNUNG.test(k) && !WINDOWS_NAME.test(k);
+/** Kennungsdatei im Projektordner (legt nur das Programm an): { kennung, id } – muss zur lokalen Einstellung passen. */
+export const KENNUNGS_DATEI = ".codeschmiede-projekt.json";
 export const KONFIG_DATEI = "projektordner.json";
 /** Feste Unterordner (code\ entsteht beim Klonen). */
 export const UNTERORDNER = ["code-arbeit", "regeln", "regeln/regelwerk", "konzept", "konzept/entwuerfe", "doku", "material", "sicherungen"];
@@ -19,7 +24,8 @@ const textOk = (t) => typeof t === "string" && t.length > 0 && t.length <= 400 &
 /** Absoluter Pfad dieses Systems (unter Windows mit Laufwerk oder \\Server\Freigabe). */
 export function pfadOk(t, plattform = process.platform) {
   if (!textOk(t)) return false;
-  return plattform === "win32" ? path.win32.isAbsolute(t) && /^([A-Za-z]:\\|\\\\)/.test(t) : path.posix.isAbsolute(t);
+  // Netzwerkpfade (\\Server\Freigabe) sind nicht erlaubt (Prüfung N5)
+  return plattform === "win32" ? path.win32.isAbsolute(t) && /^[A-Za-z]:\\/.test(t) : path.posix.isAbsolute(t);
 }
 
 /** Inhalt von projektordner.json prüfen. Ungültige Einträge fallen weg (nie raten). */
@@ -29,10 +35,19 @@ export function konfigPruefen(roh, plattform = process.platform) {
   if (pfadOk(roh.basis, plattform)) k.basis = roh.basis;
   const p = roh.projekte && typeof roh.projekte === "object" && !Array.isArray(roh.projekte) ? roh.projekte : {};
   for (const [id, e] of Object.entries(p).slice(0, 500)) {
-    if (!KENNUNG.test(id) || !e || typeof e !== "object" || !pfadOk(e.pfad, plattform)) continue;
-    k.projekte.set(id, { pfad: e.pfad, regeln_von: typeof e.regeln_von === "string" && REGELN_VON.test(e.regeln_von) && e.regeln_von !== id ? e.regeln_von : null });
+    if (!kennungOk(id) || !e || typeof e !== "object" || !pfadOk(e.pfad, plattform)) continue;
+    k.projekte.set(id, { pfad: e.pfad, regeln_von: typeof e.regeln_von === "string" && REGELN_VON.test(e.regeln_von) && kennungOderArt(e.regeln_von) && e.regeln_von !== id ? e.regeln_von : null,
+      kennzeichen: typeof e.kennzeichen === "string" && /^[0-9a-f]{32}$/.test(e.kennzeichen) ? e.kennzeichen : null });
   }
   return k;
+}
+const kennungOderArt = (r) => r === "vorlage" || r === "leer" || kennungOk(r);
+/** Gehört der Ordner zu diesem Projekt? Kennungsdatei (echte Datei) mit gleicher Kennung und gleichem Kennzeichen wie in projektordner.json. */
+export async function kennungPasst(wurzel, kennung, kennzeichen) {
+  if (!kennzeichen) return false;
+  const b = await sicherLesen(wurzel, KENNUNGS_DATEI, 4096).catch(() => null);
+  if (!b) return false;
+  try { const j = JSON.parse(b.toString("utf8")); return j?.kennung === kennung && j?.id === kennzeichen; } catch { return false; }
 }
 export async function konfigLesen(datenOrdner, { lesen = readFile, plattform = process.platform } = {}) {
   try { return konfigPruefen(JSON.parse(await lesen(path.join(datenOrdner, KONFIG_DATEI), "utf8")), plattform); }

@@ -44,6 +44,7 @@ export function RegelnRangfolge({ konflikt = null }) {
       </div>
       {konflikt ? <p className={`${ROT} flex gap-2`} role="alert"><AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" aria-hidden="true" /><span>{konflikt}</span></p>
         : <p className={NOTIZ}>Widerspricht eine Projektregel einer Sicherheitsregel, zeigt die Codeschmiede das als rote Zeile unter „Anbindungen“ und im Auftrag an – die Sicherheitsregel gilt.</p>}
+      <p className="text-xs text-slate-500">Die Erkennung ist nur ein Hinweis – die Sicherheitsregeln gelten fest im Programm, auch wenn nichts rot ist. Eine geänderte <span className="font-mono">REGELN.md</span> gilt erst, wenn der Admin sie unter „Anbindungen“ bestätigt hat.</p>
     </section>);
 }
 

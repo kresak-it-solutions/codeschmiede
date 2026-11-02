@@ -1,5 +1,5 @@
 // Testseite per Knopf (Entscheidung Gerhard 02.11.2026): Cloudflare Pages mit Git-Anbindung – Cloudflare baut selbst (kostenlos bis
-// 500 Builds im Monat, keine GitHub-Actions-Minuten), jeder Zweig bekommt eine eigene Testadresse <zweig>.<projekt>.pages.dev.
+// 500 Builds im Monat, keine GitHub-Actions-Minuten), main ist die Testfassung, Werkstatt-Zweige (feature/cs-*) bekommen eine Vorschau <zweig>.<projekt>.pages.dev.
 // Läuft nur in der Werkstatt des Admins. Zugang: die bestehende Wrangler-Anmeldung auf dem PC („wrangler auth token“, offizieller Befehl);
 // das Token liegt NUR im Speicher für diesen Aufruf – nie gespeichert, nie geloggt, nie in einer Fehlermeldung. Aufgerufen wird nur
 // api.cloudflare.com. Keine kostenpflichtigen Optionen. Geht die Git-Anbindung per Schnittstelle nicht (z. B. Cloudflare-GitHub-App fehlt für
@@ -74,7 +74,10 @@ export function projektDaten({ name, repo, art, fehlerWerte = null }) {
   return {
     name, production_branch: "main", build_config: build,
     source: { type: "github", config: { owner, repo_name: repoName, production_branch: "main", pr_comments_enabled: true, deployments_enabled: true,
-      production_deployments_enabled: true, preview_deployment_setting: "all", preview_branch_includes: ["*"], preview_branch_excludes: [] } },
+      // Vorschau NICHT für alle Zweige (Prüfung 02.11.2026, N2): nur die Werkstatt-Zweige feature/cs-*, weil die Sicherheitsprüfung auf genau
+      // diesen Cloud-Bau wartet (cloudBau). „none“ würde das Tor vor dem Zusammenführen brechen. Die Adressen sind öffentlich – darum zeigt die
+      // Oberfläche „öffentlich“ an, und Zweig-Vorschauen öffnet die Codeschmiede nur mit dem Hinweis „nicht anmelden“ (Befund S5).
+      production_deployments_enabled: true, preview_deployment_setting: "custom", preview_branch_includes: ["feature/cs-*"], preview_branch_excludes: ["main", "live"] } },
     ...(env ? { deployment_configs: { production: { env_vars: env }, preview: { env_vars: env } } } : {}),
   };
 }
@@ -126,7 +129,7 @@ export async function testseiteEinrichten({ sh, holen = fetch, projekt, fehlerWe
     try { await cf(holen, token, "POST", `/accounts/${konto}/pages/projects/${name}/deployments`); } catch { gebaut = false; }
     const subdomain = SUBDOMAIN.test(p?.subdomain || "") ? p.subdomain : `${name}.pages.dev`;
     return { art: "fertig", subdomain, fehlerGesetzt,
-      hinweis: `Testseite eingerichtet: https://${subdomain} · Zweige als <zweig>.${subdomain}${gebaut ? " · erster Bau läuft" : " · Bau startet beim nächsten Push"}${fw ? (fehlerGesetzt ? " · Fehler-Melder eingetragen" : " · Fehler-Melder bitte von Hand eintragen") : ""}` };
+      hinweis: `Testseite eingerichtet: https://${subdomain} (öffentlich) · Werkstatt-Zweige als <zweig>.${subdomain}${gebaut ? " · erster Bau läuft" : " · Bau startet beim nächsten Push"}${fw ? (fehlerGesetzt ? " · Fehler-Melder eingetragen" : " · Fehler-Melder bitte von Hand eintragen") : ""}` };
   } finally { token = null; }
 }
 

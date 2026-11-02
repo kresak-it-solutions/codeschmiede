@@ -9,6 +9,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 use tauri::Manager;
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_opener::OpenerExt;
@@ -18,7 +19,15 @@ pub struct Eintrag {
     pub pfad: String,
     #[serde(default)]
     pub regeln_von: Option<String>,
+    /// Zufälliges Kennzeichen, steht auch in <Projektordner>/.codeschmiede-projekt.json – nur wenn beide passen, arbeitet die Werkstatt dort (N1)
+    #[serde(default)]
+    pub kennzeichen: Option<String>,
 }
+
+/// Kennungsdatei im Projektordner
+const KENNUNGS_DATEI: &str = ".codeschmiede-projekt.json";
+/// Nur ein Befehl zur Zeit ändert projektordner.json (N5)
+static SPERRE: Mutex<()> = Mutex::new(());
 
 #[derive(Serialize, Deserialize, Default, Clone)]
 pub struct Konfig {
@@ -36,6 +45,107 @@ pub(crate) fn kennung_ok(k: &str) -> bool {
     (2..=40).contains(&b.len())
         && (b[0].is_ascii_lowercase() || b[0].is_ascii_digit())
         && b.iter().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || *c == b'-')
+        && !windows_name(k)
+}
+
+/// Reservierte Namen von Windows (werden zu Ordnernamen, N4): con, prn, aux, nul, com0–9, lpt0–9
+fn windows_name(k: &str) -> bool {
+    matches!(k, "con" | "prn" | "aux" | "nul")
+        || (k.len() == 4 && (k.starts_with("com") || k.starts_with("lpt")) && k.as_bytes()[3].is_ascii_digit())
+}
+
+/// Als Projekte-Ordner bzw. Projektordner ungeeignet (N5): Laufwerks- bzw. Systemwurzel, der Benutzerordner selbst, System- und
+/// Programmordner (auch darin), Netzwerkpfade (\\Server\Freigabe). Gibt den Grund zurück.
+pub(crate) fn ordner_ungeeignet(p: &Path) -> Option<&'static str> {
+    let t = p.to_string_lossy().to_string();
+    if t.starts_with("\\\\") || t.starts_with("//") {
+        return Some("Netzwerkpfade sind nicht erlaubt – bitte einen Ordner auf der Festplatte wählen.");
+    }
+    // Wurzel: Laufwerk (E:\\) bzw. „/“ – am Mac ist auch /Volumes/<Platte> die Wurzel eines Datenträgers
+    if p.parent().is_none() || p.components().count() <= 1 || (!cfg!(windows) && p.parent() == Some(Path::new("/Volumes"))) {
+        return Some("Bitte nicht die Wurzel eines Laufwerks wählen, sondern einen Ordner darin (z. B. E:\\Projekte).");
+    }
+    let gleich = |a: &Path, b: &Path| a.to_string_lossy().to_lowercase().trim_end_matches(['\\', '/']) == b.to_string_lossy().to_lowercase().trim_end_matches(['\\', '/']);
+    let darin = |a: &Path, b: &Path| {
+        let (a, b) = (a.to_string_lossy().to_lowercase(), b.to_string_lossy().to_lowercase());
+        let b = b.trim_end_matches(['\\', '/']).to_string();
+        !b.is_empty() && (a == b || a.starts_with(&format!("{b}\\")) || a.starts_with(&format!("{b}/")))
+    };
+    for v in ["USERPROFILE", "HOME"] {
+        if let Ok(h) = std::env::var(v) {
+            if !h.is_empty() && gleich(p, Path::new(&h)) {
+                return Some("Bitte nicht den Benutzerordner selbst wählen, sondern einen Ordner auf der externen Festplatte.");
+            }
+        }
+    }
+    let mut system: Vec<String> = ["SystemRoot", "windir", "ProgramFiles", "ProgramFiles(x86)", "ProgramW6432", "ProgramData", "APPDATA", "LOCALAPPDATA"]
+        .iter()
+        .filter_map(|v| std::env::var(v).ok())
+        .collect();
+    if !cfg!(windows) {
+        system.extend(["/System", "/Library", "/Applications", "/usr", "/bin", "/sbin", "/etc", "/var", "/private", "/opt", "/dev", "/proc", "/boot"].iter().map(|s| s.to_string()));
+        if let Ok(h) = std::env::var("HOME") {
+            system.push(format!("{h}/Library"));
+        }
+    }
+    if system.iter().any(|s| darin(p, Path::new(s))) {
+        return Some("System- und Programmordner sind nicht erlaubt – bitte einen Ordner auf der externen Festplatte wählen.");
+    }
+    None
+}
+
+/// Kurzform eines Pfads für die Oberfläche (N6): Laufwerk bzw. Datenträger und letzter Teil, ohne Benutzernamen.
+pub(crate) fn kurz(p: &str) -> String {
+    let teile: Vec<&str> = p.split(['\\', '/']).filter(|t| !t.is_empty()).collect();
+    let Some(letzter) = teile.last() else { return p.to_string() };
+    if cfg!(windows) || p.chars().nth(1) == Some(':') {
+        let lw = teile.first().copied().unwrap_or("");
+        if teile.len() <= 2 { return format!("{lw}\\{letzter}"); }
+        return format!("{lw}\\…\\{letzter}");
+    }
+    if teile.first() == Some(&"Volumes") && teile.len() >= 2 {
+        let platte = teile[1];
+        if teile.len() <= 3 { return format!("/Volumes/{platte}/{letzter}"); }
+        return format!("/Volumes/{platte}/…/{letzter}");
+    }
+    format!("…/{letzter}")
+}
+
+/// Kennungsdatei lesen: (kennung, id)
+fn kennung_lesen(ordner: &Path) -> Option<(String, String)> {
+    let p = ordner.join(KENNUNGS_DATEI);
+    let m = std::fs::symlink_metadata(&p).ok()?;
+    if !m.is_file() || m.len() > 4096 {
+        return None;
+    }
+    let j: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(p).ok()?).ok()?;
+    Some((j.get("kennung")?.as_str()?.to_string(), j.get("id")?.as_str()?.to_string()))
+}
+
+fn neues_kennzeichen() -> String {
+    use rand::RngCore;
+    let mut b = [0u8; 16];
+    rand::rngs::OsRng.fill_bytes(&mut b);
+    b.iter().map(|x| format!("{x:02x}")).collect()
+}
+
+/// Kennungsdatei anlegen bzw. übernehmen (Ordner wurde an einem anderen PC schon verknüpft). Fremdes Projekt → Fehler.
+fn kennung_sichern(ordner: &Path, projekt: &str) -> Result<String, String> {
+    if let Some((k, id)) = kennung_lesen(ordner) {
+        if k != projekt {
+            return Err(format!("Dieser Ordner gehört zum Projekt „{k}“ – bitte einen anderen wählen."));
+        }
+        if id.len() == 32 && id.bytes().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()) {
+            return Ok(id);
+        }
+    }
+    if std::fs::symlink_metadata(ordner.join(KENNUNGS_DATEI)).map(|m| !m.is_file()).unwrap_or(false) {
+        return Err("Im Ordner liegt an Stelle der Kennungsdatei etwas anderes – bitte prüfen.".into());
+    }
+    let id = neues_kennzeichen();
+    let inhalt = serde_json::json!({ "kennung": projekt, "id": id, "hinweis": "Kennungsdatei der Codeschmiede – nicht löschen oder kopieren" });
+    std::fs::write(ordner.join(KENNUNGS_DATEI), serde_json::to_string_pretty(&inhalt).unwrap()).map_err(|e| format!("Kennungsdatei konnte nicht geschrieben werden: {e}"))?;
+    Ok(id)
 }
 
 /// Herkunft der ersten REGELN.md: Vorlage, leer oder ein anderes Projekt.
@@ -86,6 +196,9 @@ fn ordner_waehlen(app: &tauri::AppHandle, titel: &str) -> Result<Option<PathBuf>
     if !pfad_text_ok(&t) || !echter_ordner(&p) {
         return Err("Bitte einen echten Ordner wählen (keine Verknüpfung, kein Netzwerk-Kürzel).".into());
     }
+    if let Some(grund) = ordner_ungeeignet(&p) {
+        return Err(grund.into());
+    }
     Ok(Some(p))
 }
 
@@ -108,7 +221,7 @@ pub struct Stand {
 
 /// Stand der Projektordner auf diesem PC (für Assistent, Verwaltung und Anbindungen). Nicht verknüpfte Projekte zeigen den Vorschlag <basis>\<kennung>.
 #[tauri::command]
-pub fn ws_ordner_stand(app: tauri::AppHandle, projekte: Vec<String>) -> Result<Stand, String> {
+pub async fn ws_ordner_stand(app: tauri::AppHandle, projekte: Vec<String>) -> Result<Stand, String> {
     if projekte.len() > 200 {
         return Err("Zu viele Projekte".into());
     }
@@ -121,18 +234,21 @@ pub fn ws_ordner_stand(app: tauri::AppHandle, projekte: Vec<String>) -> Result<S
         .map(|id| {
             let eintrag = k.projekte.get(&id).filter(|e| pfad_text_ok(&e.pfad));
             let pfad = eintrag.map(|e| PathBuf::from(&e.pfad)).or_else(|| basis.as_ref().map(|b| Path::new(b).join(&id)));
-            let erreichbar = eintrag.is_some() && pfad.as_deref().map(echter_ordner).unwrap_or(false);
+            // erreichbar = echter Ordner UND die Kennungsdatei passt (sonst steckt eine andere Festplatte)
+            let erreichbar = eintrag.is_some()
+                && pfad.as_deref().map(echter_ordner).unwrap_or(false)
+                && pfad.as_deref().and_then(kennung_lesen).map(|(k, i)| k == id && Some(i) == eintrag.and_then(|e| e.kennzeichen.clone())).unwrap_or(false);
             ProjektStand {
                 verknuepft: eintrag.is_some(),
                 erreichbar,
                 code: erreichbar && pfad.as_ref().map(|p| p.join("code").join(".git").exists()).unwrap_or(false),
                 regeln: erreichbar && pfad.as_ref().map(|p| p.join("regeln").join("REGELN.md").is_file()).unwrap_or(false),
-                pfad: pfad.map(|p| p.to_string_lossy().to_string()),
+                pfad: pfad.map(|p| kurz(&p.to_string_lossy())),
                 projekt: id,
             }
         })
         .collect();
-    Ok(Stand { basis, basis_da, projekte: liste })
+    Ok(Stand { basis: basis.as_deref().map(kurz), basis_da, projekte: liste })
 }
 
 /// Basis-Ordner (Projekte-Ordner auf der externen Festplatte) einmal je PC festlegen. Gibt den Pfad zurück (None = abgebrochen).
@@ -140,11 +256,12 @@ pub fn ws_ordner_stand(app: tauri::AppHandle, projekte: Vec<String>) -> Result<S
 pub async fn ws_ordner_basis_waehlen(app: tauri::AppHandle) -> Result<Option<String>, String> {
     let Some(p) = ordner_waehlen(&app, "Projekte-Ordner auf der externen Festplatte wählen")? else { return Ok(None) };
     let t = p.to_string_lossy().to_string();
+    let _sperre = SPERRE.lock().map_err(|_| "Gesperrt".to_string())?;
     let mut k = laden(&app);
     k.version = 1;
     k.basis = Some(t.clone());
     speichern(&app, &k)?;
-    Ok(Some(t))
+    Ok(Some(kurz(&t)))
 }
 
 /// Projektordner verknüpfen: <basis>\<kennung> (wird angelegt, wenn die Festplatte da ist) oder – mit eigener = true – einen anderen Ordner
@@ -159,14 +276,13 @@ pub async fn ws_ordner_verknuepfen(app: tauri::AppHandle, projekt: String, eigen
             return Err("Ungültige Herkunft der Regeln".into());
         }
     }
-    let mut k = laden(&app);
     let pfad = if eigener {
         match ordner_waehlen(&app, "Projektordner wählen")? {
             Some(p) => p,
             None => return Ok(None),
         }
     } else {
-        let b = k.basis.clone().filter(|b| pfad_text_ok(b)).ok_or("Zuerst den Projekte-Ordner auf der Festplatte festlegen („Ordner wählen …“).")?;
+        let b = laden(&app).basis.filter(|b| pfad_text_ok(b)).ok_or("Zuerst den Projekte-Ordner auf der Festplatte festlegen („Ordner wählen …“).")?;
         let basis = PathBuf::from(b);
         if !echter_ordner(&basis) {
             return Err("Festplatte fehlt – der Projekte-Ordner ist gerade nicht erreichbar.".into());
@@ -180,14 +296,17 @@ pub async fn ws_ordner_verknuepfen(app: tauri::AppHandle, projekt: String, eigen
         z
     };
     let t = pfad.to_string_lossy().to_string();
-    if !pfad_text_ok(&t) {
-        return Err("Ungültiger Pfad".into());
+    if !pfad_text_ok(&t) || ordner_ungeeignet(&pfad).is_some() {
+        return Err(ordner_ungeeignet(&pfad).unwrap_or("Ungültiger Pfad").into());
     }
+    let kennzeichen = kennung_sichern(&pfad, &projekt)?;
+    let _sperre = SPERRE.lock().map_err(|_| "Gesperrt".to_string())?;
+    let mut k = laden(&app);
     let alt = k.projekte.get(&projekt).and_then(|e| e.regeln_von.clone());
     k.version = 1;
-    k.projekte.insert(projekt, Eintrag { pfad: t.clone(), regeln_von: regeln_von.or(alt) });
+    k.projekte.insert(projekt, Eintrag { pfad: t.clone(), regeln_von: regeln_von.or(alt), kennzeichen: Some(kennzeichen) });
     speichern(&app, &k)?;
-    Ok(Some(t))
+    Ok(Some(kurz(&t)))
 }
 
 /// Feste Unterordner, die „Im Explorer öffnen“ zeigen darf.
@@ -202,6 +321,9 @@ pub fn ws_ordner_oeffnen(app: tauri::AppHandle, projekt: String, unterordner: Op
     let k = laden(&app);
     let e = k.projekte.get(&projekt).filter(|e| pfad_text_ok(&e.pfad)).ok_or("Für dieses Projekt ist auf diesem PC noch kein Projektordner verknüpft.")?;
     let mut p = PathBuf::from(&e.pfad);
+    if kennung_lesen(&p).map(|(k, i)| k != projekt || Some(i) != e.kennzeichen).unwrap_or(true) {
+        return Err("Der Ordner gehört nicht (mehr) zu diesem Projekt oder die Festplatte fehlt – bitte neu verknüpfen.".into());
+    }
     if let Some(u) = unterordner {
         if !UNTERORDNER.contains(&u.as_str()) {
             return Err("Unbekannter Unterordner".into());
@@ -229,6 +351,10 @@ mod tests {
         assert!(!kennung_ok("../x"));
         assert!(!kennung_ok("a\\b"));
         assert!(!kennung_ok(&"a".repeat(41)));
+        for n in ["con", "nul", "aux", "prn", "com1", "lpt9"] {
+            assert!(!kennung_ok(n), "{n}");
+        }
+        assert!(kennung_ok("com") && kennung_ok("console") && kennung_ok("lpt10"));
         assert!(regeln_von_ok("vorlage") && regeln_von_ok("leer") && regeln_von_ok("trainer-to-go"));
         assert!(!regeln_von_ok("../boese") && !regeln_von_ok(""));
     }
@@ -244,6 +370,28 @@ mod tests {
         } else {
             assert!(pfad_text_ok("/Volumes/Platte/Projekte"));
         }
+    }
+
+    #[test]
+    fn ungeeignete_ordner_und_kurzform() {
+        if cfg!(windows) {
+            assert!(ordner_ungeeignet(Path::new("E:\\")).is_some());
+            assert!(ordner_ungeeignet(Path::new("\\\\server\\freigabe")).is_some());
+            assert!(ordner_ungeeignet(Path::new("E:\\Projekte")).is_none());
+        } else {
+            assert!(ordner_ungeeignet(Path::new("/")).is_some());
+            assert!(ordner_ungeeignet(Path::new("/usr/local/x")).is_some());
+            assert!(ordner_ungeeignet(Path::new("//server/x")).is_some());
+            assert!(ordner_ungeeignet(Path::new("/Volumes/Platte/Projekte")).is_none());
+            assert!(ordner_ungeeignet(Path::new("/Volumes/Platte")).is_some());
+            if let Ok(h) = std::env::var("HOME") {
+                assert!(ordner_ungeeignet(Path::new(&h)).is_some());
+            }
+            assert_eq!(kurz("/Volumes/Platte/Projekte/trainer-to-go"), "/Volumes/Platte/…/trainer-to-go");
+            assert_eq!(kurz("/home/gerhard/Projekte/x"), "…/x");
+        }
+        assert_eq!(kurz("E:\\Projekte"), "E:\\Projekte");
+        assert_eq!(kurz("E:\\Daten\\Projekte\\trainer-to-go"), "E:\\…\\trainer-to-go");
     }
 
     #[test]
