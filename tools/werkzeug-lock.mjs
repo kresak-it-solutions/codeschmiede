@@ -23,7 +23,7 @@ for (const id of FREMDE) {
   try {
     writeFileSync(path.join(tmp, "package.json"), JSON.stringify({ name: `codeschmiede-werkzeug-${id}`, private: true, version: "0.0.0", dependencies: { [w.paket]: w.version } }, null, 2));
     writeFileSync(path.join(tmp, ".npmrc-leer"), "");
-    execFileSync(process.execPath, [npm, "install", "--package-lock-only", "--ignore-scripts", "--no-audit", "--no-fund", "--save-exact", `--registry=${REGISTRY}`, `--userconfig=${path.join(tmp, ".npmrc-leer")}`], { cwd: tmp, stdio: "inherit" });
+    execFileSync(process.execPath, [npm, "install", "--package-lock-only", "--ignore-scripts", "--no-audit", "--no-fund", "--save-exact", `--registry=${REGISTRY}`, `--userconfig=${path.join(tmp, ".npmrc-leer")}`, `--globalconfig=${path.join(tmp, ".npmrc-leer")}`], { cwd: tmp, stdio: "inherit" });
     const lock = JSON.parse(readFileSync(path.join(tmp, "package-lock.json"), "utf8"));
     const p = lockPruefen(id, lock);
     if (!p.ok) { console.error(`${id}: ${p.grund}`); fehler++; continue; }

@@ -10,7 +10,7 @@
 //
 // Diese Datei enthält nur feste Werte und reine Funktionen (ohne Prozesse) – geprüft in test/werkzeuge.test.mjs.
 import path from "node:path";
-import { lstat, readdir } from "node:fs/promises";
+import { readdir } from "node:fs/promises";
 
 export const MODELL = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,59}$/;                                  // nie mit „-“ beginnend (sonst Schalter)
 export const OC_MODELL = /^[a-z0-9][a-z0-9-]{0,39}\/[A-Za-z0-9][A-Za-z0-9._:-]{0,79}$/;      // OpenCode: anbieter/modell
@@ -47,13 +47,13 @@ export function sperrbar(werkzeug, { plattform = process.platform, sandbox = nul
   if (werkzeug === "claude-code") return { ok: true, grund: "Sperren über die Rechte von Claude Code (lib/rechte.mjs)" };
   if (!werkzeugOk(werkzeug)) return { ok: false, grund: "Unbekanntes Werkzeug" };
   if (admin) return { ok: false, grund: "Der Admin-PC programmiert nie mit fremden Werkzeugen (kein Projekt-Code auf dem Admin-PC)" };
+  // Gemini CLI (Sicherheitsprüfung B2): Ordner-Vertrauen ist eingeschaltet und kein Ordner vertraut – dann lädt Gemini keine Projekt-Einstellungen,
+  // beendet sich ohne Rückfrage-Fenster aber mit „FatalUntrustedWorkspaceError“. Einen Ordner zu vertrauen würde die Projekt-Einstellungen laden → gesperrt.
+  if (werkzeug === "gemini-cli") return { ok: false, grund: "Gemini CLI läuft ohne Rückfrage nur in vertrauten Ordnern; ein vertrauter Ordner lädt Projekt-Einstellungen – gesperrt" };
   if (plattform === "win32") return { ok: false, grund: `Unter Windows lässt sich ${werkzeugName(werkzeug)} nicht sicher sperren – gesperrt (Entscheidung Gerhard, keine Windows-Sandbox als Ausweg)` };
   if (plattform === "darwin") return sandbox === "macos" ? { ok: true, grund: "macOS-Sperre (sandbox-exec) der Codeschmiede" } : { ok: false, grund: "sandbox-exec fehlt auf diesem Mac – gesperrt" };
-  if (plattform === "linux") {
-    // Codex braucht eine Shell; unter Linux lässt sich nicht auf einzelne Programme begrenzen, was gestartet wird (kein Projekt-Code auf dem PC)
-    if (werkzeug === "codex") return { ok: false, grund: "Unter Linux lässt sich nicht begrenzen, welche Programme Codex startet – gesperrt" };
-    return sandbox === "linux" ? { ok: true, grund: "Linux-Sperre (bubblewrap) der Codeschmiede" } : { ok: false, grund: "bubblewrap fehlt oder startet nicht – gesperrt" };
-  }
+  // Linux (B5): bubblewrap begrenzt nicht, welche Programme gestartet werden (kein Projekt-Code auf dem PC) → alle fremden Werkzeuge gesperrt
+  if (plattform === "linux") return { ok: false, grund: "Unter Linux lässt sich nicht begrenzen, welche Programme das Werkzeug startet – gesperrt" };
   return { ok: false, grund: "Betriebssystem nicht unterstützt" };
 }
 
@@ -61,16 +61,18 @@ export function sperrbar(werkzeug, { plattform = process.platform, sandbox = nul
 // Geprüft NACH dem Lauf über git status: trifft eine Änderung diese Liste, wird ALLES verworfen und der Auftrag fragt nach.
 // Fremde Werkzeuge können nicht über die Erlaubnis-Brücke fragen – darum gilt hier auch, was Claude Code nur nach Rückfrage darf.
 const SPERR_MUSTER = [
-  /^\.github\//, /(^|\/)\.(claude|codex|gemini|opencode|husky|vscode|idea)(\/|$)/, /(^|\/)opencode\.jsonc?$/, /(^|\/)\.mcp\.json$/,
+  /^\.github\//, /(^|\/)\.(claude|codex|gemini|opencode|agents|husky|vscode|idea)(\/|$)/, /(^|\/)opencode\.jsonc?$/, /(^|\/)\.mcp\.json$/,
   /(^|\/)\.git(attributes|modules)?$/, /(^|\/)\.git\//, /(^|\/)package(-lock)?\.json$/, /(^|\/)npm-shrinkwrap\.json$/,
   /(^|\/)(yarn\.lock|pnpm-lock\.yaml|bun\.lockb?|\.yarnrc(\.yml)?|\.pnpmfile\.cjs|\.npmrc)$/, /(^|\/)\.env/, /\.(pem|key|p12)$/i,
   /(^|\/)(AGENTS|CLAUDE|GEMINI)\.md$/i, /(^|\/)public\/_headers$/, /(^|\/)supabase\/einspielen\.txt$/, /(^|\/)build\.rs$/, /(^|\/)Cargo\.toml$/,
   /(^|\/)(postcss|tailwind|eslint|vite|vitest|playwright|jest)\.config\.[^/]+$/, /(^|\/)\.eslintrc[^/]*$/, /(^|\/)wrangler\.toml$/,
   /^tools\//, /^scripts\//,
 ];
+// Groß/Klein egal (Sicherheitsprüfung B1: macOS und Windows unterscheiden standardmäßig nicht – „.GitHub/“ ist derselbe Ordner)
+const SPERR = SPERR_MUSTER.map((m) => new RegExp(m.source, "i"));
 export const dateiGesperrt = (rel) => {
   const r = String(rel || "").split("\\").join("/").replace(/^\.\//, "");
-  return !r || r.split("/").includes("..") || SPERR_MUSTER.some((m) => m.test(r));
+  return !r || r.split("/").includes("..") || SPERR.some((m) => m.test(r));
 };
 
 /** Ausgabe von „git status --porcelain=v1 -z --untracked-files=all“ → geänderte Pfade (bei Umbenennen beide). */
@@ -90,14 +92,16 @@ export function statusPfade(roh) {
 // .env (sucht auch in Eltern-Ordnern), OpenCode führt opencode.json(c) und .opencode/ mit (bis zum Git-Stamm, Plugins = Code!).
 // Statt uns auf die Reihenfolge des Zusammenführens zu verlassen: ist so etwas im Arbeitsordner oder darüber, läuft das Werkzeug nicht.
 export const KONFIG_NAMEN = [".codex", ".gemini", ".opencode", "opencode.json", "opencode.jsonc", ".env", ".agents", ".mcp.json"];
-export async function projektKonfigFunde(ordner, { lesen = readdir, pruefen = lstat, P = path } = {}) {
+// Groß/Klein egal (B1): „.Gemini“ oder „OpenCode.json“ zählen genauso.
+const KONFIG_KLEIN = new Set(KONFIG_NAMEN.map((n) => n.toLowerCase()));
+export async function projektKonfigFunde(ordner, { lesen = readdir, P = path } = {}) {
   const funde = [];
-  const namen = new Set(await lesen(ordner).catch(() => []));
-  for (const n of KONFIG_NAMEN) if (namen.has(n)) funde.push(n);
+  const treffer = async (o) => (await lesen(o).catch(() => [])).map((e) => (typeof e === "string" ? e : e.name)).filter((n) => KONFIG_KLEIN.has(String(n).toLowerCase()));
+  for (const n of await treffer(ordner)) funde.push(n);
   // Eltern-Ordner bis zur Wurzel (Gemini sucht .env aufwärts, OpenCode bis zum Git-Stamm – eine .git-DATEI im Arbeitsordner zählt dort evtl. nicht)
   let o = P.dirname(P.resolve(ordner));
   for (let i = 0; i < 40; i++) {
-    for (const n of KONFIG_NAMEN) if (await pruefen(P.join(o, n)).then(() => true, () => false)) funde.push(P.join(o, n));
+    for (const n of await treffer(o)) funde.push(P.join(o, n));
     const hoch = P.dirname(o); if (hoch === o) break; o = hoch;
   }
   return funde;
@@ -140,10 +144,11 @@ export function geminiEinstellungen() {
   const lesen = ["read_file", "read_many_files", "list_directory", "glob", "search_file_content"];
   return {
     general: { defaultApprovalMode: "auto_edit", disableAutoUpdate: true, disableUpdateNag: true, checkpointing: { enabled: false } },
-    tools: { sandbox: false, core: [...lesen, "write_file", "replace"], exclude: ["run_shell_command", "web_fetch", "google_web_search", "save_memory", "write_todos"], allowed: ["write_file", "replace"] },
+    tools: { sandbox: false, discoveryCommand: "", callCommand: "", core: [...lesen, "write_file", "replace"], exclude: ["run_shell_command", "web_fetch", "google_web_search", "save_memory", "write_todos"], allowed: ["write_file", "replace"] },
     mcpServers: {},
     admin: { secureModeEnabled: true, mcp: { enabled: false }, extensions: { enabled: false }, skills: { enabled: false } },
-    security: { disableYoloMode: true, folderTrust: { enabled: false } },
+    // B2: Ordner-Vertrauen an, kein Ordner vertraut (GEMINI_CLI_TRUSTED_FOLDERS_PATH zeigt auf eine leere Liste im Lauf-Ordner)
+    security: { disableYoloMode: true, folderTrust: { enabled: true } },
     hooksConfig: { enabled: false },
     context: { includeDirectories: [], loadMemoryFromIncludeDirectories: false },
     advanced: { ignoreLocalEnv: true, autoConfigureMemory: false },
@@ -181,7 +186,8 @@ export function opencodeArgs({ modell }) {
 /** Umgebung je Werkzeug (zusätzlich zur minimalen Umgebung, nach dem Einrichten der Sperre). */
 export function werkzeugUmgebung(werkzeug, { lauf, home }) {
   if (werkzeug === "codex") return { CODEX_HOME: path.join(home, ".codex"), NO_COLOR: "1" };
-  if (werkzeug === "gemini-cli") return { GEMINI_CLI_SYSTEM_SETTINGS_PATH: path.join(lauf, "gemini-system.json"), GEMINI_SANDBOX: "false", GEMINI_CLI_NO_RELAUNCH: "true", NO_COLOR: "1" };
+  if (werkzeug === "gemini-cli") return { GEMINI_CLI_SYSTEM_SETTINGS_PATH: path.join(lauf, "gemini-system.json"), GEMINI_CLI_TRUSTED_FOLDERS_PATH: path.join(lauf, "gemini-vertraut.json"),
+    GEMINI_SANDBOX: "false", GEMINI_CLI_NO_RELAUNCH: "true", NO_COLOR: "1" };
   if (werkzeug === "opencode") return { OPENCODE_CONFIG_CONTENT: JSON.stringify(opencodeKonfig()), OPENCODE_DISABLE_AUTOUPDATE: "1", OPENCODE_DISABLE_PROJECT_CONFIG: "1",
     OPENCODE_DISABLE_LSP_DOWNLOAD: "1", OPENCODE_DISABLE_DEFAULT_PLUGINS: "1", OPENCODE_DISABLE_SHARE: "1", NO_COLOR: "1" };
   return {};
@@ -195,6 +201,7 @@ export function laufPlan({ werkzeug, ordner, lauf, home, modell }) {
     args = codexArgs({ ordner, antwort: path.join(lauf, "antwort.txt"), modell });
   } else if (werkzeug === "gemini-cli") {
     dateien.push({ pfad: path.join(lauf, "gemini-system.json"), inhalt: JSON.stringify(geminiEinstellungen(), null, 2) });
+    dateien.push({ pfad: path.join(lauf, "gemini-vertraut.json"), inhalt: "{}" });   // kein Ordner vertraut
     args = geminiArgs({ modell });
   } else if (werkzeug === "opencode") {
     args = opencodeArgs({ modell });
@@ -252,4 +259,11 @@ export function werkzeugVorspann(werkzeug) {
     "Ist die Nachricht nur eine Frage ohne Änderungswunsch: ändere nichts und antworte mit einer Zeile „ANTWORT: …“.",
     "Sonst fasse am Ende kurz zusammen, was du geändert hast (eine Liste).",
   ].join("\n");
+}
+
+/** Fingerabdruck aller Einstellungen je Werkzeug (Teil des Sperren-Test-Nachweises, B4) – ändert sich mit jeder Änderung hier. */
+export function einstellungenText() {
+  return JSON.stringify({ codex: codexKonfig({ ordner: "/ORDNER" }), codexArgs: codexArgs({ ordner: "/ORDNER", antwort: "/LAUF/antwort.txt" }), gemini: geminiEinstellungen(),
+    geminiArgs: geminiArgs({}), opencode: opencodeKonfig(), opencodeArgs: opencodeArgs({}), sperre: SPERR_MUSTER.map(String), konfig: KONFIG_NAMEN,
+    umgebung: FREMDE.map((w) => werkzeugUmgebung(w, { lauf: "/LAUF", home: "/HOME" })), vorspann: FREMDE.map(werkzeugVorspann) });
 }

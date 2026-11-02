@@ -48,7 +48,9 @@ export function zuWeit(p, home = os.homedir()) {
 /** Alle Elternordner eines Pfads (für file-read-metadata: node löst Pfade stufenweise auf, Nachprüfung 0.8.0 M6). */
 function eltern(p) { const r = []; let d = path.dirname(p); while (d && d !== path.dirname(d)) { r.push(d); d = path.dirname(d); } return r; }
 
-export function macProfil({ home, frei = [], schreibbar = [], temp = os.tmpdir(), starten = frei, startenDateien = [] }) {
+// verboten (0.14.0, Sicherheitsprüfung B4/B6): Ordner, die zusätzlich ausdrücklich nicht lesbar sind (echter Projekte-Ordner, Daten der Codeschmiede) –
+// freigegebene Ordner darin (Arbeitsordner, Lauf-Ordner, Werkzeug-Installation) stehen danach und gewinnen (letzte passende Regel).
+export function macProfil({ home, frei = [], schreibbar = [], temp = os.tmpdir(), starten = frei, startenDateien = [], verboten = [] }) {
   const h = sb(echt(home));
   // Temp: auch der Elternordner (/var/folders/xx/yyy mit C = Caches anderer Programme) ist gesperrt
   const t = sb(path.dirname(echt(temp)));
@@ -61,6 +63,10 @@ export function macProfil({ home, frei = [], schreibbar = [], temp = os.tmpdir()
     `(deny file-read* (subpath "${h}"))`,
     `(deny file-read* (subpath "${t}"))`,
     `(deny file-read* (subpath "/Volumes"))`, `(deny file-read* (subpath "/Users/Shared"))`,
+    // Einstellungen von Homebrew-Programmen (können Zugänge enthalten, B6); Signale nur an eigene Prozesse
+    `(deny file-read* (subpath "/opt/homebrew/etc"))`, `(deny file-read* (subpath "/usr/local/etc"))`,
+    `(deny signal (target others))`,
+    ...verboten.filter(Boolean).map((p) => `(deny file-read* (subpath "${sb(echt(p))}"))`),
     `(allow file-read-metadata (literal "${h}"))`,
     ...meta.map((p) => `(allow file-read-metadata (literal "${sb(p)}"))`),
     // Schlüsselbund (dort liegen Claude-/GitHub-Zugänge) und fremde Programme gesperrt (Prüfung A3)
@@ -179,11 +185,10 @@ function ordnerVon(pfad) {
  * - Codex: eigener CODEX_HOME im Arbeitsordner mit Kopie von auth.json (danach geprüft zurückkopiert, falls erneuert)
  * - Gemini: eigenes HOME im Arbeitsordner mit Kopie der Anmeldung, danach geprüft zurück
  */
-// bauen = true: Ersatz beim Programmieren (Gerhard 2026-10-23 „Nur als Ersatz“). Codex arbeitet in einer KOPIE des Projekts innerhalb von „arbeit“
-// (ohne .git); zusätzlich dürfen nur einzelne harmlose Leseprogramme starten, keine Apple Events/LaunchServices (Prüfung 0.8.6 R1/R2).
-const BAU_PROGRAMME = ["/bin/ls", "/bin/cat", "/bin/pwd", "/bin/echo", "/bin/test", "/usr/bin/grep", "/usr/bin/find", "/usr/bin/head", "/usr/bin/tail", "/usr/bin/wc",
+// Feste Leseprogramme, die ein Programmier-Werkzeug in der macOS-Sperre starten darf (siehe WERKZEUG_PROGRAMME unten)
+const LESE_PROGRAMME = ["/bin/ls", "/bin/cat", "/bin/pwd", "/bin/echo", "/bin/test", "/usr/bin/grep", "/usr/bin/find", "/usr/bin/head", "/usr/bin/tail", "/usr/bin/wc",
   "/usr/bin/sort", "/usr/bin/uniq", "/usr/bin/diff", "/usr/bin/sed", "/usr/bin/awk", "/usr/bin/tr", "/usr/bin/cut", "/usr/bin/basename", "/usr/bin/dirname", "/usr/bin/xargs", "/usr/bin/file"];
-export async function sandboxLauf({ anbieter, prog, arbeit, env, bauen = false }) {
+export async function sandboxLauf({ anbieter, prog, arbeit, env }) {
   const art = sandboxArt();
   if (!art) return null;
   const home = os.homedir();
@@ -240,8 +245,7 @@ export async function sandboxLauf({ anbieter, prog, arbeit, env, bauen = false }
   }
   if (art === "macos") {
     // Beim Bauen nicht ganze Ordner wie /usr/local starten lassen: nur den Codex-Ordner und einzelne Programme (Prüfung 0.8.6 Hinweis)
-    const profil = macProfil({ home, frei: [...frei, ...zert], schreibbar: schreib, temp: os.tmpdir(), starten: bauen ? (progOrdner.split(path.sep).includes("node_modules") ? [progOrdner] : []) : frei,
-      startenDateien: bauen ? [...BAU_PROGRAMME, echt(process.execPath), start.befehl] : [] });
+    const profil = macProfil({ home, frei: [...frei, ...zert], schreibbar: schreib, temp: os.tmpdir(), starten: frei });
     return { befehl: "/usr/bin/sandbox-exec", vorne: ["-p", profil, start.befehl, ...start.vorne], env: neueEnv, nachher, art };
   }
   const args = bwrapArgs({ frei: [...frei, ...zert], schreibbar: schreib, arbeit, home: kiHome });
@@ -254,7 +258,7 @@ export async function sandboxLauf({ anbieter, prog, arbeit, env, bauen = false }
 // regeln/REGELN.md, code/.git), andere Projekte, Daten der Codeschmiede, Benutzerordner – ist nicht schreibbar und (außer dem Arbeitsordner)
 // auch nicht lesbar. Verknüpfungen helfen nicht: macOS prüft den aufgelösten Pfad, unter Linux sind die Ziele gar nicht eingehängt.
 // Programmstarts (macOS): nur das Werkzeug selbst, die Shells und feste Leseprogramme – kein node/python/git/curl (kein Projekt-Code auf dem PC).
-export const WERKZEUG_PROGRAMME = [...BAU_PROGRAMME, "/bin/sh", "/bin/bash", "/bin/zsh", "/usr/bin/true", "/usr/bin/false", "/bin/mkdir", "/bin/cp", "/bin/mv", "/usr/bin/touch",
+export const WERKZEUG_PROGRAMME = [...LESE_PROGRAMME, "/bin/sh", "/bin/bash", "/bin/zsh", "/usr/bin/true", "/usr/bin/false", "/bin/mkdir", "/bin/cp", "/bin/mv", "/usr/bin/touch",
   "/opt/homebrew/bin/rg", "/usr/local/bin/rg"];
 const QUELLEN = (home, env) => ({
   codex: [[path.join(env.CODEX_HOME || path.join(home, ".codex"), "auth.json"), [".codex", "auth.json"], "auth.json"]],
@@ -265,7 +269,7 @@ const QUELLEN = (home, env) => ({
  * Sperre für einen Lauf eines Programmier-Werkzeugs vorbereiten. start = { befehl, vorne } (aufgelöst, z. B. das native Programm von Codex),
  * nodeNoetig = darf node gestartet werden (nur wenn das Werkzeug selbst ein Node-Programm ist). Liefert { befehl, vorne, env, nachher, art } oder null.
  */
-export async function werkzeugSandbox({ werkzeug, start, ordner, lauf, env, nodeNoetig = false, home = os.homedir(), art = sandboxArt(), quellenEnv = process.env }) {
+export async function werkzeugSandbox({ werkzeug, start, ordner, lauf, env, nodeNoetig = false, home = os.homedir(), art = sandboxArt(), quellenEnv = process.env, verbotenLesen = [] }) {
   if (!art || !start?.befehl) return null;
   const haupt = echt(start.vorne?.[0] || start.befehl);
   const progOrdner = ordnerVon(haupt);
@@ -297,7 +301,7 @@ export async function werkzeugSandbox({ werkzeug, start, ordner, lauf, env, node
     });
   }
   if (art === "macos") {
-    const profil = macProfil({ home, frei: [...frei, ...zert], schreibbar: schreib, temp: os.tmpdir(),
+    const profil = macProfil({ home, frei: [...frei, ...zert], schreibbar: schreib, temp: os.tmpdir(), verboten: verbotenLesen.filter((p) => p && existsSync(p)),
       starten: progOrdner.split(path.sep).includes("node_modules") ? [progOrdner] : [],
       startenDateien: [...WERKZEUG_PROGRAMME, echt(start.befehl), ...(nodeNoetig ? [echt(process.execPath)] : [])] });
     return { befehl: "/usr/bin/sandbox-exec", vorne: ["-p", profil, start.befehl, ...(start.vorne || [])], env: neueEnv, nachher, art, profil };
@@ -305,3 +309,6 @@ export async function werkzeugSandbox({ werkzeug, start, ordner, lauf, env, node
   const args = bwrapArgs({ frei: [...frei, ...zert], schreibbar: schreib, arbeit: ordner, home: kiHome });
   return { befehl: imPfad("bwrap"), vorne: [...args, "--", start.befehl, ...(start.vorne || [])], env: neueEnv, nachher, art, args };
 }
+
+/** Fingerabdruck der Sperre (Code der Profile und der Programm-Liste) – Teil des Sperren-Test-Nachweises (B4). */
+export const sperrText = () => [macProfil.toString(), bwrapArgs.toString(), werkzeugSandbox.toString(), JSON.stringify(WERKZEUG_PROGRAMME), opencodeAnmeldungBereinigen.toString()].join("\n");

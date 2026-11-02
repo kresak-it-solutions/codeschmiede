@@ -11,7 +11,7 @@ import { realpathSync, existsSync } from "node:fs";
 import { WERKZEUGE, FREMDE, sperrbar, modellOk, dateiGesperrt, statusPfade, projektKonfigFunde, codexKonfig, codexArgs, geminiEinstellungen, geminiArgs,
   opencodeKonfig, opencodeArgs, werkzeugUmgebung, laufPlan, codexVerbrauch, geminiAuswerten, opencodeAuswerten, werkzeugVorspann } from "../lib/werkzeuge.mjs";
 import { werkzeugSandbox, WERKZEUG_PROGRAMME, opencodeAnmeldungBereinigen, anmeldungBereinigen } from "../lib/sandbox.mjs";
-import { lockPruefen, programmIn, testAufbauen, testAuswerten, stand, sperrenTest, TEST_PUNKTE, testPrompt, GEGENPROBE } from "../lib/werkzeugLauf.mjs";
+import { lockPruefen, programmIn, testAufbauen, testAuswerten, stand, sperrenTest, TEST_PUNKTE, testPrompt, GEGENPROBE, installieren, installiertPruefen, installOrdner, PRUEFSUMME, sperrNachweis, nachweisGleich, lockQuelle } from "../lib/werkzeugLauf.mjs";
 
 const tmp = (p) => mkdtemp(path.join(os.tmpdir(), p));
 const echt = (p) => realpathSync(p);
@@ -25,16 +25,15 @@ test("Katalog: feste Versionen, offizielle npm-Pakete, Claude Code ist Standard"
   assert.equal(WERKZEUGE.opencode.paket, "opencode-ai");
   for (const w of FREMDE) assert.match(WERKZEUGE[w].version, /^\d+\.\d+\.\d+$/, "feste Version, kein Bereich");
 });
-test("sperrbar: Windows nie, Admin-PC nie, macOS nur mit sandbox-exec, Linux ohne Codex", () => {
+test("sperrbar: Windows nie, Linux nie (B5), Admin-PC nie, Gemini nie (B2), macOS nur mit sandbox-exec", () => {
   for (const w of FREMDE) {
     assert.equal(sperrbar(w, { plattform: "win32", sandbox: null }).ok, false);
+    assert.equal(sperrbar(w, { plattform: "linux", sandbox: "linux" }).ok, false);
     assert.equal(sperrbar(w, { plattform: "darwin", sandbox: "macos", admin: true }).ok, false);
-    assert.equal(sperrbar(w, { plattform: "darwin", sandbox: "macos" }).ok, true);
     assert.equal(sperrbar(w, { plattform: "darwin", sandbox: null }).ok, false);
+    assert.equal(sperrbar(w, { plattform: "darwin", sandbox: "macos" }).ok, w !== "gemini-cli");
   }
-  assert.equal(sperrbar("codex", { plattform: "linux", sandbox: "linux" }).ok, false);
-  assert.equal(sperrbar("gemini-cli", { plattform: "linux", sandbox: "linux" }).ok, true);
-  assert.equal(sperrbar("opencode", { plattform: "linux", sandbox: null }).ok, false);
+  assert.match(sperrbar("gemini-cli", { plattform: "darwin", sandbox: "macos" }).grund, /vertrauten Ordnern/);
   assert.equal(sperrbar("claude-code", { plattform: "win32" }).ok, true);
   assert.match(sperrbar("codex", { plattform: "win32" }).grund, /Windows/);
 });
@@ -51,7 +50,7 @@ test("Modelle: Claude ohne Modell, OpenCode nur anbieter/modell, keine Schalter"
 // ---------- Dateien, die nie geändert werden dürfen ----------
 test("Gesperrte Dateien nach dem Lauf", () => {
   for (const p of [".github/workflows/x.yml", "package.json", "web/package-lock.json", ".opencode/plugin/x.js", "opencode.json", ".gemini/settings.json", ".codex/config.toml",
-    "AGENTS.md", "web/public/_headers", "supabase/einspielen.txt", "vite.config.js", "tools/x.mjs", ".env", ".npmrc", "../x", ".git/config", ".gitattributes", "src-tauri/build.rs"])
+    "AGENTS.md", "web/public/_headers", ".GitHub/workflows/x.yml", "Package.JSON", ".Agents/x", ".agents/regeln.md", "Opencode.json", "agents.md", "supabase/einspielen.txt", "vite.config.js", "tools/x.mjs", ".env", ".npmrc", "../x", ".git/config", ".gitattributes", "src-tauri/build.rs"])
     assert.equal(dateiGesperrt(p), true, p);
   for (const p of ["src/App.jsx", "docs/CHANGELOG.md", "supabase/migrations/0099_x.sql", "web/src/seiten/Neu.jsx", "README.md"]) assert.equal(dateiGesperrt(p), false, p);
 });
@@ -63,11 +62,11 @@ test("Projekt-Konfiguration der Werkzeuge im Arbeitsordner oder darüber → gef
   const b = await tmp("cs-wz-konf-");
   const o = path.join(b, "projekt", "code-arbeit", "auftrag-1"); await mkdir(o, { recursive: true });
   assert.deepEqual(await projektKonfigFunde(o), []);
-  await mkdir(path.join(o, ".gemini")); await writeFile(path.join(o, "opencode.json"), "{}");
-  await writeFile(path.join(b, "projekt", ".env"), "X=1");
+  await mkdir(path.join(o, ".Gemini")); await writeFile(path.join(o, "OpenCode.JSON"), "{}"); await mkdir(path.join(o, ".agents"));
+  await writeFile(path.join(b, "projekt", ".ENV"), "X=1");
   const f = await projektKonfigFunde(o);
-  assert.ok(f.includes(".gemini") && f.includes("opencode.json"));
-  assert.ok(f.includes(path.join(b, "projekt", ".env")));
+  assert.ok(f.includes(".Gemini") && f.includes("OpenCode.JSON") && f.includes(".agents"), "Groß/Klein egal (B1)");
+  assert.ok(f.includes(path.join(b, "projekt", ".ENV")));
   await rm(b, { recursive: true, force: true });
 });
 
@@ -94,7 +93,11 @@ test("Gemini: System-Einstellungen ohne Shell/Web/MCP/Erweiterungen/Hooks, kein 
   assert.equal(s.tools.sandbox, false);   // äußere Sperre der Codeschmiede
   assert.deepEqual(s.mcpServers, {});
   assert.equal(s.admin.mcp.enabled, false); assert.equal(s.admin.extensions.enabled, false); assert.equal(s.admin.secureModeEnabled, true);
-  assert.equal(s.security.disableYoloMode, true); assert.equal(s.hooksConfig.enabled, false); assert.equal(s.advanced.ignoreLocalEnv, true);
+  assert.equal(s.security.disableYoloMode, true); assert.equal(s.security.folderTrust.enabled, true);
+  assert.equal(s.tools.discoveryCommand, ""); assert.equal(s.tools.callCommand, "");
+  const pl = laufPlan({ werkzeug: "gemini-cli", ordner: "/w", lauf: "/l", home: "/l/home" });
+  assert.equal(pl.dateien.find((d) => d.pfad.endsWith("gemini-vertraut.json")).inhalt, "{}", "kein Ordner vertraut");
+  assert.equal(pl.env.GEMINI_CLI_TRUSTED_FOLDERS_PATH, path.join("/l", "gemini-vertraut.json")); assert.equal(s.hooksConfig.enabled, false); assert.equal(s.advanced.ignoreLocalEnv, true);
   assert.deepEqual(geminiArgs({ modell: "-y" }), ["--approval-mode", "auto_edit", "--extensions", "none", "--output-format", "json"]);
   const env = werkzeugUmgebung("gemini-cli", { lauf: "/l", home: "/l/home" });
   assert.equal(env.GEMINI_CLI_SYSTEM_SETTINGS_PATH, path.join("/l", "gemini-system.json")); assert.equal(env.GEMINI_SANDBOX, "false");
@@ -183,8 +186,10 @@ async function aufbau() {
 }
 test("macOS-Sperre (Nachbau): schreiben nur im Arbeitsordner und Lauf-Ordner – Regeln, setup, Nachbar, REGELN.md, .git, Daten, Link nach außen gesperrt", async () => {
   const { b, home, t, lauf, prog } = await aufbau();
-  const s = await werkzeugSandbox({ werkzeug: "codex", start: { befehl: prog, vorne: [] }, ordner: t.ordner, lauf, env: {}, home, art: "macos", quellenEnv: {} });
+  const projekte = path.join(t.basis, "Projekte"); const daten = path.join(t.basis, "Daten");
+  const s = await werkzeugSandbox({ werkzeug: "codex", start: { befehl: prog, vorne: [] }, ordner: t.ordner, lauf, env: {}, home, art: "macos", quellenEnv: {}, verbotenLesen: [projekte, daten] });
   assert.ok(s, "Sperre wird erzeugt"); assert.equal(s.befehl, "/usr/bin/sandbox-exec");
+  assert.ok(s.profil.includes("(deny signal (target others))"));
   const R = sbplRegeln(s.profil);
   const darf = (op, p) => sbplErlaubt(R, op, aufgeloest(p));
   assert.equal(darf("file-write-data", t.ziele.erlaubt), true);
@@ -192,10 +197,14 @@ test("macOS-Sperre (Nachbau): schreiben nur im Arbeitsordner und Lauf-Ordner –
   for (const id of ["regeln", "setup", "nachbar", "projektregeln", "git", "link", "daten"]) assert.equal(darf("file-write-data", t.ziele[id]), false, id);
   assert.equal(darf("file-read-data", path.join(home, ".ssh", "id_ed25519")), false, "Benutzerordner nicht lesbar");
   assert.equal(darf("file-read-data", t.ziele.erlaubt), true);
+  // B4/B6: Projekte-Ordner (außer dem eigenen Arbeitsordner), Daten (außer dem Lauf-Ordner), Homebrew-Einstellungen nicht lesbar
+  assert.equal(darf("file-read-data", t.ziele.regeln), false); assert.equal(darf("file-read-data", t.ziele.nachbar), false);
+  assert.equal(darf("file-read-data", t.ziele.daten), false); assert.equal(darf("file-read-data", path.join(lauf, "home", "x")), true);
+  assert.equal(sbplErlaubt(R, "file-read-data", "/opt/homebrew/etc/x.conf"), false); assert.equal(sbplErlaubt(R, "file-read-data", "/usr/local/etc/x"), false);
   // Programmstarts: das Werkzeug, Shells, feste Leseprogramme – kein node, curl, git, python
   assert.equal(darf("process-exec", prog), true);
   assert.equal(sbplErlaubt(R, "process-exec", "/bin/sh"), existsSync("/bin/sh"));   // nur vorhandene Programme stehen im Profil
-  for (const p of ["/usr/bin/curl", "/usr/bin/git", "/usr/bin/python3", echt(process.execPath)]) assert.equal(darf("process-exec", p), false, p);
+  for (const p of ["/usr/bin/curl", "/usr/bin/git", "/usr/bin/python3", "/usr/bin/env", "/usr/bin/osascript", path.join(t.ordner, "probe.sh"), echt(process.execPath)]) assert.equal(sbplErlaubt(R, "process-exec", p), false, p);
   assert.ok(!WERKZEUG_PROGRAMME.some((p) => /node|python|curl|git|osascript|open$/.test(p)));
   await rm(b, { recursive: true, force: true });
 });
@@ -263,12 +272,13 @@ test("Sperren-Test-Auswertung: nur der erlaubte Versuch → bestanden; Schreiben
     if (fall === "hart") await link(t.ziele.regeln, path.join(t.ordner, "hart.txt"));
     const e = await testAuswerten(t, vorher);
     assert.equal(e.bestanden, fall === "gut", fall);
-    if (fall === "link") assert.equal(e.punkte.find((p) => p.id === "link").ok, false);
-    if (fall === "regeln") assert.equal(e.punkte.find((p) => p.id === "regeln").ok, false);
-    if (fall === "nichts") assert.equal(e.punkte.find((p) => p.id === "erlaubt").ok, false);
+    if (fall === "link") assert.equal(e.punkte.link, false);
+    if (fall === "regeln") assert.equal(e.punkte.regeln, false);
+    if (fall === "hart") assert.equal(e.punkte.hart, false);
+    if (fall === "nichts") assert.equal(e.punkte.erlaubt, false);
     await rm(b, { recursive: true, force: true });
   }
-  assert.equal(TEST_PUNKTE.length, 8);
+  assert.equal(TEST_PUNKTE.length, 17); assert.equal(new Set(TEST_PUNKTE.map((x) => x[0])).size, 17);
 });
 test("Sperren-Test-Prompt nennt genau die acht Versuche", async () => {
   const b = await tmp("cs-wz-p-"); const t = await testAufbauen(b); const p = testPrompt(t);
@@ -287,14 +297,28 @@ test("Ohne wirksame Sperre fällt der Sperren-Test durch (Gegenprobe schreibt ü
     const m = /erlaubt\.txt mit genau diesem Inhalt an: (\S+)/.exec(o.eingabe || ""); if (m) await writeFile(path.join(o.cwd, "erlaubt.txt"), m[1]);
     return { code: 0, aus: '{"response":"FERTIG"}', err: "" };
   };
-  const r = await sperrenTest({ werkzeug: "gemini-cli", prog: { befehl: prog, vorne: [], nodeNoetig: false }, daten, art: "linux", run, home: path.join(daten, "home") });
+  const projekte = await tmp("cs-wz-projekte-"); const home = await tmp("cs-wz-home-");
+  assert.equal((await sperrenTest({ werkzeug: "opencode", prog: { befehl: prog, vorne: [] }, daten, art: "linux", run, home })).bestanden, false, "ohne Projekte-Ordner kein Test");
+  const r = await sperrenTest({ werkzeug: "opencode", prog: { befehl: prog, vorne: [], nodeNoetig: false }, daten, projekte, art: "linux", run, home });
   assert.equal(r.werkzeug, true, "das Werkzeug hat nichts Verbotenes geschrieben");
-  assert.equal(r.gegenprobe, false, "ohne Sperre schreibt die Gegenprobe an die gesperrten Stellen");
+  assert.equal(r.gegenprobe, false, "ohne Sperre schreibt, startet und liest die Gegenprobe an gesperrten Stellen");
   assert.equal(r.bestanden, false);
+  const p = Object.fromEntries(r.punkte.map((x) => [x.id, x.ok]));
+  for (const id of ["regeln", "hart", "start_env", "start_skript", "lesen_ssh", "lesen_zugang", "lesen_projekte"]) assert.equal(p[id], false, id);
+  assert.equal(r.punkte.length, 17);
+  // aufgeräumt: keine Attrappen im Home, in den Daten und im Projekte-Ordner
+  const { readdir: rd } = await import("node:fs/promises");
+  assert.deepEqual((await rd(home)).filter((n) => n.startsWith(".cs-sperrtest-")), []);
+  assert.deepEqual((await rd(projekte)).filter((n) => n.startsWith(".codeschmiede-sperrtest-")), []);
+  assert.deepEqual((await rd(daten)).filter((n) => n.startsWith("sperrtest-")), []);
+  await rm(projekte, { recursive: true, force: true }); await rm(home, { recursive: true, force: true });
   await rm(daten, { recursive: true, force: true }); await rm(pd, { recursive: true, force: true });
 });
 test("Gegenprobe-Programm: fester Text, keine Ausführung von Projekt-Inhalten", () => {
-  assert.ok(!/eval|Function\(|child_process|require\(\s*[a-z]+\s*\+/.test(GEGENPROBE));
+  assert.ok(!/eval|Function\(|require\(\s*[a-z]+\s*\+|execSync|shell:\s*true/.test(GEGENPROBE));
+  // Programmstarts nur feste Pfade bzw. das eigene Probe-Skript (verbotene Starts als Prüfpunkte)
+  const ziele = [...GEGENPROBE.matchAll(/start_[a-z]+:\[([^,\]]+)/g)].map((m) => m[1]);
+  assert.deepEqual(ziele, ['"/usr/bin/env"', '"/usr/bin/git"', '"/usr/bin/python3"', '"/usr/bin/osascript"', "skript"]);
 });
 
 // ---------- Installation: Lock-Datei, Programmsuche ----------
@@ -338,4 +362,52 @@ test("Werkstatt: fremdes Werkzeug nicht bereit → Auftrag wartet (kein Claude),
   const bau = s.slice(s.indexOf("async function werkzeugBau"), s.indexOf("// ---------- Bauen & Tests ----------"));
   assert.ok(bau.indexOf("await nachLaufPruefen(projekt, ordner)") < bau.indexOf('gitRoh(ordner, "status"'));
   assert.match(bau, /filter\(dateiGesperrt\)/); assert.match(bau, /projektKonfigFunde\(ordner\)/);
+});
+
+// ---------- B8: Installation – leere Benutzer- und globale npm-Konfiguration, Lock-Datei und Programm-Prüfsumme ----------
+test("Installation: npm ci ohne Skripte mit leerer user- und globalconfig; danach Lock = mitgeliefert und Programm-Prüfsumme gemerkt", async () => {
+  const daten = await tmp("cs-wz-inst-");
+  const quelle = lockQuelle("codex");
+  const schon = await readFile(quelle, "utf8").catch(() => null);
+  if (!schon) { await mkdir(path.dirname(quelle), { recursive: true }); await writeFile(quelle, JSON.stringify(lock())); }
+  let aufruf = null;
+  const run = async (befehl, args, o) => {   // „npm ci“ nachgestellt: legt das Paket mit nativem Programm an, Lock bleibt
+    aufruf = args;
+    const c = path.join(o.cwd, "node_modules", "@openai", "codex"); await mkdir(path.join(c, "bin"), { recursive: true });
+    await writeFile(path.join(c, "package.json"), JSON.stringify({ version: "0.166.0", bin: { codex: "bin/codex.js" } })); await writeFile(path.join(c, "bin", "codex.js"), "// codex");
+    return { code: 0, aus: "", err: "" };
+  };
+  try {
+    await installieren("codex", { daten, plattform: "darwin", run });
+    for (const a of ["ci", "--ignore-scripts"]) assert.ok(aufruf.includes(a), a);
+    assert.ok(aufruf.some((a) => a.startsWith("--userconfig=")) && aufruf.some((a) => a.startsWith("--globalconfig=")) && aufruf.includes("--registry=https://registry.npmjs.org/"));
+    const ok = await installiertPruefen("codex", { daten });
+    assert.equal(ok.ok, true); assert.match(ok.programmSha, /^[0-9a-f]{64}$/);
+    // Programm verändert → nicht mehr in Ordnung
+    await writeFile(path.join(installOrdner(daten, "codex"), "node_modules", "@openai", "codex", "bin", "codex.js"), "// anders");
+    assert.equal((await installiertPruefen("codex", { daten })).ok, false);
+    // Lock-Datei verändert → nicht mehr in Ordnung
+    await writeFile(path.join(installOrdner(daten, "codex"), "node_modules", "@openai", "codex", "bin", "codex.js"), "// codex");
+    const l = JSON.parse(await readFile(path.join(installOrdner(daten, "codex"), "package-lock.json"), "utf8")); l.packages["node_modules/@openai/codex"].integrity = `sha512-${"B".repeat(86)}==`;
+    await writeFile(path.join(installOrdner(daten, "codex"), "package-lock.json"), JSON.stringify(l));
+    assert.equal((await installiertPruefen("codex", { daten })).ok, false);
+    assert.ok(existsSync(path.join(installOrdner(daten, "codex"), PRUEFSUMME)));
+  } finally {
+    if (!schon) await rm(path.dirname(quelle), { recursive: true, force: true });
+    await rm(daten, { recursive: true, force: true });
+  }
+});
+test("Nachweis des Sperren-Tests (B4): Version, Sperre/Einstellungen, Programm und Codeschmiede-Version müssen gleich sein", async () => {
+  const n = await sperrNachweis("codex", { programmSha: "a".repeat(64) });
+  assert.equal(n.version, WERKZEUGE.codex.version); assert.match(n.profil, /^[0-9a-f]{64}$/); assert.match(n.cs, /^\d+\.\d+\.\d+$/);
+  assert.equal(nachweisGleich(n, { ...n }), true);
+  for (const k of ["version", "profil", "programm", "cs"]) assert.equal(nachweisGleich(n, { ...n, [k]: "anders" }), false, k);
+  assert.equal(nachweisGleich(n, null), false); assert.equal(nachweisGleich({ ...n, programm: null }, { ...n, programm: null }), false);
+});
+test("Werkstatt (B9/B10): ohne Zeile „bauen“ wartet der Auftrag, Live-Log der Werkzeuge läuft durch den Geheimnis-Filter", async () => {
+  const s = await readFile(new URL("../index.mjs", import.meta.url), "utf8");
+  assert.match(s, /if \(!data\) return \{ fehlt:/);
+  const f = s.slice(s.indexOf("function werkzeugLogZeile"), s.indexOf("async function werkzeugBau"));
+  assert.match(f, /ohneGeheimnisse\(t\)/); assert.ok(!/log\(auftragId, "info", `Führt aus/.test(f));
+  assert.match(s, /nachweisGleich\(t\.nachweis, nachweis\)/);
 });

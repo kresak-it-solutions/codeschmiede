@@ -35,7 +35,7 @@ import { bildAusDataUrl, markePrompt, markeAntwort } from "./lib/marke.mjs";
 import { ANBIETER, reiheFuer, wartetText, istLimit, kiKennung, codexFrage, geminiFrage, kopplungPruefen, anmeldungStarten, sandboxArt, freiFrage, freiPruefen, codexLimits } from "./lib/ki.mjs";
 import { prText } from "./lib/ersatz.mjs";
 import { WERKZEUGE, FREMDE, werkzeugOk, werkzeugName, sperrbar, dateiGesperrt, statusPfade, projektKonfigFunde, werkzeugVorspann } from "./lib/werkzeuge.mjs";
-import { installieren as werkzeugInstallieren, installiertPruefen, programmIn, angemeldetPruefen, laufOrdner, werkzeugStarten, sperrenTest } from "./lib/werkzeugLauf.mjs";
+import { installieren as werkzeugInstallieren, installiertPruefen, angemeldetPruefen, laufOrdner, werkzeugStarten, sperrenTest, sperrNachweis, nachweisGleich } from "./lib/werkzeugLauf.mjs";
 import { imFenster } from "./lib/einrichten.mjs";
 import { ampelPruefen, sandboxStarten, testlaufStarten, sandboxPfad } from "./lib/anbindungen.mjs";
 import { zweigStand, codeBaum, codeDatei, handSchreiben } from "./lib/code.mjs";
@@ -1535,11 +1535,15 @@ async function werkzeugStandHolen(id, { frisch = false } = {}) {
   if (!frisch && alt && Date.now() - alt.zeit < 10 * 60 * 1000) return alt;
   const sp = sperrbar(id, { sandbox: sandboxArt(), admin: !!cfg.admin });
   const inst = sp.ok ? await installiertPruefen(id, { daten: cfg.daten_ordner }) : { ok: false };
-  const prog = inst.ok ? programmIn(id, inst.dir) : null;
+  const prog = inst.ok ? inst.prog : null;
   const an = prog ? await angemeldetPruefen(id, prog).catch(() => null) : null;
   const t = (await werkzeugTests())[id] || null;
-  const test = t && t.version === WERKZEUGE[id].version ? t : null;   // Test gilt nur für genau diese Version
-  return (werkzeugLokal[id] = { zeit: Date.now(), installiert: !!(inst.ok && prog), angemeldet: an === true, version: inst.ok ? inst.version : null, sperrbar: sp.ok, grund: sp.ok ? null : sp.grund, test, prog });
+  // Test gilt nur für genau diesen Nachweis (B4): Werkzeug-Version, Sperre/Einstellungen, Programm-Prüfsumme, Version der Codeschmiede
+  const nachweis = inst.ok ? await sperrNachweis(id, inst) : null;
+  const test = t && nachweisGleich(t.nachweis, nachweis) ? t : null;
+  const ungueltig = t && !test ? "Sperren-Test gilt nicht mehr (Werkzeug, Sperre oder Codeschmiede geändert) – bitte neu starten" : null;
+  return (werkzeugLokal[id] = { zeit: Date.now(), installiert: !!(inst.ok && prog), installGrund: inst.grund || null, angemeldet: an === true, version: inst.ok ? inst.version : null,
+    sperrbar: sp.ok, grund: sp.ok ? null : sp.grund, test, ungueltig, nachweis, prog });
 }
 /** Ist das Werkzeug auf diesem PC bereit? { ok, grund }. */
 async function werkzeugBereit(id, o) {
@@ -1547,9 +1551,9 @@ async function werkzeugBereit(id, o) {
   if (!werkzeugOk(id)) return { ok: false, grund: "unbekanntes Werkzeug" };
   const s = await werkzeugStandHolen(id, o);
   if (!s.sperrbar) return { ok: false, grund: s.grund };
-  if (!s.installiert) return { ok: false, grund: "auf diesem PC nicht installiert (KI-Anbieter › Programmieren › Installieren)" };
+  if (!s.installiert) return { ok: false, grund: s.installGrund ? `Installation nicht in Ordnung: ${s.installGrund}` : "auf diesem PC nicht installiert (KI-Anbieter › Programmieren › Installieren)" };
   if (!s.angemeldet) return { ok: false, grund: "auf diesem PC nicht angemeldet (Anmeldung öffnen)" };
-  if (!s.test) return { ok: false, grund: `Sperren-Test für Version ${WERKZEUGE[id].version} fehlt auf diesem PC` };
+  if (!s.test) return { ok: false, grund: s.ungueltig || `Sperren-Test für Version ${WERKZEUGE[id].version} fehlt auf diesem PC` };
   if (!s.test.bestanden) return { ok: false, grund: "Sperren-Test auf diesem PC nicht bestanden – gesperrt" };
   if (kiLimitBis[id] && kiLimitBis[id] > Date.now()) return { ok: false, grund: `Limit voll (bis ${bisText(kiLimitBis[id])})` };
   return { ok: true };
@@ -1559,8 +1563,11 @@ async function projektWerkzeug(projektId) {
   try {
     const { data, error } = await db.from("ws_ki_zustaendigkeit").select("werkzeug, werkzeug_modell").eq("projekt_id", projektId).eq("aufgabe", "bauen").maybeSingle();
     if (error) return /werkzeug/.test(error.message) && /column|does not exist|schema cache/i.test(error.message) ? { werkzeug: "claude-code", modell: null } : { fehlt: "Programmier-Werkzeug nicht lesbar, wartet" };
-    const w = data?.werkzeug && werkzeugOk(data.werkzeug) ? data.werkzeug : "claude-code";
-    return { werkzeug: w, modell: w === "claude-code" ? null : data?.werkzeug_modell || null };
+    // Keine Zeile „bauen“ (B9): nicht auf Claude ausweichen – der Auftrag wartet
+    if (!data) return { fehlt: "Programmier-Werkzeug für dieses Projekt nicht eingestellt, wartet – bitte unter KI-Anbieter › Programmieren speichern" };
+    const w = data.werkzeug && werkzeugOk(data.werkzeug) ? data.werkzeug : null;
+    if (!w) return { fehlt: "Programmier-Werkzeug unbekannt, wartet" };
+    return { werkzeug: w, modell: w === "claude-code" ? null : data.werkzeug_modell || null };
   } catch { return { fehlt: "Programmier-Werkzeug nicht lesbar, wartet" }; }
 }
 /** „wartet auf …“ beim Auftrag vermerken (nur wenn sich der Text ändert). */
@@ -1584,7 +1591,7 @@ async function auftragNehmen(a, werkzeug) {
 /** Werkzeug-Stand dieses PCs an die Datenbank melden (Lampen). Nur Zustände, keine Inhalte, keine Pfade. */
 async function werkzeugMelden(id, extra = {}) {
   const s = await werkzeugStandHolen(id, { frisch: true });
-  const werte = { installiert: s.installiert, angemeldet: s.angemeldet, version: s.version, soll_version: WERKZEUGE[id].version, sperrbar: s.sperrbar, sperre_grund: s.grund,
+  const werte = { installiert: s.installiert, angemeldet: s.angemeldet, version: s.version, sperrbar: s.sperrbar, sperre_grund: s.grund,
     test: s.test ? (s.test.bestanden ? "bestanden" : "durchgefallen") : null, test_version: s.test?.version || null, test_zeit: s.test?.zeit || null,
     test_punkte: s.test?.punkte || null, ...extra };
   const { error } = await db.rpc("ws_werkzeug_melden", { p_pc: pcId, p_werkzeug: id, p_werte: werte });
@@ -1616,8 +1623,8 @@ async function werkzeugAktion(id, aktion) {
       if (!s.installiert || !s.angemeldet) { await werkzeugMelden(id, { hinweis: "Für den Sperren-Test muss das Werkzeug installiert und angemeldet sein" }); return; }
       await werkzeugMelden(id, { test: "laeuft", hinweis: "Sperren-Test läuft (Wegwerf-Kopie) …" });
       melde("status", `Sperren-Test für ${name} läuft`);
-      const r = await sperrenTest({ werkzeug: id, prog: s.prog, daten: cfg.daten_ordner, schuetzen: nurFuerMich });
-      await werkzeugTestMerken(id, { version: WERKZEUGE[id].version, bestanden: r.bestanden, zeit: new Date().toISOString(), punkte: r.punkte });
+      const r = await sperrenTest({ werkzeug: id, prog: s.prog, daten: cfg.daten_ordner, projekte: (await poKonfigHolen()).basis || null, schuetzen: nurFuerMich });
+      await werkzeugTestMerken(id, { version: WERKZEUGE[id].version, nachweis: s.nachweis, bestanden: r.bestanden, zeit: new Date().toISOString(), punkte: r.punkte });
       delete werkzeugLokal[id];
       await werkzeugMelden(id, { hinweis: r.bestanden ? "Sperren-Test bestanden" : `Sperren-Test NICHT bestanden${r.hinweis ? ` – ${r.hinweis}` : ""} – auf diesem PC gesperrt` });
     }
@@ -1642,9 +1649,11 @@ function werkzeugLogZeile(auftragId, z) {
   let m; try { m = JSON.parse(z); } catch { return; }
   const n = (werkzeugLogZaehler[auftragId] = (werkzeugLogZaehler[auftragId] || 0) + 1); if (n > 300) return;
   const it = m.item || m.msg || null; const p = m.part || null;
-  if (it?.type === "command_execution" && it.command) log(auftragId, "info", `Führt aus: ${kuerzen(String(it.command), 200)}`).catch(() => {});
-  else if (it?.type === "file_change" && Array.isArray(it.changes)) log(auftragId, "aendern", `Ändert ${it.changes.slice(0, 5).map((c) => String(c.path || "").split(/[\\/]/).slice(-2).join("/")).join(", ")}`).catch(() => {});
-  else if (p?.type === "tool" && typeof p.tool === "string") log(auftragId, /edit|write|patch/.test(p.tool) ? "aendern" : "lesen", `Werkzeug: ${kuerzen(p.tool, 40)}${p.state?.input?.filePath ? ` ${String(p.state.input.filePath).split(/[\\/]/).slice(-2).join("/")}` : ""}`).catch(() => {});
+  // Jede Zeile durch den Geheimnis-Filter (B10), bevor sie ins Live-Log geht
+  const schreib = (art, t) => log(auftragId, art, kuerzen(ohneGeheimnisse(t), 300)).catch(() => {});
+  if (it?.type === "command_execution" && it.command) schreib("info", `Führt aus: ${String(it.command)}`);
+  else if (it?.type === "file_change" && Array.isArray(it.changes)) schreib("aendern", `Ändert ${it.changes.slice(0, 5).map((c) => String(c.path || "").split(/[\\/]/).slice(-2).join("/")).join(", ")}`);
+  else if (p?.type === "tool" && typeof p.tool === "string") schreib(/edit|write|patch/.test(p.tool) ? "aendern" : "lesen", `Werkzeug: ${kuerzen(p.tool, 40)}${p.state?.input?.filePath ? ` ${String(p.state.input.filePath).split(/[\\/]/).slice(-2).join("/")}` : ""}`);
 }
 /**
  * Bau-Lauf mit einem fremden Werkzeug: Werkzeug ändert nur Dateien im Arbeitsordner (Sperre), danach prüft die Werkstatt Git-Ordner und
@@ -1662,7 +1671,8 @@ async function werkzeugBau({ auftrag, projekt, ordner, zweig, prompt, signal, we
   delete werkzeugLogZaehler[auftrag.id];
   try {
     await log(auftrag.id, "info", `Programmiert mit ${name}${modell ? ` (${modell})` : ""} – Sperre der Codeschmiede (${sandboxArt()}), Schreiben nur im Arbeitsordner`);
-    erg = await werkzeugStarten({ werkzeug, prog: s.prog, ordner, lauf, prompt, modell, signal, minuten: 90, schuetzen: nurFuerMich, beiZeile: (z) => werkzeugLogZeile(auftrag.id, z) });
+    erg = await werkzeugStarten({ werkzeug, prog: s.prog, ordner, lauf, prompt, modell, signal, minuten: 90, schuetzen: nurFuerMich, beiZeile: (z) => werkzeugLogZeile(auftrag.id, z),
+      verbotenLesen: [(await poKonfigHolen()).basis || null, cfg.daten_ordner] });
   } finally { await rm(lauf, { recursive: true, force: true }).catch(() => {}); }
   const text = ohneGeheimnisse(String(erg.text || "")).trim();
   if (!text && istLimit(`${erg.fehler || ""}\n${String(erg.roh).slice(-1500)}`)) {
