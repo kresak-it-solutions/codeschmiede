@@ -28,13 +28,22 @@ alter table public.ws_ki_zustaendigkeit add constraint ws_ki_zust_werkzeug_check
   and public.ws_werkzeug_modell_ok(werkzeug, werkzeug_modell));
 
 -- ---------- 2. Stand je PC und Werkzeug ----------
+-- Soll-Version je Werkzeug legt der Server fest (B7), nicht der PC – gleiche Werte wie WERKZEUGE in desktop/dienst/lib/werkzeuge.mjs.
+create or replace function public.ws_werkzeug_soll_version(p_werkzeug text) returns text
+language sql immutable set search_path = public as $$
+  select case p_werkzeug when 'codex' then '0.166.0' when 'gemini-cli' then '0.64.0' when 'opencode' then '2.2.5' end
+$$;
+revoke execute on function public.ws_werkzeug_soll_version(text) from public, anon;
+-- Die 17 Prüfpunkte des Sperren-Tests (Schreiben, harter Link, Programmstarts, Lesen) – jede Kennung höchstens einmal (Sicherheitsprüfung B7)
 create or replace function public.ws_werkzeug_punkte_ok(p jsonb) returns boolean
 language sql immutable set search_path = public as $$
-  select p is null or (jsonb_typeof(p) = 'array' and jsonb_array_length(p) between 1 and 12 and not exists (
+  select p is null or (jsonb_typeof(p) = 'array' and jsonb_array_length(p) between 1 and 17
+    and (select count(distinct e ->> 'id') from jsonb_array_elements(p) e) = jsonb_array_length(p)
+    and not exists (
     select 1 from jsonb_array_elements(p) e
      where jsonb_typeof(e) <> 'object'
         or exists (select 1 from jsonb_object_keys(e) k where k not in ('id', 'ok'))
-        or coalesce(e ->> 'id', '') not in ('erlaubt', 'regeln', 'setup', 'nachbar', 'projektregeln', 'git', 'link', 'daten')
+        or coalesce(e ->> 'id', '') not in ('erlaubt', 'regeln', 'setup', 'nachbar', 'projektregeln', 'git', 'link', 'daten', 'hart', 'start_env', 'start_git', 'start_python', 'start_osascript', 'start_skript', 'lesen_ssh', 'lesen_zugang', 'lesen_projekte')
         or jsonb_typeof(e -> 'ok') is distinct from 'boolean'))
 $$;
 revoke execute on function public.ws_werkzeug_punkte_ok(jsonb) from public, anon;
@@ -75,7 +84,7 @@ begin
   if w.id is null then raise exception 'Unbekannter Werkstatt-PC'; end if;
   if p_werkzeug not in ('codex', 'gemini-cli', 'opencode') then raise exception 'Unbekanntes Werkzeug'; end if;
   if jsonb_typeof(v) <> 'object' or exists (select 1 from jsonb_object_keys(v) k where k not in
-     ('installiert', 'angemeldet', 'version', 'soll_version', 'sperrbar', 'sperre_grund', 'test', 'test_version', 'test_zeit', 'test_punkte', 'hinweis', 'aktion_erledigt')) then
+     ('installiert', 'angemeldet', 'version', 'sperrbar', 'sperre_grund', 'test', 'test_version', 'test_zeit', 'test_punkte', 'hinweis', 'aktion_erledigt')) then
     raise exception 'Ungültige Meldung'; end if;
   foreach b in array array['installiert', 'angemeldet', 'sperrbar', 'aktion_erledigt'] loop
     if v ? b and jsonb_typeof(v -> b) <> 'boolean' then raise exception 'Ungültige Meldung (%)', b; end if;
@@ -85,13 +94,15 @@ begin
   -- Der Admin-PC programmiert nie mit fremden Werkzeugen (kein Projekt-Code auf dem Admin-PC)
   if w.admin_pc and (coalesce((v ->> 'installiert')::boolean, false) or coalesce((v ->> 'sperrbar')::boolean, false) or v ->> 'test' = 'bestanden') then
     raise exception 'Der Admin-PC programmiert nie mit fremden Werkzeugen'; end if;
-  -- „bestanden“ nur für genau die installierte Version und nur, wenn jeder Punkt in Ordnung ist
+  -- „bestanden“ nur für genau die installierte Version = Soll-Version des Servers und nur, wenn alle 17 verschiedenen Punkte in Ordnung sind
   if v ->> 'test' = 'bestanden' and (v ->> 'test_version' is null or v ->> 'test_version' is distinct from v ->> 'version'
-     or v -> 'test_punkte' is null or jsonb_typeof(v -> 'test_punkte') <> 'array' or jsonb_array_length(v -> 'test_punkte') <> 8
+     or v ->> 'version' is distinct from public.ws_werkzeug_soll_version(p_werkzeug)
+     or v -> 'test_punkte' is null or jsonb_typeof(v -> 'test_punkte') <> 'array' or jsonb_array_length(v -> 'test_punkte') <> 17
+     or not public.ws_werkzeug_punkte_ok(v -> 'test_punkte')
      or exists (select 1 from jsonb_array_elements(v -> 'test_punkte') e where jsonb_typeof(e) <> 'object' or e -> 'ok' is distinct from 'true'::jsonb)) then
     raise exception 'Sperren-Test „bestanden“ passt nicht zur Version bzw. zu den Punkten'; end if;
   insert into public.ws_werkzeug_stand as s (pc_id, werkzeug, installiert, angemeldet, version, soll_version, sperrbar, sperre_grund, test, test_version, test_zeit, test_punkte, hinweis, geaendert)
-  values (p_pc, p_werkzeug, coalesce((v ->> 'installiert')::boolean, false), coalesce((v ->> 'angemeldet')::boolean, false), v ->> 'version', v ->> 'soll_version',
+  values (p_pc, p_werkzeug, coalesce((v ->> 'installiert')::boolean, false), coalesce((v ->> 'angemeldet')::boolean, false), v ->> 'version', public.ws_werkzeug_soll_version(p_werkzeug),
           coalesce((v ->> 'sperrbar')::boolean, false), nullif(left(v ->> 'sperre_grund', 200), ''), v ->> 'test', v ->> 'test_version',
           (v ->> 'test_zeit')::timestamptz, case when jsonb_typeof(v -> 'test_punkte') = 'array' then v -> 'test_punkte' end, hw, now())
   on conflict (pc_id, werkzeug) do update set installiert = excluded.installiert, angemeldet = excluded.angemeldet, version = excluded.version,
@@ -139,7 +150,7 @@ begin
   if p_werkzeug <> 'claude-code' and not exists (
     select 1 from public.ws_werkzeug_stand s join public.ws_werkstatt_pcs w on w.id = s.pc_id join public.ws_benutzer b on b.id = w.benutzer_id
      where s.werkzeug = p_werkzeug and not w.admin_pc and s.sperrbar and s.installiert and s.test = 'bestanden'
-       and s.test_version = s.version and s.version = s.soll_version and b.aktiv
+       and s.test_version = s.version and s.version = public.ws_werkzeug_soll_version(p_werkzeug) and b.aktiv
        and (b.rolle = 'admin' or exists (select 1 from public.ws_projekt_mitglieder pm where pm.projekt_id = p_projekt and pm.benutzer_id = w.benutzer_id and pm.rolle = 'entwickler')))
   then raise exception 'Speichern geht erst, wenn der Sperren-Test für dieses Werkzeug auf mindestens einem Entwickler-PC bestanden ist'; end if;
   insert into public.ws_ki_zustaendigkeit (projekt_id, aufgabe, reihe, weitergeben_ab, werkzeug, werkzeug_modell, geaendert, geaendert_von)

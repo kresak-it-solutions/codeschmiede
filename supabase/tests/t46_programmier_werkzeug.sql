@@ -7,7 +7,7 @@ set role authenticated;
 \set ADM 'select set_config(''request.jwt.claim.sub'',''00000000-0000-0000-0000-00000000000a'',false) \\g /dev/null'
 \set DEV 'select set_config(''request.jwt.claim.sub'',''00000000-0000-0000-0000-00000000000e'',false) \\g /dev/null'
 \set FREMD 'select set_config(''request.jwt.claim.sub'',''00000000-0000-0000-0000-00000000000f'',false) \\g /dev/null'
-\set OK8 '''[{"id":"erlaubt","ok":true},{"id":"regeln","ok":true},{"id":"setup","ok":true},{"id":"nachbar","ok":true},{"id":"projektregeln","ok":true},{"id":"git","ok":true},{"id":"link","ok":true},{"id":"daten","ok":true}]'''
+\set OK17 '''[{"id":"erlaubt","ok":true},{"id":"regeln","ok":true},{"id":"setup","ok":true},{"id":"nachbar","ok":true},{"id":"projektregeln","ok":true},{"id":"git","ok":true},{"id":"link","ok":true},{"id":"daten","ok":true},{"id":"hart","ok":true},{"id":"start_env","ok":true},{"id":"start_git","ok":true},{"id":"start_python","ok":true},{"id":"start_osascript","ok":true},{"id":"start_skript","ok":true},{"id":"lesen_ssh","ok":true},{"id":"lesen_zugang","ok":true},{"id":"lesen_projekte","ok":true}]'''
 :ADM
 insert into ws_einladungen(email,rolle,eingeladen_von,projekt_id) values ('dev@x.at','entwickler',auth.uid(),'trainer-to-go');
 insert into ws_werkstatt_pcs(id,benutzer_id,name,an,admin_pc) values ('00000000-0000-0000-0000-0000000000a1',auth.uid(),'PC-Admin',true,true);
@@ -35,15 +35,20 @@ select ws_werkzeug_setzen('trainer-to-go','opencode','gpt-5');
 
 \echo [5] Entwickler meldet für den eigenen PC: Codex installiert, angemeldet, Test bestanden -> OK
 :DEV
-select ws_werkzeug_melden('00000000-0000-0000-0000-0000000000d1','codex',('{"installiert":true,"angemeldet":true,"version":"0.166.0","soll_version":"0.166.0","sperrbar":true,"test":"bestanden","test_version":"0.166.0","test_zeit":"2026-11-02T12:00:00Z","test_punkte":'||:OK8||',"hinweis":"Sperren-Test bestanden"}')::jsonb) \g /dev/null
+select ws_werkzeug_melden('00000000-0000-0000-0000-0000000000d1','codex',('{"installiert":true,"angemeldet":true,"version":"0.166.0","sperrbar":true,"test":"bestanden","test_version":"0.166.0","test_zeit":"2026-11-02T12:00:00Z","test_punkte":'||:OK17||',"hinweis":"Sperren-Test bestanden"}')::jsonb) \g /dev/null
 select werkzeug, installiert, angemeldet, version, test from ws_werkzeug_stand;
 \echo [6] Meldung für einen fremden PC -> FEHLER
 select ws_werkzeug_melden('00000000-0000-0000-0000-0000000000a1','codex','{"installiert":false}');
-\echo [7] „bestanden“ mit anderer Version -> FEHLER; mit einem roten Punkt -> FEHLER; unbekannter Schlüssel -> FEHLER; Hinweis mit Pfad -> FEHLER
-select ws_werkzeug_melden('00000000-0000-0000-0000-0000000000d1','gemini-cli',('{"installiert":true,"version":"0.64.0","sperrbar":true,"test":"bestanden","test_version":"0.63.0","test_punkte":'||:OK8||'}')::jsonb);
-select ws_werkzeug_melden('00000000-0000-0000-0000-0000000000d1','gemini-cli','{"installiert":true,"version":"0.64.0","sperrbar":true,"test":"bestanden","test_version":"0.64.0","test_punkte":[{"id":"erlaubt","ok":true},{"id":"regeln","ok":false},{"id":"setup","ok":true},{"id":"nachbar","ok":true},{"id":"projektregeln","ok":true},{"id":"git","ok":true},{"id":"link","ok":true},{"id":"daten","ok":true}]}');
+\echo [7] „bestanden“ mit anderer Version -> FEHLER; mit einem roten Punkt -> FEHLER; mit doppelter Kennung -> FEHLER; unbekannter Schlüssel -> FEHLER; Hinweis mit Pfad -> FEHLER; Soll-Version vom PC -> FEHLER
+select ws_werkzeug_melden('00000000-0000-0000-0000-0000000000d1','gemini-cli',('{"installiert":true,"version":"0.64.0","sperrbar":true,"test":"bestanden","test_version":"0.63.0","test_punkte":'||:OK17||'}')::jsonb);
+select ws_werkzeug_melden('00000000-0000-0000-0000-0000000000d1','gemini-cli','{"installiert":true,"version":"0.64.0","sperrbar":true,"test":"bestanden","test_version":"0.64.0","test_punkte":[{"id":"erlaubt","ok":true},{"id":"regeln","ok":false},{"id":"setup","ok":true},{"id":"nachbar","ok":true},{"id":"projektregeln","ok":true},{"id":"git","ok":true},{"id":"link","ok":true},{"id":"daten","ok":true},{"id":"hart","ok":true},{"id":"start_env","ok":true},{"id":"start_git","ok":true},{"id":"start_python","ok":true},{"id":"start_osascript","ok":true},{"id":"start_skript","ok":true},{"id":"lesen_ssh","ok":true},{"id":"lesen_zugang","ok":true},{"id":"lesen_projekte","ok":true}]}');
+select ws_werkzeug_melden('00000000-0000-0000-0000-0000000000d1','gemini-cli','{"installiert":true,"version":"0.64.0","sperrbar":true,"test":"bestanden","test_version":"0.64.0","test_punkte":[{"id":"erlaubt","ok":true},{"id":"regeln","ok":true},{"id":"setup","ok":true},{"id":"nachbar","ok":true},{"id":"projektregeln","ok":true},{"id":"git","ok":true},{"id":"link","ok":true},{"id":"daten","ok":true},{"id":"hart","ok":true},{"id":"start_env","ok":true},{"id":"start_git","ok":true},{"id":"start_python","ok":true},{"id":"start_osascript","ok":true},{"id":"start_skript","ok":true},{"id":"lesen_ssh","ok":true},{"id":"lesen_zugang","ok":true},{"id":"regeln","ok":true}]}');
 select ws_werkzeug_melden('00000000-0000-0000-0000-0000000000d1','gemini-cli','{"auth_datei":"…"}');
 select ws_werkzeug_melden('00000000-0000-0000-0000-0000000000d1','gemini-cli','{"hinweis":"Fehler in /Users/gerhard/x"}');
+select ws_werkzeug_melden('00000000-0000-0000-0000-0000000000d1','gemini-cli','{"installiert":true,"version":"9.9.9","soll_version":"9.9.9"}');
+\echo [7b] „bestanden“ für eine Version, die nicht die Soll-Version des Servers ist -> FEHLER; Soll-Version steht vom Server in der Zeile -> codex | 0.166.0
+select ws_werkzeug_melden('00000000-0000-0000-0000-0000000000d1','opencode',('{"installiert":true,"version":"9.9.9","sperrbar":true,"test":"bestanden","test_version":"9.9.9","test_punkte":'||:OK17||'}')::jsonb);
+select werkzeug, soll_version from ws_werkzeug_stand where werkzeug = 'codex';
 \echo [8] Admin-PC meldet ein installiertes Werkzeug -> FEHLER
 :ADM
 select ws_werkzeug_melden('00000000-0000-0000-0000-0000000000a1','codex','{"installiert":true,"version":"0.166.0"}');
