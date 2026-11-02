@@ -1,8 +1,10 @@
 # Ein Arbeitsplatz für jede Art von Programm
 
 **Stand:** 2026-11-02 · **Wer:** Gerhard Kresak (Entscheidungen, Entwurf freigegeben 02.11.2026), Claude (Konzept, Umsetzung)
-**Entwurf:** `docs/entwurf-1.0-arbeitsplatz-alle-arten.html` · **Version:** vorläufig 0.15.0 (Stufe 1; 0.14.0 entsteht parallel, die endgültige Nummer wird beim Zusammenführen gesetzt)
+**Entwurf:** `docs/entwurf-1.0-arbeitsplatz-alle-arten.html` · **Version:** 0.15.0 (Stufe 1) · **0.17.0 (Stufen 2 und 3, freigegeben von Gerhard 02.11.2026, gebaut ohne weiteren Entwurf)**
 **Datenbank:** 0059 (`supabase/migrations/0059_arbeitsplatz.sql`, Test `supabase/tests/t46_arbeitsplatz.sql`; 0057 kommt aus 0.14.0, 0058 ist reserviert) – eingetragen in `supabase/einspielen.txt` nach der Sicherheitsprüfung (GRÜN 02.11.2026)
+**Datenbank Stufen 2/3:** 0060 (`supabase/migrations/0060_arbeitsplatz_stufe23.sql`, Test `supabase/tests/t47_arbeitsplatz_stufe23.sql`) – erst nach der Sicherheitsprüfung in `supabase/einspielen.txt`
+**Umgesetzt (Stufen 2/3):** `web/src/seiten/ArbeitsplatzZiele.jsx` (Fensterrahmen, Sandbox-Leiste mit Bildschirmfoto, .NET, Werkzeug-Konsole, Dokument-Vorschau, Handy-QR), `web/src/bausteine/qr.js`, `desktop/dienst/lib/bildschirmfoto.mjs` + `.ps1`, `lib/cloudLauf.mjs`, `lib/vorschauEinrichten.mjs`, Vorlagen `programm/vorschau/`, `werkzeug/beispiele/` + `lauf.yml`, `_dokument/dokument.yml` (Tests `desktop/dienst/test/stufe23.test.mjs`)
 **Umgesetzt (Stufe 1):** `web/src/seiten/Arbeitsplatz.jsx` (Baum, Punkte, Prüfweg, rechte Hälfte), `web/src/bausteine/arbeitsplatz.js` (reine Funktionen,
 Test `desktop/dienst/test/arbeitsplatz.test.mjs`), `web/src/daten/punkte.js`, `desktop/dienst/lib/codeLive.mjs` (Diff-Filter, Test `codeLive.test.mjs`),
 Einbau in `seiten/LiveVorschau.jsx` (`FeatureArbeitsplatz`), `seiten/Zentrale.jsx` (`AuftragsChat`, Status-Punkte), `bausteine/chat.jsx`, `ProjektArten.jsx`, `desktop/dienst/index.mjs`.
@@ -28,12 +30,12 @@ Was sich je Art ändert, ist nur der **Prüfweg** – also wie man das Feature a
 | Du willst | Empfohlene Technik | Vorschau rechts | Ziele |
 |---|---|---|---|
 | Web-App oder Webseite | React + Vite, Testseite auf Cloudflare | Live-Vorschau | web |
-| Handy-App | zuerst als PWA; für die Stores später Tauri Mobile oder Capacitor | Handy-Rahmen und QR-Code (QR in Stufe 3) | handy_pwa |
-| Windows- und Mac-Programm | **Tauri** (wie die Codeschmiede selbst) | Stufe 1: Platzhalter mit Sandbox-Knopf und Builds · Stufe 2: Oberfläche als Testseite und Sandbox mit Bildschirmfoto | windows, mac |
+| Handy-App | zuerst als PWA; für die Stores später Tauri Mobile oder Capacitor | Handy-Rahmen und QR-Code (seit 0.17.0) | handy_pwa |
+| Windows- und Mac-Programm | **Tauri** (wie die Codeschmiede selbst) | Oberfläche als Testseite im Fensterrahmen (Tauri-Funktionen nachgespielt) · Windows-Sandbox mit Bildschirmfoto an den Chat | windows, mac |
 | Alles zusammen | ein Code mit React + Vite, daraus Web, PWA und Tauri | Ziel-Umschalter rechts | web, handy_pwa, windows, mac |
-| Tief in Windows (Office, Geräte, Treiber, Altsysteme) | Sonderfall **.NET** (WinUI oder WPF) | Sandbox mit Bildschirmfotos (Stufe 3) | windows |
-| Werkzeug, Skript, Dienst | Node oder Python, Läufe in der Cloud | Testlauf-Konsole (Stufe 3; heute: Knopf „Testlauf“) | cloud_lauf |
-| Dokumente (Handbuch, PDF-Layouts) | Markdown oder HTML, daraus PDF | Seiten-Vorschau (Stufe 3) | pdf |
+| Tief in Windows (Office, Geräte, Treiber, Altsysteme) | Sonderfall **.NET** (WinUI oder WPF) | nur Stufe 2: letzter Bau, Sandbox, Bildschirmfotos aus dem Chat | windows |
+| Werkzeug, Skript, Dienst | Node oder Python, Läufe in der Cloud | Testlauf-Konsole (Befehl + Beispiel-Eingabe, Ausgabe an den Chat) | cloud_lauf |
+| Dokumente (Handbuch, PDF-Layouts) | Markdown oder HTML, daraus PDF | Seiten-Vorschau (PDF in der Cloud gebaut, „Zeigen & kommentieren“ je Seite) | pdf |
 
 Der Assistent „Neues Projekt“ zeigt diese Tabelle als Hilfe bei der Wahl der Art, mit **Mehrfachwahl der Ziele** und Tauri als Vorschlag für
 Windows/Mac. Die bisherige Art (`technik_art`: web · programm · handy · werkzeug) bleibt für Grundgerüst, Ampel und Anbindungen bestehen; die Ziele
@@ -65,16 +67,15 @@ Im Programm bleibt die Zentrale links als eigene Ansicht (Baum mit Status-Punkte
 
 ### Rechte Hälfte
 **Vorschau:** wie bisher die Live-Vorschau (Testseite, Gerät, „Zeigen & kommentieren“, Zweig-Warnung). Hat das Projekt mehrere Ziele, gibt es oben
-einen Ziel-Umschalter. Für Ziele, die erst in Stufe 2 oder 3 kommen (Windows, Mac, Cloud-Lauf, PDF), steht ein klarer Platzhalter „kommt in Stufe 2“
-bzw. „kommt in Stufe 3“ mit dem, was es heute schon gibt: „In Windows-Sandbox starten“, „Testlauf starten“, Builds bei GitHub.
+einen Ziel-Umschalter. Seit 0.17.0 hat jedes Ziel seine Vorschau (Abschnitt „Stufen 2 und 3“): Windows/Mac mit Tauri im Fensterrahmen plus Sandbox,
+.NET nur Stufe 2, Cloud-Lauf als Werkzeug-Konsole, PDF als Seiten-Vorschau, Handy mit QR-Code.
 
 **Code live:** zeigt während eines laufenden Auftrags, welche Dateien die Werkstatt geändert hat – als Diff mit hinzugefügten und entfernten Zeilen –
 und darunter die **Schritte** des Laufs (das bestehende Live-Log `ws_live_log`). Nur ansehen; eigene Änderungen gehen wie bisher über den Code-Editor
 als Auftrag (Link „Im Code-Editor ändern“). Ohne laufenden Auftrag: Diff des letzten Auftrags des Features (Zweig gegen main), sofern es den Zweig gibt.
 
-**Verlauf:** Aufträge und Live-Schaltungen des Features mit Zeit (Auftrag angelegt, Stand, live seit). „Auf diesen Stand zurück …“ gibt es im
-Arbeitsplatz **nicht**: Der einzige sichere Weg zurück ist das Zurücksetzen der ganzen App durch den Admin unter „Zu erledigen › Live“ (nur Versionen,
-die zur Datenbank passen). Ein Zurück je Feature ist offen (siehe Grenzen).
+**Verlauf:** Aufträge und Live-Schaltungen des Features mit Zeit (Auftrag angelegt, Stand, live seit). Seit 0.17.0 steht an jeder Live-Schaltung, nach der noch weitere zusammengeführte Aufträge kamen, **„Auf diesen Stand zurück …“** – das gibt einen Auftrag
+„Feature auf Stand #n zurücksetzen“ (siehe Stufen 2 und 3). Die ganze App setzt weiterhin nur der Admin unter „Zu erledigen › Live“ zurück.
 
 ### Ziele und Prüfweg
 - Projekt: Liste `ziele` aus web, handy_pwa, windows, mac, cloud_lauf, pdf (1–6 Einträge, vorbelegt aus der Art). Ändern nur der Admin (wie die Art).
@@ -149,9 +150,97 @@ ein Entwickler-PC arbeitet – also **muss der Diff über die Datenbank** gehen.
 ## Stufenplan
 | Stufe | Inhalt | Stand |
 |---|---|---|
-| **1 – Rahmen für alle Arten** | Offene Punkte am Feature mit Status, „Weiterarbeiten“/„Fragen“, Status-Punkt im Baum, rechts Vorschau / Code live / Verlauf, Ziele und Prüfweg, Technik-Empfehlung im Assistenten | **diese Version (0.15.0 vorläufig)** |
-| 2 – Windows/Mac mit Tauri | Oberfläche des Programms als **Testseite** (gleicher React-Code; Tauri-Funktionen wie Dateien öffnen werden nachgespielt), dazu **Sandbox-Start** mit **Bildschirmfoto an den Chat** | offen |
-| 3 – Werkzeuge, Dokumente, Handy, .NET | **Werkzeug-Konsole** (Cloud-Lauf mit Beispiel-Eingaben, Ausgabe an den Chat), **Dokument-Vorschau** (PDF-Seiten), **Handy-QR-Code** (Testseite am echten Handy), **.NET-Sonderfall** (letzter Bau und Bildschirmfotos aus der Sandbox) | offen |
+| **1 – Rahmen für alle Arten** | Offene Punkte am Feature mit Status, „Weiterarbeiten“/„Fragen“, Status-Punkt im Baum, rechts Vorschau / Code live / Verlauf, Ziele und Prüfweg, Technik-Empfehlung im Assistenten | erledigt in 0.15.0 |
+| 2 – Windows/Mac mit Tauri | Oberfläche des Programms als **Testseite** (gleicher React-Code; Tauri-Funktionen wie Dateien öffnen werden nachgespielt), dazu **Sandbox-Start** mit **Bildschirmfoto an den Chat** | **erledigt in 0.17.0** |
+| 3 – Werkzeuge, Dokumente, Handy, .NET | **Werkzeug-Konsole** (Cloud-Lauf mit Beispiel-Eingaben, Ausgabe an den Chat), **Dokument-Vorschau** (PDF-Seiten), **Handy-QR-Code** (Testseite am echten Handy), **.NET-Sonderfall** (letzter Bau und Bildschirmfotos aus der Sandbox) | **erledigt in 0.17.0** |
+| aus Stufe 1 offen | „Auf diesen Stand zurück“ je Feature; Ziele steuern Ampel und Abläufe | **erledigt in 0.17.0** |
+
+## Stufen 2 und 3 (0.17.0, Datenbank 0060)
+Freigegeben von Gerhard am 02.11.2026 („alles freigegeben“), gebaut nach dem Entwurf 1.0 ohne weiteren Entwurf. Die Sicherheitsprüfung danach bleibt Pflicht.
+
+### Windows/Mac mit Tauri – Oberfläche als Testseite (Stufe 1 des Ziels)
+- Die Vorlage „Programm“ bringt `vorschau/` mit: `bauen.mjs` baut aus `ui/` eine Web-Fassung nach `vorschau-dist/` (nur Node-Bordmittel, keine Verknüpfungen, höchstens 2000 Dateien/50 MB),
+  setzt drei Skripte direkt nach `<head>` in jede HTML-Seite und schreibt `version.json` („Neuer Stand da“) und `_headers` (CSP nur eigene Skripte, `noindex`).
+- `vorschau/tauri-nachbildung.js` ersetzt `window.__TAURI__` (invoke, Dialog, Dateien, Fenster, Benachrichtigung, Ereignisse, App, Pfade) durch eine Nachbildung mit den Beispieldaten aus
+  `vorschau/beispiele.js`. Unten rechts steht immer **„Testseite · Programm-Funktionen nachgespielt“** und was zuletzt nachgespielt wurde. „Dateien“ leben nur im Speicher der Seite, nichts wird
+  gelesen oder geschrieben. Ist das echte Tauri da (`__TAURI_INTERNALS__`), macht die Datei nichts. Unbekannte Befehle lehnt sie ab („wird nicht nachgespielt – Beispiel in vorschau/beispiele.js ergänzen“).
+- Vite/React-Oberflächen („Alles zusammen“): `vorschau/vite-alias.mjs` lenkt bei `VITE_CS_VORSCHAU=1` die Pakete `@tauri-apps/api/*` und `@tauri-apps/plugin-dialog|fs|notification` auf
+  `vorschau/tauri-api.mjs` (gleiche Nachbildung als Modul). Cloudflare setzt `VITE_CS_VORSCHAU=1` für Programme.
+- `vorschau/vorschau-helfer.js`: „Zeigen & kommentieren“ und „links folgt der Chat“ wie bei Web-Apps – nur auf `*.pages.dev`, nur eingebettet, nur gegenüber `https://codeschmiede.pages.dev`;
+  gesendet werden nur Baustein-Name (`data-cs` oder Element-Kennung), Seite (Pfad ohne Kennungen) und Element-Pfad, **nie sichtbarer Text**.
+- Cloudflare Pages: Build-Befehl `node vorschau/bauen.mjs`, Ausgabe `vorschau-dist` (Testseite jetzt auch für Tauri-Programme, **nie für .NET**); Kachel „Testseite (Cloudflare)“ unter „Anbindungen“.
+- **Bestehende Projekte:** „Testseite für die Programm-Oberfläche einrichten“ (unter „Anbindungen“ und im Arbeitsplatz, wenn die Testseite fehlt) ist die Aktion `vorschau_einrichten`: Die Werkstatt
+  des Admins legt einen **Hand-Auftrag** (`ws_code_hand_auftrag`) mit den Dateien der Vorlage an – nur Dateien, die auf main **fehlen** (vorhandene werden nie überschrieben), dazu höchstens eine
+  Zeile `vorschau-dist/` in `.gitignore` und eine Zeile im Änderungsprotokoll. Zweig, Prüfungen, Sicherheitsprüfung und Freigabe wie jeder Auftrag.
+- Im Arbeitsplatz zeigt das Ziel Windows/Mac **„Stufe 1: Oberfläche als Testseite“** in einem Fensterrahmen (Titelleiste mit Programm- und Feature-Name) und darunter **„Stufe 2: echtes Programm“**.
+
+### Windows-Sandbox mit Bildschirmfoto (Stufe 2 des Ziels)
+- Die Sandbox geht jetzt auch für Projekte, deren Art nicht „Programm“ ist, die aber **Ziel Windows** haben (Datenbank 0060, `ws_projekt_windows`). Gebaut wird wie bisher in GitHub
+  (`programm.yml`, Artefakt `installation-windows`); die Werkstatt auf dem PC des Admins lädt die eine `.exe` und startet nur `WindowsSandbox.exe` – die Installation läuft nur darin.
+- **„Bildschirmfoto an den Chat“** (Aktion `bildschirmfoto`, Ziel-PC = eigener PC): Der Dienst startet die eingebaute Windows PowerShell (`%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe`)
+  **ohne Shell** mit fester Argument-Liste `-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File <lib/bildschirmfoto.ps1> -Ziel <Pfad>` und minimaler Umgebung. Das feste Skript sucht
+  **genau ein** sichtbares Fenster mit dem Titel „Windows Sandbox“ bzw. „Windows-Sandbox“, das zu einem Programm `WindowsSandbox*` gehört, und zeichnet **nur dieses Fenster** mit `PrintWindow`
+  (kein Foto vom Bildschirm – darüberliegende Fenster sind nicht drauf). Minimiert, mehrere Fenster oder leeres Bild → klare Meldung, kein Foto.
+- Das PNG wird geprüft (Signatur, IHDR, 1–10000 Pixel, ≤ 10 MB, echte Datei ohne Verknüpfung), im **eigenen privaten Chat-Speicher** `ws-chat` abgelegt (`<ich>/<projekt>/<zufall>.png`, Regel 0050)
+  und mit `ws_bildschirmfoto_melden` gemeldet; die lokale Datei wird immer gelöscht.
+- **Nichts geht automatisch weg:** Die Oberfläche zeigt das Foto zuerst in einem Dialog mit dem Hinweis auf persönliche Daten. Erst **„An den Chat senden“** legt die Chat-Nachricht mit dem Foto als
+  Anhang an (Anhang-Weg 0050, Text „Bildschirmfoto aus der Windows-Sandbox zu Feature …“) und verknüpft sie (`ws_bildschirmfoto_gesendet`: nur genau dieser Anhang, nur einmal). „Verwerfen“ löscht die Datei.
+- **macOS/Linux:** keine Sandbox – die Knöpfe sind ausgeblendet, es steht „Windows-Sandbox und Bildschirmfoto nur unter Windows“ (Plattform aus „Dieser PC“).
+
+### Werkzeug-Konsole (Ziel Cloud-Lauf)
+- Je Feature wählt der Prüfweg Typ „befehl“ (z. B. „zaehlen klein.csv“) Befehl und Beispiel-Eingabe vor. Die Befehle stehen in `beispiele/befehle.json` (`{ "befehle": { "<name>": "<Beschreibung>" } }`),
+  Beispiel-Eingaben sind Dateien direkt in `beispiele/` (nur ausgedachte Daten). Die Oberfläche liest beides über den Code-Weg (Abgleich-Klon, nur lesen).
+- **„Testlauf in der Cloud“** (Aktion `testlauf` mit Eingaben, nur Admin): feste Form `{ befehl, eingabe }` – Befehl `^[a-z][a-z0-9-]{0,39}$`, Eingabe ein Dateiname ohne Ordner und ohne „..“
+  (Datenbank, Dienst und Ablauf prüfen dieselben Muster). Der Dienst startet `gh workflow run lauf.yml --ref <zweig> -f befehl=… -f eingabe=…` (Argument-Liste). **Nie lokal.**
+- `lauf.yml` (Vorlage „Werkzeug“): Eingaben gehen **nur als Umgebungsvariablen** in die Schritte (nie `${{ }}` in einem Skript), werden dort noch einmal gegen die Muster, die Liste in
+  `beispiele/befehle.json` und „echte Datei in beispiele/, keine Verknüpfung“ geprüft und als einzelne Argumente übergeben: `node src/index.mjs "$CS_BEFEHL" "beispiele/$CS_EINGABE"`.
+  Ohne Eingaben läuft der Standardlauf wie bisher. Die Ausgabe landet in `ausgabe/konsole.txt` (höchstens 1 MB), alles in `ausgabe/` als Artefakt „ergebnis“.
+- Der Dienst wartet höchstens 14 Minuten (meldet alle 15 s „lebt“, `ws_projekt_aktion_lebt`), lädt das Artefakt (≤ 60 MB, Größe vorher geprüft), bereitet die Ausgabe auf (Geheimnisse maskiert,
+  Steuer- und Farbcodes entfernt, höchstens 20.000 Zeichen mit Anfang und Ende) und meldet bis zu 30 Ergebnisdateien (Textdateien mit Inhalt bis 16.000 Zeichen, gesamt 64.000; Geheimnis-Dateien ohne Inhalt,
+  Punkt-Dateien gar nicht, Verknüpfungen nie) über `ws_aktion_ergebnis_melden` (streng geprüfte Form).
+- Anzeige als Konsole, Ergebnisdateien zum Aufklappen, **„Ausgabe an den Chat“** (Konzept-Chat, als Daten gekennzeichnet, höchstens 7.000 Zeichen).
+
+### Dokument-Vorschau (Ziel PDF)
+- Ablauf `dokument.yml` (Vorlage `_dokument`; für bestehende Projekte über **„Seiten-Vorschau einrichten“**, gleicher Hand-Auftrag wie oben): baut aus dem Zweig mit `npm run pdf` die Datei
+  `ausgabe/dokument.pdf` und legt die Seiten mit `pdftoppm` als PNG ab (höchstens 60, längste Seite 1000 Pixel), Artefakte „dokument-seiten“ und „dokument“.
+- **„Dokument bauen“** (Aktion `dokument`, nur Admin): Der Dienst startet den Ablauf, wartet, lädt die Seitenbilder, prüft jede (Name `seite-NNN.png`, PNG-Kopf, ≤ 3 MB, ≤ 4000×6000) und legt sie im
+  **privaten Speicher `ws-vorschau`** ab (`<ich>/<projekt>/<aktion>/seite-NNN.png`; hochladen nur zur laufenden Dokument-Aktion der eigenen Werkstatt, lesen nur Admins); die zwei neuesten Läufe je Projekt
+  bleiben, ältere räumt der Dienst weg. **Kein PDF wird auf einem PC der Codeschmiede geöffnet oder gerendert** – angezeigt werden nur die geprüften Bilder (kein pdf.js nötig).
+- Anzeige: Seite groß, Vorschaubilder, Seitenwahl; Start auf der Seite aus dem Prüfweg „kapitel“ („Kapitel 3 · Seite 12“ → Seite 12).
+- **„Zeigen & kommentieren“ je Seite:** Klick auf eine Stelle der Seite → Baustein „Seite 12“ mit Stelle in Prozent (`dokument > seite-12 > x40-y25`) → links im Chat „Als Auftrag“ wie bei Web-Apps.
+
+### Handy: QR-Code
+- Im Ziel „Handy (PWA)“ öffnet **„QR-Code: am echten Handy öffnen“** einen QR-Code der Testseite (Adresse + gemerkte Seite). Er wird **im Programm** erzeugt (`web/src/bausteine/qr.js`, eigene kleine
+  Umsetzung nach ISO/IEC 18004, Byte-Modus, Fehlerkorrektur M, ohne Paket und ohne fremden Dienst; gegen einen unabhängigen Leser getestet). Bei Zweig-Ständen steht „nicht anmelden“ dabei.
+
+### .NET-Sonderfall
+- Technik je Projekt: `ws_projekte.programm_technik` = Tauri (Standard, leer) oder .NET (`ws_projekt_programm_technik_setzen`, nur Admin; der Assistent übernimmt es aus der Empfehlung, sonst
+  „Anbindungen“ › „Art, Ziele und Datenbank ändern“).
+- Ziel Windows mit .NET zeigt **nur Stufe 2**: letzter Bau aus `programm.yml` (Stand aus der Ampel, Link zur Setup-Datei bei GitHub, Bau der letzten Sandbox), Sandbox-Knopf mit Bildschirmfoto und die
+  **letzten Bildschirmfotos aus dem Chat des Features** (nur bestätigte, je Feature, höchstens 6). Ziel Mac mit .NET: Hinweis, dass es kein Mac-Programm gibt. Keine Testseite.
+
+### Auf diesen Stand zurück (je Feature)
+- Im Verlauf an jeder Live-Schaltung, nach der weitere zusammengeführte Aufträge (Stand feature/wissen/erledigt mit PR) dieses Features kamen. Nach Bestätigung entsteht ein normaler Auftrag
+  „Feature auf Stand #n zurücksetzen“ (Recht „Aufträge“ im Bereich): Die Werkstatt nimmt die späteren Aufträge (neueste zuerst, mit PR-Nummer und Live-Stand, als Daten gekennzeichnet) mit `git revert`
+  als neue Revert-Commits auf **ihrem Zweig** zurück – **nie direkt auf main**, kein Force-Push; bei fremden Commits, Konflikten oder Datenbank-Dateien Rückfrage. Prüfung, Freigabe und Live wie jeder
+  Auftrag. Geht nur, wenn zu dem Feature kein Auftrag mehr offen ist.
+
+### Ziele steuern Ampel und Abläufe
+- Ampel (`ampelBedarf`): Build bei Art Programm oder Ziel Windows; Signatur nur Tauri; Sandbox bei Ziel Windows; Testlauf bei Art Werkzeug oder Ziel Cloud-Lauf; Lampe **„Seiten-Vorschau“** bei Ziel PDF;
+  Testseite bei Web, Handy und Tauri-Programmen (nie .NET).
+- Abläufe (Datenbank 0060): Sandbox/Bildschirmfoto nur mit Ziel Windows, Testlauf nur mit Art Werkzeug oder Ziel Cloud-Lauf, Dokument nur mit Ziel PDF, Testseite nur für Web/Handy/Tauri.
+
+### Datenmodell (Datenbank 0060)
+| Was | Wo | Regeln |
+|---|---|---|
+| Technik Windows/Mac | `ws_projekte.programm_technik` (tauri/dotnet) | ändern nur `ws_projekt_programm_technik_setzen` (Admin, Protokoll), Spalte nicht direkt änderbar |
+| Neue Aktionen | `ws_projekt_aktionen.art` + `bildschirmfoto`, `dokument`, `vorschau_einrichten`; Spalten `feature_id`, `eingaben`, `ergebnis` (≤ 256 KB), `chat_id` | anfordern nur Admin (`ws_projekt_aktion_anfordern` mit `p_eingaben`, `p_feature`); Eingaben nur feste Form (`ws_aktion_eingaben_ok`, auch als Tabellen-Check); Feature nur aus dem Projekt; höchstens 200 Aktionen am Tag je Projekt; lesen nur Admin |
+| Nehmen | `ws_projekt_aktion_nehmen(p_pc, p_arten)` | die Werkstatt nennt die Arten, die sie kann; ältere Dienste (ohne Liste) bekommen keine neuen Arten |
+| Lange Läufe | `ws_projekt_aktion_lebt` | nur die haltende Werkstatt, nur Testlauf/Dokument, höchstens 1 Stunde |
+| Bildschirmfoto | `ws_bildschirmfoto_melden`, `ws_bildschirmfoto_gesendet` | melden nur der Ziel-PC, Bild muss im eigenen Ordner von `ws-chat` liegen; in den Chat nur die anfordernde Person, nur mit genau diesem Anhang, nur einmal |
+| Ergebnis | `ws_aktion_ergebnis_melden` + `ws_aktion_ergebnis_ok` | nur die haltende Werkstatt; Testlauf: Ausgabe ≤ 20.000 Zeichen, ≤ 30 Dateien mit sicheren Namen; Dokument: ≤ 60 Seiten, Pfad genau `<ich>/<projekt>/<aktion>/seite-NNN.png` und im Speicher vorhanden |
+| Seitenbilder | Speicher `ws-vorschau` (privat, nur PNG, ≤ 3 MB) | hochladen nur Admin zur laufenden Dokument-Aktion der eigenen Werkstatt, lesen nur Admins, löschen nur eigene |
+| Ampel | `ws_anbindungen_ok` + Lampe `dokument` | wie bisher |
 
 ## Umsetzung – Abweichungen und Ergänzungen zum Entwurf
 - **Enter = „Fragen“**: Im Entwurf ist „Weiterarbeiten“ der Hauptknopf. Gebaut ist „Fragen“ als Hauptknopf (Enter), „Weiterarbeiten“ daneben –
@@ -160,8 +249,8 @@ ein Entwickler-PC arbeitet – also **muss der Diff über die Datenbank** gehen.
 - **Baum links im Arbeitsplatz** nur auf sehr breiten Bildschirmen (ab 1536 px); sonst bleibt „Zentrale“ oben als Rückweg. Der Status-Punkt steht auch auf den Feature-Karten der Zentrale.
 - **Vierter Punkt-Zustand „grau“** (noch nichts offen und nicht live) – der Entwurf kennt nur blau/orange/grün.
 - **„Punkt hinzufügen“** im Arbeitsplatz (nur Titel) als Schnellweg; alles Weitere (Beschreibung, Anhänge, Zuständig) wie bisher unter „Aufgaben“.
-- **„Auf diesen Stand zurück …“** im Verlauf **weggelassen**: Es gibt keinen sicheren Weg je Feature, nur das Zurücksetzen der ganzen App (Admin, „Zu erledigen › Live“). Hinweis steht im Verlauf.
-- **Platzhalter statt Mock-Vorschau** für Windows/Mac/Cloud-Lauf/PDF (Thermax-, Waage-, Werkzeug-, Dokument-Beispiele des Entwurfs sind Stufe 2/3). Sandbox- und Testlauf-Knopf gehen nur bei der passenden Art (Programm bzw. Werkzeug), wie unter „Anbindungen“.
+- **„Auf diesen Stand zurück …“** war in Stufe 1 weggelassen; seit 0.17.0 als Auftrag mit Revert-Commits über die Werkstatt (nie direkt auf main).
+- Stufe 1 hatte Platzhalter für Windows/Mac/Cloud-Lauf/PDF; seit 0.17.0 echte Vorschauen. **Abweichungen 0.17.0:** PDF-Seiten werden als **Bilder** gezeigt (in der Cloud gerendert) statt mit pdf.js – kein PDF-Leser im Programm; das Bildschirmfoto geht in den **Konzept-Chat** mit Bezug zum Feature (dort liegt der Anhang-Weg 0050), nicht in den Auftrags-Chat; die Ziel-Knöpfe zeigen keine Stufennummer mehr; Testlauf-Konsole, Dokument-Vorschau und Bildschirmfotos sieht nur der Admin (Aktionen sind Admin-Sache).
 - Der **Diff des letzten Auftrags** wird beim Öffnen von „Code live“ automatisch geholt (eine Anfrage, höchstens 6 je Minute) und braucht eine eingeschaltete Werkstatt.
 
 ## So arbeitest du im Arbeitsplatz (Handbuch)
@@ -183,6 +272,17 @@ ein Entwickler-PC arbeitet – also **muss der Diff über die Datenbank** gehen.
      die Änderungen des letzten Auftrags gegenüber main. Nur ansehen – eigene Änderungen über „Im Code-Editor ändern“. Geheimnis-Dateien sind ausgeblendet.
    - **Verlauf** – Aufträge und Live-Schaltungen dieses Features mit Zeit.
 6. **Ziele des Projekts** stellt der Admin beim Anlegen (Assistent, Schritt „Art“ mit Technik-Empfehlung) oder unter „Anbindungen“ › „Art, Ziele und Datenbank ändern“ ein.
+   Bei Programmen wählst du dort auch die Technik: **Tauri** (Standard) oder **.NET** (Sonderfall).
+7. **Windows/Mac (Tauri):** Rechts siehst du oben die Oberfläche im Fensterrahmen – Dateien öffnen, Befehle und Meldungen werden nachgespielt (Hinweis unten rechts), „Zeigen & kommentieren“ geht wie bei Web-Apps.
+   Fehlt die Testseite, klickt der Admin „Testseite für die Programm-Oberfläche einrichten“ (Auftrag mit Freigabe) und danach unter „Anbindungen“ „Testseite einrichten“.
+   Darunter **„In Windows-Sandbox starten“** (echtes Programm, Wegwerf-Umgebung) und **„Bildschirmfoto an den Chat“**: Du siehst das Foto zuerst, prüfst es auf persönliche Daten und schickst es erst dann
+   mit „An den Chat senden“ (oder „Verwerfen“). Am Mac gibt es diese Knöpfe nicht („nur unter Windows“).
+8. **.NET:** nur der letzte Bau (Link zur Setup-Datei), die Sandbox und die bestätigten Bildschirmfotos dieses Features.
+9. **Cloud-Lauf (Werkzeug-Konsole):** Befehl und Beispiel-Eingabe wählen (aus `beispiele/`), „Testlauf in der Cloud“ – nach ein paar Minuten steht die Ausgabe in der Konsole, die Ergebnisdateien darunter.
+   „Ausgabe an den Chat“ schickt sie (gekürzt) in den Chat. Beispiel-Eingaben enthalten nur ausgedachte Daten.
+10. **PDF (Seiten-Vorschau):** „Dokument bauen“ – GitHub baut das PDF aus dem Zweig, du blätterst durch die Seiten. Mit „Zeigen & kommentieren“ auf eine Stelle der Seite klicken und links schreiben, was sich ändern soll („Als Auftrag“).
+11. **Handy:** „QR-Code: am echten Handy öffnen“ und mit der Kamera scannen. Bei Zweig-Ständen am Handy nicht anmelden.
+12. **Auf diesen Stand zurück:** im Verlauf an einer Live-Schaltung. Daraus wird ein Auftrag – die Werkstatt nimmt die späteren Änderungen an diesem Feature mit Revert-Commits zurück, Freigabe wie immer.
 
 ## Bekannte Grenzen
 - Code live zeigt den Stand höchstens alle 5 Sekunden, nicht jeden Tastendruck; sehr große Änderungen sind gekürzt. Er braucht eine laufende Werkstatt.
@@ -198,6 +298,15 @@ ein Entwickler-PC arbeitet – also **muss der Diff über die Datenbank** gehen.
   umbenannt wird (sie ist nicht im Startstand), ein stark umgeschriebener, umformatierter oder zerstückelter Inhalt, und Inhalte, die nur durch Zeilenende-Umwandlung
   (autocrlf) abweichen (Blob-Kennung). Dort greift nur noch die Maskierung bekannter Schlüssel-Muster.
 - Die Maskierung erkennt bekannte Schlüssel-Muster; ein Geheimnis ohne erkennbares Muster in einer normalen Code-Datei würde angezeigt (wie im Code-Editor). Geheimnisse gehören nie in den Code.
-- Kein „Zurück auf diesen Stand“ je Feature (nur das Zurücksetzen der ganzen App durch den Admin).
-- Ziele steuern in Stufe 1 nur Anzeige und Umschalter; Grundgerüst, Ampel und Abläufe richten sich weiter nach der Art.
+- „Auf diesen Stand zurück“ je Feature ist ein Auftrag an die KI-Werkstatt: Haben spätere Aufträge anderer Features dieselben Stellen geändert, kann es Konflikte geben – dann fragt die Werkstatt nach. Datenbank-Änderungen werden nicht automatisch zurückgenommen.
+- Seit 0.17.0 steuern die Ziele Ampel und Abläufe; das **Grundgerüst** richtet sich weiter nach der Art (ein Web-Projekt mit Ziel Windows braucht für die Sandbox selbst einen Ablauf `programm.yml` mit Artefakt `installation-windows`).
+- **Bildschirmfoto:** nur unter Windows, nur das Fenster „Windows Sandbox“/„Windows-Sandbox“ eines Programms `WindowsSandbox*`. **Nicht auf einem echten Windows-PC getestet** (hier nur Linux): Auf Windows 11 24H2
+  heißt das Programm `WindowsSandboxRemoteSession`, früher `WindowsSandboxClient`; passt der Titel nicht, kommt „Kein Fenster“, nie ein anderes Fenster. Eine Gruppenrichtlinie, die PowerShell-Skripte verbietet,
+  verhindert das Foto. `PrintWindow` kann je nach Grafik ein leeres Bild liefern – dann „leeres Bild“ statt Foto. Was in der Sandbox zu sehen ist, entscheidet das Programm darin; darum die Prüfung vor dem Senden.
+- **Testseite von Programmen:** zeigt die Oberfläche, nicht die Rust-/Geräte-Logik; Befehle ohne Beispiel in `vorschau/beispiele.js` melden „nicht nachgespielt“. Wie bei allen neuen Projekten muss die Adresse
+  der Testseite in `web/public/_headers` (frame-src) der Codeschmiede stehen, sonst bleibt die eingebettete Vorschau leer (Regel seit Befund S3; die Werkstatt darf diese Datei nicht ändern).
+- **Werkzeug-Konsole und Dokument:** brauchen die eingeschaltete Werkstatt des Admins; ein Lauf, der länger als 14 Minuten braucht, endet mit „bei GitHub ansehen“. Höchstens 60 Seiten; das PDF selbst lädt die
+  Codeschmiede nicht herunter. Die Ausgabe ist gekürzt und maskiert nur bekannte Schlüssel-Muster – Beispiel-Eingaben dürfen keine echten Personendaten enthalten.
+- Testlauf-Konsole, Dokument-Vorschau, Sandbox und Bildschirmfotos sieht und startet nur der Admin (Aktionen sind Admin-Sache, wie bisher).
+- Ein Dienst, der vor dem Ende eines langen Laufs beendet wird, lässt die Aktion stehen; nach 15 Minuten nimmt eine andere Werkstatt des Admins sie neu (startet den Lauf noch einmal).
 - Der Punkt-Status im Baum zählt nur Aufgaben mit Bezug zum Feature (Aufgaben an einer Gruppe zählen nicht).
