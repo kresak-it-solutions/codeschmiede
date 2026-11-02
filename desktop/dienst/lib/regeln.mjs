@@ -172,7 +172,16 @@ export function steuerEntschaerfen(t) {
 /** Zeichen der zufälligen Grenze (wie der Kachel-Chat): 12 Zeichen a–z0–9. */
 export function regelGrenze(zufall = (n) => globalThis.crypto.getRandomValues(new Uint8Array(n))) {
   const z = "abcdefghijklmnopqrstuvwxyz0123456789";
-  return `REGELN-${[...zufall(12)].map((b) => z[b % z.length]).join("")}`;
+  // Ohne Modulo-Verzerrung: nur Bytes < 252 (= 7 × 36) verwenden, den Rest verwerfen (CodeQL).
+  const grenzeOhneVerzerrung = Math.floor(256 / z.length) * z.length;
+  let aus = "";
+  for (let runde = 0; aus.length < 12; runde++) {
+    if (runde > 64) throw new Error("Zufallsquelle liefert keine brauchbaren Werte");
+    for (const b of zufall(12)) {
+      if (b < grenzeOhneVerzerrung && aus.length < 12) aus += z[b % z.length];
+    }
+  }
+  return `REGELN-${aus}`;
 }
 export const REGELN_MAX_CHAT = 6000;
 /** Steht fest am ENDE jedes Prüf-Prompts (nach Rolle und Daten), Nachprüfung 0.13.1 B1. */
