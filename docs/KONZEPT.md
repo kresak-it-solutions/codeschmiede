@@ -174,6 +174,37 @@ Supabase-CLI auf einem PC (nicht nötig, wenn Schritt 3 grün ist): `supabase lo
 `supabase functions deploy push-senden --project-ref mvzlbpijdvsjnemubofy --no-verify-jwt` und Secrets mit
 `supabase secrets set --project-ref mvzlbpijdvsjnemubofy VAPID_PUBLIC_KEY=… VAPID_PRIVATE_KEY=…` (Schlüssel z. B. mit `npx web-push generate-vapid-keys`).
 
+## Vorhaben mit Stufen (Konzept-Entwurf 1.2, 02.11.2026 – Befund L7, wartet auf Freigabe)
+**Warum:** Ein Auftrag = eine Gruppe = ein Zweig = ein PR. Große Umbauten wie Design 2.0 (Konzept → Prüfungen → Entscheidungen → 12 Stufen
+mit je eigenem PR quer durch 30+ Gruppen) passen da nicht hinein und liefen deshalb im Claude-Chat statt in der Codeschmiede
+(`docs/BEFUNDE-2026-11-01.md` Abschnitt 7). Klickbarer Entwurf: `docs/entwurf-1.2-vorhaben.html`.
+
+**Grundsatz (schlank):** Ein **Vorhaben** ist eine Klammer um mehrere **normale Aufträge** („Stufen“). Jede Stufe läuft den bekannten Weg
+(Werkstatt → Freigabe → Sicherheitsprüfung → Zusammenführen → Feature-Prüfung → live) mit eigenem Zweig und eigenem PR. Neu ist nur:
+die Reihenfolge, die Übergabe zwischen den Stufen und eine gemeinsame Ansicht. Kein zweiter Auftragsweg, keine neuen Rechte.
+
+| Teil | Entscheidung (Vorschlag) |
+|---|---|
+| Anlegen | Im Konzept-Chat: die KI schlägt mit `VORHABEN` Titel, Ziel, Träger-Gruppe und 2–12 Stufen vor (je Titel, Was, betroffene Gruppen, Risikostufe). Karte „Vorhaben freigeben“ (Admin oder Recht „freigeben“ in der Träger-Gruppe) legt es an – wie heute „Konzept freigeben & bauen“. |
+| Reihenfolge | **Nacheinander auf main:** Stufe n+1 startet erst, wenn Stufe n **live in main** ist, und zweigt vom neuesten main ab. Keine gestapelten PR-Zweige (kein Rebase-Stau, die Prüfungen sehen immer den echten Stand). Das ist zugleich die Warteschlange fürs Zusammenführen (L4) innerhalb eines Vorhabens. |
+| Gruppen | Jede Stufe hat **eine Träger-Gruppe** (dort Auftragsrecht nötig, dort zählt „ein Auftrag je Gruppe“) und eine Liste **betroffener Gruppen** (nur Anzeige und Hinweis an deren Features). Querschnitts-Vorhaben laufen in „App-weit“/„Globale Einstellungen“. |
+| Übergabe | Am Ende jeder Stufe schreibt die Werkstatt `docs/vorhaben/<nr>-<kurz>.md` (Stand, Entscheidungen, offene Punkte, nächste Stufe) in ihren PR. Die nächste Stufe bekommt diese Datei und das Vorhaben-Ziel als Datenblock. |
+| Haltepunkte | Je Stufe „danach anhalten“ (Standard: nach Stufen mit Risiko HOCH/KRITISCH und vor der letzten Stufe). Dann Push (L3) „Vorhaben #4: Stufe 3 von 6 live – weiter?“ und Knopf „Nächste Stufe starten“. Ohne Haltepunkt startet die nächste Stufe von selbst. |
+| Änderungen am Plan | Stufen, die noch nicht begonnen haben, lassen sich im Vorhaben-Chat ändern, einfügen, löschen (gleiche Karte „Plan ändern?“ zum Bestätigen). Laufende/fertige Stufen bleiben. |
+| Rot / Abbruch | Rot an einer Prüfung = Nacharbeit wie heute; das Vorhaben wartet. „Vorhaben abbrechen“ bricht nur die nicht begonnenen Stufen ab, fertige bleiben live. |
+| Prüfungen | Wie heute je Stufe; zusätzlich am Vorhaben „Abschlussprüfung“ (unabhängige Prüfung des ganzen Vorhabens, gibt es als Knopf schon für Feature/Gruppe/App). Mehrere Blickwinkel (Code, Logik, Bedienbarkeit, Kinderschutz) sind ein eigener Punkt. |
+| Andere PCs | Nacharbeit und nächste Stufe darf jeder PC **derselben Person** übernehmen, die das Vorhaben angelegt hat (heute schon für Nacharbeit über `erstellt_von`); nie fremde PCs. |
+| Modell | Je Stufe nach ihrer Risikostufe (L6). |
+
+**Datenbank (Skizze, nächste Nummer):** `ws_vorhaben` (id, projekt_id, titel, ziel, traeger_gruppe, stand `entwurf|laeuft|wartet|fertig|abgebrochen`,
+erstellt_von, plan jsonb mit den Stufen, Zeitstempel; RLS wie Aufträge, Anlegen/Ändern nur über Funktionen mit Protokoll);
+`ws_auftraege` + `vorhaben_id`, `stufe` (1–12), `anhalten` (bool), `betroffen` (Gruppen-Kennungen). Trigger: Stufe live → nächste Stufe
+`wartet` (bzw. Haltepunkt + Push). Werkstatt: `naechsterAuftrag` nimmt Stufen wie Aufträge; Prompt bekommt Ziel, Plan und Übergabe als Datenblock.
+**Oberfläche:** Zentrale-Karte „Vorhaben“ mit Stufen-Leiste (fertig · läuft · wartet), Klick = Vorhaben-Ansicht (Plan, Stufen mit Stand und PR,
+Übergaben, Chat mit Bezug-Chip „Vorhaben“, Knöpfe „Nächste Stufe starten“, „Plan ändern“, „Abbrechen“). Zu erledigen: „Vorhaben wartet“.
+**Aufwand/Risiko:** etwa 2–3 Tage, Risiko **HOCH** (Auftragsweg, Datenbank) → Bau in drei PRs (Datenbank + Werkstatt · Oberfläche · Konzept-Chat-Vorschlag)
+mit unabhängigem Review. **Erst nach Gerhards Freigabe des Entwurfs 1.2** (Projektregel „sichtbare Neuerungen zuerst als klickbarer Entwurf“).
+
 ## Rollen und Rechte
 | Rolle | Aufträge | Freigeben / Erlauben | Löschen | Claude | GitHub |
 |---|---|---|---|---|---|
@@ -254,8 +285,8 @@ Beim ersten Laden ersetzt der Fehlerzustand den Inhalt; scheitert ein späteres 
 - ~~L3 Push-Nachricht aufs Handy~~: gebaut in 0.12.0 (Abschnitt „Push aufs Handy“).
 - **L4 Warteschlange fürs Zusammenführen:** Seit 0.10.2 höchstens 3 Neustarts wegen eines bewegten main, dann „angehalten“. Eine echte
   Warteschlange (oder die Merge-Queue von GitHub) folgt mit L7.
-- **L7 Vorhaben mit Stufen** (ein Auftrag, mehrere PRs) und Übernahme der Nacharbeit durch einen anderen PC derselben Person (heute: Nacharbeit
-  nimmt jeder PC der Person, die den Auftrag gestellt hat): eigenes Konzept mit Entwurf.
+- **L7 Vorhaben mit Stufen:** Konzept und klickbarer Entwurf 1.2 stehen (Abschnitt „Vorhaben mit Stufen“, `docs/entwurf-1.2-vorhaben.html`) –
+  **offen:** Freigabe des Entwurfs durch Gerhard, danach Bau in drei PRs (Risiko HOCH).
 - **L2 Schutzregel auf GitHub:** Die Codeschmiede wartet jetzt selbst auf alle Prüfläufe. Zusätzlich empfohlen: Schutzregel für `main` mit
   Pflicht-Prüflauf „Prüfung“ (Einstellung in GitHub, macht Gerhard bzw. der zusammenführende Chat).
 - ~~B4 ein Chat-Baustein~~ und ~~B9 Lade-/Leer-/Fehlerzustand~~: erledigt in 0.11.1. Rest: der Chat zur Kachel ist Oberfläche von Trainer to go
