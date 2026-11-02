@@ -1,0 +1,102 @@
+<title>Vorschau folgt Feature</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&display=swap">
+<style>
+:root{--bg:#f1f5f4;--card:#fff;--line:#dbe5e0;--fg:#13201b;--mut:#5b6b64;--acc:#047857;--acc-soft:#ecfdf5;--orange:#f97316;--or-soft:#fff7ed}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0b1220;--card:#111a2b;--line:#1f2a3d;--fg:#e6edf6;--mut:#93a3b8;--acc:#10b981;--acc-soft:#10b98122;--or-soft:#f973161f;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#0b1220;--card:#111a2b;--line:#1f2a3d;--fg:#e6edf6;--mut:#93a3b8;--acc:#10b981;--acc-soft:#10b98122;--or-soft:#f973161f;color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:Barlow,system-ui,sans-serif;font-size:15px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:18px 40px}
+h1{font-size:22px;margin:0}.sub{color:var(--mut);font-size:14px;margin:4px 0 16px;max-width:74ch;line-height:1.45}
+.wrap{display:flex;flex-wrap:wrap;gap:12px;align-items:stretch}
+.left{flex:1 1 300px;max-width:400px;min-width:0;background:var(--card);border:1px solid var(--line);border-radius:16px;display:flex;flex-direction:column;min-height:480px}
+.top{padding:12px;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:8px}
+label{font-size:12px;color:var(--mut);display:flex;flex-direction:column;gap:4px}
+select,textarea{font:inherit;font-size:14px;border:1px solid var(--line);border-radius:9px;background:var(--bg);color:var(--fg);padding:7px 9px}
+textarea{width:100%;resize:vertical;min-height:56px}
+.verlauf{flex:1;padding:12px;display:flex;flex-direction:column;gap:8px;font-size:13.5px}
+.msg{padding:8px 11px;border-radius:12px;max-width:92%;background:var(--bg);border:1px solid var(--line);line-height:1.4}
+.send{padding:12px;border-top:1px solid var(--line);display:flex;gap:8px;align-items:flex-end}
+button{font:inherit;font-size:13.5px;font-weight:700;border-radius:9px;padding:7px 11px;cursor:pointer;border:1px solid var(--line);background:var(--card);color:var(--fg)}
+button.p{background:var(--acc);border-color:var(--acc);color:#fff}
+.hint{margin:0 12px;border-radius:12px;padding:9px 11px;font-size:13px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;line-height:1.35}
+.hint.o{background:var(--or-soft);border:1px solid var(--orange)}
+.hint.g{background:var(--acc-soft);border:1px solid var(--acc)}
+.right{flex:999 1 420px;min-width:0;background:#e8edf1;border-radius:16px;padding:12px;display:flex;flex-direction:column;gap:10px;color:#13201b}
+.bar{font-size:12.5px;color:#4b5d55;display:flex;gap:8px;align-items:center}
+.app{flex:1;background:#fff;border-radius:12px;display:grid;grid-template-columns:150px minmax(0,1fr);overflow:hidden;min-height:380px}
+.nav{background:#064e3b;color:#d1fae5;padding:10px;display:flex;flex-direction:column;gap:4px}
+.nav button{background:transparent;border:0;color:inherit;text-align:left;font-weight:600;padding:7px 9px}
+.nav button.on{background:#10b98133;color:#fff}
+.page{padding:16px}
+.page h3{margin:0 0 8px}
+.page p{color:#4b5d55;font-size:14px;margin:0}
+.tag{font-size:11px;font-weight:700;padding:1px 7px;border-radius:6px;background:var(--acc);color:#fff}
+@media (max-width:520px){.app{grid-template-columns:1fr}.nav{flex-direction:row;flex-wrap:wrap}}
+</style>
+
+<h1>Live-Vorschau: links folgt der Chat der Seite</h1>
+<p class="sub">Entwurf zur Freigabe, gilt für den Menüpunkt <b>Live-Vorschau</b>. Klickst du rechts in der App auf eine Seite, öffnet sich links der Chat des passenden Features. Grundlage ist die gemerkte Seite des Features. Ist für eine Seite noch nichts gemerkt, kommt ein Vorschlag, den du mit einem Klick dauerhaft merkst. Tippst du gerade, wird nicht gewechselt; es erscheint nur ein Hinweis. Zum Ausprobieren: rechts auf Termine, Kader oder Kantine klicken und links etwas tippen.</p>
+
+<div class="wrap">
+ <div class="left">
+  <div class="top">
+   <label>Gruppe<select id="gr"></select></label>
+   <label>Feature (optional)<select id="fe"></select></label>
+  </div>
+  <div id="hint" style="padding-top:10px"></div>
+  <div class="verlauf" id="verlauf"></div>
+  <div class="send"><textarea id="txt" placeholder="Frage oder Auftrag zu diesem Feature …"></textarea><button class="p" id="senden">Senden</button></div>
+ </div>
+ <div class="right">
+  <div class="bar"><span class="tag">Testseite</span><span id="pfad">/</span></div>
+  <div class="app">
+   <div class="nav" id="nav"></div>
+   <div class="page" id="page"></div>
+  </div>
+ </div>
+</div>
+
+<script>
+const gruppen={termine:"Planung",kader:"Mannschaft",kommunikation:"Kommunikation",start:"Start"};
+const F={
+ start:{n:"Startseite",g:"start",pfad:"/",gemerkt:true,txt:"Übersicht mit Kacheln"},
+ termine:{n:"Termine",g:"termine",pfad:"/calendar",gemerkt:true,txt:"Kalender mit Trainings und Spielen"},
+ kader:{n:"Kader",g:"kader",pfad:"/squad",gemerkt:true,txt:"Spielerliste der Mannschaft"},
+ kantine:{n:"Kantine",g:"kommunikation",pfad:"/chat",gemerkt:false,txt:"Text-Chat des Vereins"}
+};
+const chats={start:["Kacheln auf dem Handy zweispaltig?"],termine:["Bitte Wochenansicht als Standard","Erledigt in Auftrag #41"],kader:["Rückennummer in der Liste anzeigen"],kantine:["Bilder im Chat größer anzeigen?"]};
+let aktiv="start", seite="start";
+const $=id=>document.getElementById(id);
+function links(){
+ const f=F[aktiv];
+ $("gr").innerHTML=Object.values(gruppen).map(g=>`<option ${g===gruppen[f.g]?'selected':''}>${g}</option>`).join("");
+ $("fe").innerHTML=`<option>Ganze Gruppe</option>`+Object.values(F).filter(x=>x.g===f.g).map(x=>`<option ${x===f?'selected':''}>${x.n}</option>`).join("");
+ $("verlauf").innerHTML=`<div style="font-size:12px;color:var(--mut)">Chat · ${f.n}</div>`+(chats[aktiv]||[]).map(m=>`<div class="msg">${m}</div>`).join("");
+}
+function rechts(){
+ $("nav").innerHTML=Object.entries(F).map(([id,f])=>`<button data-id="${id}" class="${id===seite?'on':''}">${f.n}</button>`).join("");
+ document.querySelectorAll("#nav button").forEach(b=>b.onclick=()=>geh(b.dataset.id));
+ $("page").innerHTML=`<h3>${F[seite].n}</h3><p>${F[seite].txt}</p>`;
+ $("pfad").textContent=F[seite].pfad;
+}
+function geh(id){
+ seite=id; rechts(); const f=F[id];
+ if(id===aktiv){$("hint").innerHTML="";return}
+ if(!f.gemerkt){
+  $("hint").innerHTML=`<div class="hint o"><span>Für <b>${f.pfad}</b> ist noch kein Feature gemerkt. Vorschlag: <b>${f.n}</b> (Gruppe ${gruppen[f.g]})</span><button class="p" id="merk">Öffnen und merken</button><button id="nein">Nein</button></div>`;
+  $("merk").onclick=()=>{f.gemerkt=true;aktiv=id;links();$("hint").innerHTML=`<div class="hint g">Gemerkt: ${f.n} gehört zu ${f.pfad}.</div>`};
+  $("nein").onclick=()=>{$("hint").innerHTML=""};
+  return;
+ }
+ if($("txt").value.trim()){
+  $("hint").innerHTML=`<div class="hint o"><span>Du tippst gerade. Rechts ist jetzt <b>${f.n}</b> offen.</span><button class="p" id="wechsel">Zu ${f.n} wechseln</button></div>`;
+  $("wechsel").onclick=()=>{aktiv=id;links();$("hint").innerHTML=""};
+  return;
+ }
+ aktiv=id; links(); $("hint").innerHTML=`<div class="hint g">Links geöffnet: ${f.n}</div>`;
+}
+$("senden").onclick=()=>{const t=$("txt").value.trim();if(!t)return;(chats[aktiv]=chats[aktiv]||[]).push(t);$("txt").value="";links()};
+links();rechts();
+</script>
