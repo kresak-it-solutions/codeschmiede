@@ -30,7 +30,7 @@ create policy ws_push_abos_lesen on public.ws_push_abos for select to authentica
 drop policy if exists ws_push_abos_loeschen on public.ws_push_abos;
 create policy ws_push_abos_loeschen on public.ws_push_abos for delete to authenticated using (benutzer_id = auth.uid());
 -- Anlegen/Ändern nur über ws_push_abo_speichern (prüft Adresse und Schlüssel)
-revoke insert, update on public.ws_push_abos from anon, authenticated;
+revoke all on public.ws_push_abos from anon, authenticated;
 grant select, delete on public.ws_push_abos to authenticated;
 
 -- ---------- Warteschlange: nur die Edge Function (Dienst-Schlüssel) liest ----------
@@ -72,7 +72,12 @@ begin
   -- Gerätename nur grob (z. B. „iPhone“, „Android“, „Windows“) – keine Kennung
   v_geraet := left(regexp_replace(coalesce(nullif(trim(p_geraet), ''), 'Gerät'), '[^A-Za-zÄÖÜäöüß0-9 ._-]', '', 'g'), 40);
   if v_geraet = '' then v_geraet := 'Gerät'; end if;
-  -- gehört die Adresse schon einer anderen Person (Gerät weitergegeben), wird sie umgeschrieben
+  -- gehört die Adresse schon einer anderen Person (Gerät weitergegeben), wird sie nur mit denselben Geräteschlüsseln umgeschrieben
+  -- (Review #60: wer nur die Adresse kennt, kann ein fremdes Gerät nicht auf sich umleiten)
+  if exists (select 1 from public.ws_push_abos where endpoint = p_endpoint and benutzer_id <> auth.uid()
+               and (p256dh <> p_p256dh or auth <> p_auth)) then
+    raise exception 'Dieses Gerät ist schon für eine andere Person angemeldet';
+  end if;
   delete from public.ws_push_abos where endpoint = p_endpoint and benutzer_id <> auth.uid();
   insert into public.ws_push_abos (benutzer_id, endpoint, p256dh, auth, geraet)
   values (auth.uid(), p_endpoint, p_p256dh, p_auth, v_geraet)
@@ -127,15 +132,16 @@ begin
 end $$;
 revoke execute on function public.ws_push_eintragen(uuid, text, text, text, text, text) from public, anon, authenticated;
 
--- Wer darf im Bereich freigeben bzw. erlauben? Admin und Entwickler mit Recht „freigeben“ (wie ws_darf), nur aktive Konten
+-- Wer darf im Bereich freigeben bzw. erlauben? Admin und Entwickler mit Recht „freigeben“ (wie ws_darf), nur aktive Konten;
+-- Review #60: die Rolle IM PROJEKT muss „entwickler“ sein (nicht nur die Rolle im Konto)
 create or replace function public.ws_push_freigeber(p_bereich text) returns setof uuid
 language sql stable security definer set search_path = public as $$
   select b.id from public.ws_benutzer b where b.aktiv and b.rolle = 'admin'
   union
   select b.id from public.ws_rechte r join public.ws_benutzer b on b.id = r.benutzer_id
-   where r.bereich_id = p_bereich and r.freigeben and b.aktiv and b.rolle = 'entwickler'
+   where r.bereich_id = p_bereich and r.freigeben and b.aktiv
      and exists (select 1 from public.ws_projekt_mitglieder m join public.ws_bereiche x on x.projekt_id = m.projekt_id
-                  where x.id = p_bereich and m.benutzer_id = b.id)
+                  where x.id = p_bereich and m.benutzer_id = b.id and m.rolle = 'entwickler')
 $$;
 revoke execute on function public.ws_push_freigeber(text) from public, anon, authenticated;
 
@@ -226,6 +232,23 @@ revoke execute on function public.ws_push_test() from public, anon;
 grant execute on function public.ws_push_test() to authenticated;
 
 -- ---------- Für die Edge Function (nur Dienst-Schlüssel) ----------
+-- Bremse (Review #60): höchstens ein Lauf je 2 Sekunden. Ergebnis 0 = jetzt laufen (Zeit gemerkt), sonst Sekunden bis zum nächsten erlaubten Lauf.
+-- Die Funktion wartet diese Zeit und versucht es einmal neu – so bleibt keine Meldung liegen, deren Anstoß gebremst wurde.
+create table if not exists public.ws_push_lauf (id int primary key default 1 check (id = 1), zuletzt timestamptz not null default 'epoch');
+insert into public.ws_push_lauf (id) values (1) on conflict do nothing;
+alter table public.ws_push_lauf enable row level security;
+revoke all on public.ws_push_lauf from anon, authenticated;
+create or replace function public.ws_push_bremse() returns numeric
+language plpgsql security definer set search_path = public as $$
+declare z timestamptz;
+begin
+  update public.ws_push_lauf set zuletzt = clock_timestamp() where id = 1 and zuletzt <= clock_timestamp() - interval '2 seconds';
+  if found then return 0; end if;
+  select zuletzt into z from public.ws_push_lauf where id = 1;
+  return greatest(0.1, round(extract(epoch from (z + interval '2 seconds' - clock_timestamp()))::numeric, 2));
+end $$;
+revoke execute on function public.ws_push_bremse() from public, anon, authenticated;
+
 -- Holt bis zu p_max offene Zeilen (sperrt sie, damit zwei Anstöße nichts doppelt senden), mit den Geräten der Person.
 -- Räumt dabei auf: erledigte Zeilen nach 7 Tagen, hängende (abgeholt, nicht erledigt) nach 10 Minuten wieder frei, Abos mit 5 Fehlern in Folge.
 create or replace function public.ws_push_abholen(p_max int default 50) returns table (id bigint, titel text, text text, url text, tag text, abos jsonb)
@@ -244,7 +267,8 @@ begin
         returning w.id, w.benutzer_id, w.titel, w.text, w.url, w.tag)
   select u.id, u.titel, u.text, u.url, u.tag,
          coalesce((select jsonb_agg(jsonb_build_object('endpoint', a.endpoint, 'p256dh', a.p256dh, 'auth', a.auth))
-                     from public.ws_push_abos a where a.benutzer_id = u.benutzer_id), '[]'::jsonb)
+                     from public.ws_push_abos a join public.ws_benutzer b on b.id = a.benutzer_id
+                    where a.benutzer_id = u.benutzer_id and b.aktiv), '[]'::jsonb)   -- Review #60: nur aktive Personen
     from u order by u.id;
 end $$;
 
@@ -263,6 +287,7 @@ revoke execute on function public.ws_push_ergebnis(bigint, int, text, text[], te
 do $$ begin
   if exists (select 1 from pg_roles where rolname = 'service_role') then
     grant execute on function public.ws_push_abholen(int) to service_role;
+    grant execute on function public.ws_push_bremse() to service_role;
     grant execute on function public.ws_push_ergebnis(bigint, int, text, text[], text[], text[]) to service_role;
     grant select, insert, update, delete on public.ws_push_warteschlange, public.ws_push_abos to service_role;
     grant usage on sequence public.ws_push_warteschlange_id_seq, public.ws_push_abos_id_seq to service_role;
