@@ -2,9 +2,17 @@ name: Lock-Dateien der Programmier-Werkzeuge
 
 # Erzeugt mit `node tools/werkzeug-lock.mjs` die Lock-Dateien für Codex, Gemini CLI und OpenCode (feste Versionen aus
 # desktop/dienst/lib/werkzeuge.mjs, nur registry.npmjs.org, sha512 je Paket, ohne Skripte – npm lädt nur die Paket-Angaben).
-# Nur von Hand (Actions › „Lock-Dateien der Programmier-Werkzeuge“ › Run workflow), nie auf main/live.
+# Start: von Hand (Actions › „Lock-Dateien der Programmier-Werkzeuge“ › Run workflow – erst sichtbar, wenn der Ablauf auf main liegt) oder per push
+# auf feature/werkzeug-wahl, wenn tools/werkzeug-lock.mjs oder tools/werkzeug-lock.anfordern geändert wurde (Zeitstempel ändern = neu anfordern).
+# Nie auf main/live. Der eigene Commit (nur desktop/dienst/werkzeuge/*/package-lock.json) löst ihn nicht erneut aus: Pfad-Filter + Prüfung des Auslösers.
 # Ergebnis: Artefakt „werkzeug-lock“ (7 Tage) und – wenn gewählt – ein Commit auf den gewählten Zweig. Die Dateien gehören ins Review.
 on:
+  push:
+    branches: ['feature/werkzeug-wahl']
+    paths:
+      - 'tools/werkzeug-lock.mjs'
+      - 'tools/werkzeug-lock.anfordern'
+      - '!desktop/dienst/werkzeuge/**'
   workflow_dispatch:
     inputs:
       committen:
@@ -13,14 +21,14 @@ on:
         default: true
 
 permissions:
-  contents: read
+  contents: write            # nur für den Commit der Lock-Dateien auf den Arbeitszweig
 
 jobs:
   lock:
+    # Nie durch den eigenen Commit (Bot) erneut auslösen
+    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-24.04   # fest wie „Prüfung“
     timeout-minutes: 15
-    permissions:
-      contents: write        # nur für den Commit auf den Arbeitszweig
     steps:
       - name: Nicht auf main oder live
         if: github.ref_name == 'main' || github.ref_name == 'live'
@@ -40,7 +48,7 @@ jobs:
           retention-days: 7
           if-no-files-found: error
       - name: Auf den Zweig committen
-        if: inputs.committen
+        if: github.event_name == 'push' || inputs.committen
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
