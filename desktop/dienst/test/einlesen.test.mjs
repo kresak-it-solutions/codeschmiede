@@ -12,7 +12,7 @@ import {
   technikErkennen, zielVorschlag, auswahlPruefen, kopierPlan, strukturListe, gruppenPrompt, gruppenAntwort, wissenAusKonzept, regelnAusEingelesen, berichtZeilen, alsText, datenWert,
 } from "../lib/einlesen.mjs";
 import { einsortieren, zielFrei, geheimnisseImOrdner, repoKennungMerken, repoKennungenLesen } from "../lib/einlesenKopie.mjs";
-import { ohneGeheimnisse as ohneGeheimnisseFuerTest } from "../lib/geheim.mjs";
+import { ohneGeheimnisse as ohneGeheimnisseFuerTest, uebersetzungsDatei } from "../lib/geheim.mjs";
 
 /** Kleine ZIP bauen. Eintrag: [name, inhalt, { groesse, attr, von, flags, methode }] */
 function zip(eintraege, { ende = {} } = {}) {
@@ -526,7 +526,7 @@ test("2. Nachprüfung 7/8: Bearer-Platzhalter, Stripe-Test, AWS ASIA", () => {
 test("B1: Beschriftungs-Namen nur in Code und nur bei UI-Text", () => {
   for (const [t, rel] of [['secretText = "Xk9!mQ2pLz"', "a.js"], ['passwordHint = "Xk9!mQ2pLz"', "a.js"], ['adminPasswordTitle = "Pillersee77"', "a.js"], ['dbPasswordText = "Sommer2024!"', "a.js"],
     ['masterKeyCaption: "8f3a9b2c1d4e"', "a.js"], ["SECRET_TEXT=Xk9mQ2pLz12", "x.ini"], ['passwordLabel = "Kennwort"', "c.ini"]]) assert.ok(geheimnisseZaehlen(t, rel) >= 1, t);
-  for (const [t, rel] of [['passwordLabel: "Kennwort"', "a.js"], ['passwordHint: "Mindestens 8 Zeichen"', "a.js"], ['secretTitle: "Geheimer Bereich"', "a.ts"], ['passwordPlaceholder: "Ihr Passwort (8+ Zeichen)"', "a.jsx"], ['passwordLabel: "Kennwort"', "c.yml"]]) assert.equal(geheimnisseZaehlen(t, rel), 0, t);
+  for (const [t, rel] of [['passwordLabel: "Kennwort"', "a.js"], ['passwordHint: "Mindestens 8 Zeichen"', "a.js"], ['secretTitle: "Geheimer Bereich"', "a.ts"], ['passwordPlaceholder: "Ihr Passwort (8+ Zeichen)"', "a.jsx"], ['passwordLabel: "Kennwort"', "de.yml"]]) assert.equal(geheimnisseZaehlen(t, rel), 0, t);
 });
 
 test("B2: Standardwerte von Umgebungsvariablen werden geprüft", () => {
@@ -609,7 +609,7 @@ test("4. Nachprüfung N1: keine Fehlalarme in Übersetzungs-Dateien, Verweise un
     ["de.json", '{"passwordLabel":"Passwort"}'], ["de.json", '{"tokenText":"Token kopiert!"}'], ["de.json", '{"passwordMsg":"Passwort geändert."}'], ["en.json", '{"apiKeyLabel":"API key"}'],
     ["de.json", '{"auth":{"password":"Passwort","passwordHint":"Mindestens 8 Zeichen","forgotPassword":"Passwort vergessen?","tokenExpired":"Sitzung abgelaufen"}}'],
     ["en.json", '{"password": "Password", "confirmPassword": "Confirm password", "passwordTooShort": "Password must be at least 8 characters"}'],
-    ["en.json", '{"passwordStrength": "Strong", "secretQuestion": "Name of first pet"}'], ["de.yml", "auth:\n  passwordLabel: Passwort\n  tokenText: Token kopiert!"],
+    ["en.json", '{"passwordStrength": "Strong", "secretQuestion": "Name of first pet"}'], ["de.yml", "auth:\n  passwordLabel: Passwort\n  tokenText: Token kopiert!"], ["c.yml", "x: 1"],
     ["messages.properties", "login.passwordLabel=Kennwort"], ["app_de.arb", '{"passwordHint": "Mindestens 8 Zeichen"}'], ["Strings.resx", "<data name=\"passwordLabel\"><value>Passwort</value></data>"],
     ["Login.jsx", 'const passwordError = "Passwort zu kurz (min. 8)";'],
     ["app.js", 'const tokenUrl = process.env.TOKEN_URL || "https://example.com/oauth/token";'], ["app.js", 'const passwordResetPath = "/auth/reset-password";'],
@@ -658,4 +658,174 @@ test("4. Nachprüfung N3: einlesen-repos.json atomar, 0600, nie durch Verknüpfu
     assert.equal(await readFile(ziel, "utf8"), "{}");
     await assert.rejects(repoKennungMerken(path.join(tmp, "x.json"), "../boese", { id: 1, node_id: "R" }), /Ungültige Kennung/);
   } finally { await rm(tmp, { recursive: true, force: true }); }
+});
+
+
+// ---------- Fallsammlungen der Nachprüfungen 4–6 (probe4, probe5, probe6; Prüfer) ----------
+// Bewusste Lücken (Doku „Bewusste Lücken“): reine Buchstaben unter Beschriftungs-Namen in Code, Bearer „YOUR_…“, Passphrase mit Beschriftungswort,
+// sessionCookie (kein geheimer Name, wurde auch vorher nicht erkannt)
+const LUECKEN = new Set(['const passwordLabel = "Pillerseetal";', 'const dbPasswordText = "Sommer Sonne";', "Authorization: Bearer YOUR_SECRET_VALUE_HERE_X", 'const passwordHint = "Pillersee";',
+  'const signingKeyText = "Geheimwort";', 'const apiTokenMessage = "Pillersee Sommer";', 'DB_PASSWORD: "${DB_PASSWORD:-Sommer 2024 bitte}"', 'const sessionCookie = "s%3Aabc123XYZdef456.Qm9pLz8rTt";']);
+const PROBE4_P = [ // [datei, text] -> soll >0
+ ["a.js",'const passwordHint = "Xk9!mQ2pLz";'],
+ ["a.js",'const adminPasswordTitle = "Pillersee77";'],
+ ["a.js",'masterKeyCaption: "8f3a9b2c1d4e"'],
+ ["a.ini",'SECRET_TEXT=Xk9mQ2pLz12'],
+ ["a.js",'const secretText = "Sommer2024!";'],
+ ["a.js",'const tokenMessage = "ghx9Qm2LpZt8Rw";'],
+ ["a.js",'const passwordLabel = "Pillerseetal";'],         // reines Wort
+ ["a.js",'const dbPasswordText = "Sommer Sonne";'],
+ ["docker-compose.yml",'POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-Sommer2024!}'],
+ [".env",'DB_PASSWORD=${DB_PASSWORD-geheim123}'],
+ [".env",'API_TOKEN=${API_TOKEN:=Xk9mQ2pLz12}'],
+ ["a.sh",'export DB_PASSWORD="${DB_PASSWORD:-Sommer2024!}"'],
+ ["a.py",'password = os.getenv("DB_PASSWORD", "Sommer2024!")'],
+ ["a.py",'db = os.getenv("DB_PASSWORD", "Sommer2024!")'],
+ ["a.py",'password = os.environ.get("PW") or "Sommer2024!"'],
+ ["a.py",'API_KEY = os.environ.get("API_KEY", "abcd1234efgh5678")'],
+ ["a.php","'password' => env('DB_PASSWORD', 'Sommer2024!'),"],
+ ["a.rb",'secret = ENV.fetch("SECRET", "Sommer2024!")'],
+ ["a.go",'pw := getenv("DB_PASS", "Sommer2024!")'],
+ ["a.js",'const pk_signing_key = "a1b2c3d4e5f6";'],
+ ["a.js",'const public_db_key = "a1b2c3d4e5f6";'],
+ ["a.js",'const publicEncryptionKey = "a1b2c3d4e5f6";'],
+ [".env",'PK_MASTER_KEY=12345678'],
+ ["a.md",'curl -H "Authorization: Bearer ABCDEF1234567890XYZ"'],
+ ["a.md",'Authorization: Bearer YOUR_TOKEN_1234567890'],
+ ["a.md",'Authorization: Bearer MYTOKENISREALLYLONGSECRET'],
+ ["a.md",'Authorization: Bearer YOUR_SECRET_VALUE_HERE_X'],
+ ["a.md",'Authorization: Bearer abcdefghijklmnopqrstuv'],
+ // frühere Prüfungen
+ ["a.ts",'const apiKey: string = "sk1234567890abcdef12";'],
+ ["a.js",'const pw = process.env.PW || "Sommer2024!";'],
+ ["a.php","define('DB_PASSWORD', 'Sommer2024!');"],
+ ["a.js",'const password = "your-password-is-Sommer2024";'],
+ [".env",'DB_PASSWORD=$Ecret123'],
+ ["a.js",'const k = "sk_test_abcdefghijklmn";'],
+ ["a.yml",'password: "a b c d e"'],
+ ["a.js",'const x = config["api_key"] || "abcd1234efgh5678ijkl";'],
+ // Umgehungen probieren
+ ["a.py",'password = os.getenv("DB_PASSWORD", default="Sommer2024!")'],
+ ["a.py",'password = os.environ.get("PW", \'Sommer2024!\')'],
+ ["a.js",'const password = process.env["PW"] ?? `Sommer2024!`;'],
+ ["a.php","'password' => env(\"DB_PASSWORD\",\"Sommer2024!\"),"],
+ ["a.py",'PASSWORD = getenv("X") or "Sommer2024!"'],
+ ["a.js",'const passwordHint = "Pillersee";'],   // reines Wort unter Hint -> erwartbar Lücke
+ ["a.yml",'passwordHint: Xk9mQ2pLz'],
+ ["docker-compose.yml",'MYSQL_ROOT_PASSWORD: "${MYSQL_ROOT_PASSWORD:-root1234}"'],
+ ["docker-compose.yml",'- JWT_SECRET=${JWT_SECRET:-${OTHER:-Xk9mQ2pLz12}}'],
+];
+const PROBE4_N = [ // Fehlalarm -> soll 0
+ ["Login.jsx",'<input type="password" placeholder="Passwort eingeben" />'],
+ ["Login.jsx",'const passwordLabel = "Passwort";'],
+ ["Login.jsx",'const passwordPlaceholder = "Mindestens 8 Zeichen";'],
+ ["Login.jsx",'const passwordHint = "Mindestens 8 Zeichen, eine Ziffer";'],
+ ["Login.jsx",'const passwordError = "Passwort zu kurz (min. 8)";'],
+ ["Login.jsx",'<TextField label="Password" name="password" value={password} onChange={e=>setPassword(e.target.value)} />'],
+ ["Login.jsx",'const [password, setPassword] = useState("");'],
+ ["Login.jsx",'const { register } = useForm(); <input {...register("password", { required: true, minLength: 8 })} />'],
+ ["Login.jsx",'resetPasswordTitle: "Passwort zurücksetzen",'],
+ ["de.json",'{"auth":{"password":"Passwort","passwordHint":"Mindestens 8 Zeichen","forgotPassword":"Passwort vergessen?","tokenExpired":"Sitzung abgelaufen"}}'],
+ ["en.json",'{"password": "Password", "confirmPassword": "Confirm password", "passwordTooShort": "Password must be at least 8 characters"}'],
+ ["en.json",'{"resetPasswordTitle": "Reset your password", "apiKeyLabel": "API key"}'],
+ ["en.json",'{"passwordStrength": "Strong", "secretQuestion": "Name of first pet"}'],
+ ["de.json",'{"tokenText": "Token kopiert!", "passwordMsg": "Passwort geändert."}'],
+ ["vite.config.js",'export default defineConfig({ define: { "import.meta.env.VITE_API_KEY": JSON.stringify(process.env.VITE_API_KEY) } })'],
+ ["vite.config.js",'const env = loadEnv(mode, process.cwd(), ""); export default { server: { port: Number(env.PORT) || 5173 } }'],
+ ["vite.config.js",'server: { proxy: { "/api": { target: env.API_URL || "http://localhost:3000" } } }'],
+ ["vite.config.js",'const token = env.VITE_TOKEN || "";'],
+ ["docker-compose.yml",'ports:\n  - "${PORT:-3000}:3000"'],
+ ["docker-compose.yml",'environment:\n  - PORT=${PORT:-3000}\n  - NODE_ENV=${NODE_ENV:-production}'],
+ ["docker-compose.yml",'POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}'],
+ ["docker-compose.yml",'POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Passwort fehlt}'],
+ ["docker-compose.yml",'POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}'],
+ ["docker-compose.yml",'POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}'],
+ ["docker-compose.yml",'REDIS_PASSWORD: ${REDIS_PASSWORD:-${DEFAULT_PW}}'],
+ ["settings.py",'SECRET_KEY = os.getenv("SECRET_KEY")'],
+ ["settings.py",'DEBUG = os.getenv("DEBUG", "False") == "True"'],
+ ["settings.py",'DB_HOST = os.environ.get("DB_HOST", "localhost")'],
+ ["settings.py",'PASSWORD = os.getenv("DB_PASSWORD", "")'],
+ ["config.php","'password' => env('DB_PASSWORD', ''),"],
+ ["config.php","'host' => env('DB_HOST', '127.0.0.1'),"],
+ ["config.php","'driver' => env('SESSION_DRIVER', 'file'),"],
+ ["app.js",'const tokenUrl = process.env.TOKEN_URL || "https://example.com/oauth/token";'],
+ ["app.js",'const passwordResetPath = "/auth/reset-password";'],
+ ["app.js",'fetch(url, { credentials: "include", headers: { Authorization: `Bearer ${token}` } })'],
+ ["README.md",'curl -H "Authorization: Bearer YOUR_ACCESS_TOKEN"'],
+ ["README.md",'curl -H "Authorization: Bearer <token>"'],
+ ["README.md",'Authorization: Bearer $TOKEN'],
+ ["app.js",'const publicKey = "pk_live_".length;'],
+ ["app.js",'const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;'],
+ ["app.js",'const tokenType = "access_token_type";'],
+ ["app.ts",'type Props = { passwordLabel: string; onPasswordChange: (v: string) => void };'],
+ ["Form.jsx",'<FormLabel htmlFor="password-input">Passwort</FormLabel>'],
+ ["app.js",'const PASSWORD_MIN_LENGTH = 8;'],
+ ["app.js",'export const TOKEN_STORAGE_KEY = "ttg.auth.token";'],
+ ["app.js",'localStorage.setItem("access_token", token);'],
+ ["app.js",'const passwordInputId = "login-password-field";'],
+ ["app.js",'const secretName = "projects/my-proj/secrets/db";'],
+];
+const PROBE5 = [["en.json",'{"resetPasswordTitle": "Reset your password"}'],["en.json",'{"apiKeyLabel": "API key"}'],["de.json",'{"tokenText": "Token kopiert!"}'],["de.json",'{"passwordMsg": "Passwort geändert."}'],["de.json",'{"passwordLabel": "Passwort"}'],["de.json",'{"passwordTitle": "Passwort ändern"}'],["Login.jsx",'const passwordError = "Passwort zu kurz (min. 8)";'],["Login.tsx",'const passwordHint = "Min. 8 Zeichen";'],
+["a.js",'const k = "sk_test_51HxYzAbCdEfGhIjKlMnOpQrStUv";'],["a.md","Bearer YOUR_TOKEN"],["a.md","Bearer ACCESSTOKENVALUEFORPRODX"],
+["a.py",'password = os.getenv("DB_PASSWORD", default="Sommer2024!")'],["a.py","password = os.environ.get('PW', 'Sommer2024!')"],["a.js",'const password = process.env["PW"] ?? `Sommer2024!`;'],
+["x.yml","POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-${X:-Sommer2024!}}"],["x.yml","DB_PASSWORD: ${DB_PASSWORD:-'Sommer2024!'}"],["x.yml",'DB_PASSWORD: "${DB_PASSWORD:-Sommer 2024 bitte}"'],
+["a.py",'password = os.getenv(\n  "DB_PASSWORD", "Sommer2024!")'],["a.py",'password = os.getenv("DB_PASSWORD",\n "Sommer2024!")'],
+["a.py",'conn = connect(password=os.getenv("PW", "Sommer2024!"))'],["a.py",'connect(host, os.getenv("DB_PASSWORD", "Sommer2024!"))'],["a.py",'x = getenv("DB_PW", "Sommer2024!")'],["a.py",'x = getenv("DATABASE_PASS", "Sommer2024!")'],
+["a.js",'const signingKeyText = "8f3a9b2c1d4e";'],["a.js",'const signingKeyText = "Geheimwort";'],["a.js",'const apiTokenMessage = "Pillersee Sommer";'],
+];
+const PROBE6_P = [ // sollen >0
+["a.js",'const authHeader = "Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U";'],
+["a.js",'const tokenHeader = "Basic dXNlcjpwYXNzd29yZA==";'],
+["a.js",'const sessionCookie = "s%3Aabc123XYZdef456.Qm9pLz8rTt";'],
+["a.js",'const sessionTokenCookie = "s%3Aabc123XYZdef456.Qm9pLz8rTt";'],
+["a.js",'const apiKeyHeader = "sk_live_51HxYzAbCdEfGh";'],
+["a.js",'const apiKeyHeader = "a8f5f167f44f4964e6c998dee827110c";'],
+["a.js",'const apiKeyParam = "a8f5f167f44f4964e6c998dee827110c";'],
+["a.js",'const secretCookie = "k9x2m4p7q1z8w3v6";'],
+["a.js",'const tokenCookie = "deadbeefcafe1234deadbeefcafe1234";'],
+["a.js",'const accessTokenId = "a1b2c3d4e5f6a7b8c9d0e1f2";'],
+["a.js", `const webhookTokenEndpoint = "https://hooks.${"slack"}.com/services/T${"0".repeat(8)}/B${"0".repeat(8)}/${"X".repeat(24)}";`],   // zur Laufzeit zusammengesetzt (GitHub-Push-Schutz)
+["a.js",'const tokenUrl = "https://api.example.com/v1?token=a8f5f167f44f4964e6c998dee827110c";'],
+["a.js",'const secretEndpoint = "https://user:Sommer2024@db.example.com";'],
+["a.js",'const passwordRoute = "/login/a8f5f167f44f4964e6c998dee827110c";'],
+[".env",'API_KEY_HEADER=a8f5f167f44f4964e6c998dee827110c'],
+[".env",'SESSION_SECRET_NAME=k9x2m4p7q1z8w3v6'],
+[".env",'DB_PASSWORD_PARAM=geheim2024'],
+["a.js",'const passwordHelp = "Sommer 2024!";'],
+["a.js",'const adminPasswordInfo = "Tor 2026 Kitz!";'],
+["en.json",'{"passwordDescription": "Pillersee 77"}'],
+["application.properties",'spring.datasource.password=geheimnis'],
+["application.yml",'password: Kennwort'],
+["docker-compose.yml",'POSTGRES_PASSWORD: geheimnis'],
+["credentials.json",'{"type":"service_account","private_key_id":"a1b2c3d4e5f60718293a4b5c6d7e8f9012345678","private_key":"-----BEGIN PRIVATE KEY-----\\nMIIE\\n-----END PRIVATE KEY-----\\n","client_secret":"GOCSPX-abcDEF123456ghiJKL"}'],
+["firebase.json",'{"apiKey":"AIzaSyA1234567890abcdefghijklmnopqrstu","private_key":"-----BEGIN PRIVATE KEY-----\\nMIIE"}'],
+["config.json",'{"db":{"password":"Sommer2024!"},"stripeSecret":"sk_live_abcdefghij"}'],
+["config.json",'{"secretKeyHelp":"k9x2 m4p7 q1z8"}'],
+["a.js",'const signingSecretType = "hmac_sha256_k9x2m4p7q1z8";'],
+];
+const PROBE6_N = [ // sollen 0
+["en.json",'{"password":"Passwort","passwordStrength":"Strong","secretQuestion":"Name of first pet","tokenExpired":"Session expired","passwordButton":"Save"}'],
+["a.js",'const authHeader = "Authorization";'],["a.js",'const tokenHeader = "x-api-key";'],["a.js",'const tokenCookie = "sb-access-token";'],
+["a.js",'const tokenEndpoint = "https://oauth2.googleapis.com/token";'],["a.js",'const passwordField = "password";'],
+];
+const PROBE5_NULL = new Set([0, 1, 2, 3, 4, 5, 6, 7, 9]);   // i18n-, Beschriftungs- und Platzhalter-Fälle: 0
+test("Fallsammlung probe4: alle Positivfälle zählen (außer bewussten Lücken), kein Fehlalarm", () => {
+  for (const [d, t] of PROBE4_P) if (!LUECKEN.has(t)) assert.ok(geheimnisseZaehlen(t, d) >= 1, `${d}: ${t}`);
+  for (const [d, t] of PROBE4_N) assert.equal(geheimnisseZaehlen(t, d), 0, `${d}: ${t}`);
+});
+test("Fallsammlung probe5: i18n-Fälle 0, echte Werte zählen", () => {
+  PROBE5.forEach(([d, t], i) => {
+    if (PROBE5_NULL.has(i)) assert.equal(geheimnisseZaehlen(t, d), 0, `${d}: ${t}`);
+    else if (!LUECKEN.has(t)) assert.ok(geheimnisseZaehlen(t, d) >= 1, `${d}: ${t}`);
+  });
+});
+test("Fallsammlung probe6 (V1–V3): Verweis- und Übersetzungs-Ausnahmen lassen keine Schlüssel durch", () => {
+  for (const [d, t] of PROBE6_P) if (!LUECKEN.has(t)) assert.ok(geheimnisseZaehlen(t, d) >= 1 || geheimeDatei(d), `${d}: ${t}`);
+  for (const [d, t] of PROBE6_P) if (d === ".env") assert.ok(geheimnisseZaehlen(t, "x.ini") >= 1, `Inhalt zählt auch ohne Dateisperre: ${t}`);
+  for (const [d, t] of PROBE6_N) assert.equal(geheimnisseZaehlen(t, d), 0, `${d}: ${t}`);
+  for (const t of ['const apiTokenId = "a1b2c3d4e5f6a7b8c9d0e1f2";', 'const dbPasswordName = "pillersee2024";']) assert.ok(geheimnisseZaehlen(t, "a.js") >= 1, t);
+});
+test("V2: Übersetzungsdatei nur bei echten Sprachdateien", () => {
+  for (const p of ["de.json", "en-US.yml", "de_AT.yaml", "src/locales/app.json", "i18n/texte.yaml", "messages.properties", "messages_de.properties", "app.po", "intl_de.arb", "x.xliff", "Strings.resx"]) assert.ok(uebersetzungsDatei(p), p);
+  for (const p of ["docker-compose.yml", "application.yml", "application.properties", "config.json", "settings.yaml", "secrets.yaml", "values.yaml", "locales/config.json", "package.json", ".env.json", "app.yml"]) assert.ok(!uebersetzungsDatei(p), p);
 });

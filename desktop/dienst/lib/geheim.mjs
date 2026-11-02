@@ -88,12 +88,42 @@ const BESCHRIFTUNG = /(^|[^\p{L}])(eingeben|enter|your|bitte|feld|eingabe|type|p
 // Name einer Beschriftung statt eines Werts: passwordLabel, password_placeholder, secretHint …
 const BESCHRIFTUNG_NAME = /(label|placeholder|hint|title|text|message|msg|error|tooltip|caption|strength|question|expired|tooshort|toolong|mismatch|button|heading|description|help|info|warning|success)$/i;
 // Übersetzungs- und Text-Dateien: hier gilt die Beschriftungs-Ausnahme wie in Code (4. Nachprüfung N1) – nicht für .ini und .env*
-const UI_DATEI = /\.(json|ya?ml|po|pot|arb|properties|xliff|xlf|resx)$/i;
+// Nur echte Übersetzungsdateien (5. Nachprüfung V2): .po/.pot/.arb/.xliff/.xlf/.resx, messages*.properties, und .json/.yaml/.yml unter einem
+// Sprach-Ordner (locales, locale, i18n, lang, langs, translations, l10n) oder mit Sprach-Dateinamen (de.json, en-US.yml, de_AT.yaml) –
+// nie docker-compose*, application*, config*, settings*, secrets*, values*
+const UI_DATEI = /\.(po|pot|arb|xliff|xlf|resx)$/i;
+export function uebersetzungsDatei(rel) {
+  const teile = String(rel || "").replace(/\\/g, "/").split("/"); const datei = teile.at(-1) || "";
+  if (/^(docker-compose|compose|application|config|settings|secrets?|values)([._-]|$)/i.test(datei) || /^\.env/i.test(datei)) return false;
+  if (UI_DATEI.test(datei)) return true;
+  if (/^messages([._-][\w-]+)?\.properties$/i.test(datei)) return true;
+  if (!/\.(json|ya?ml)$/i.test(datei)) return false;
+  if (/^[a-z]{2}([_-][A-Za-z]{2,4})?\.(json|ya?ml)$/.test(datei)) return true;   // de.json, en-US.yml, de_AT.yaml
+  return teile.slice(0, -1).some((t) => /^(locales?|i18n|langs?|translations?|l10n)$/i.test(t));
+}
 // Übersetzung genau des Begriffs (nur in UI-Dateien): {"password": "Passwort"}, {"apiKey": "API key"}
 const BEGRIFF = /^(passwort|password|kennwort|mot de passe|contraseña|token|secret|geheimnis|schlüssel|key|api[ -]?key|api[ -]?schlüssel|zugangsdaten|credentials?)$/i;
 // Namen für Pfade, Adressen, Bezeichner und Speicher-Schlüssel (tokenUrl, passwordResetPath, TOKEN_STORAGE_KEY, passwordInputId, secretName, tokenType)
 const VERWEIS_NAME = /(url|uri|path|route|endpoint|id|name|type|storage[_-]?key|field|header|param|cookie|prefix|event|column|table)$/i;
-const VERWEIS_WERT = (w) => /^https?:\/\/[^\s@]+$/i.test(w) || /^\/[\w./:-]*$/.test(w) || /^[a-z][a-z0-9]*(?:[._:\/-][a-z0-9]+)+$/.test(w) || /^[a-z][a-z0-9_]*$/.test(w);
+// Sieht ein Teil wie ein Schlüssel aus? (≥ 16 Hex-Zeichen am Stück, oder ≥ 12 Zeichen aus Ziffern UND Buchstaben gemischt) – 5. Nachprüfung V1
+const SCHLUESSEL_TEIL = (t) => /[0-9a-f]{16,}/i.test(t) || t.split(/[^A-Za-z0-9]+/).some((x) => x.length >= 12 && /\d/.test(x) && /[A-Za-z]/.test(x));
+const HEIKLER_PARAMETER = /^(token|key|api[_-]?key|secret|sig|signature|password|passwd|pwd|auth|access[_-]?token|client[_-]?secret|code)$/i;
+/** Wie Adresse/Pfad/Bezeichner/Speicher-Schlüssel – aber nie mit Schlüssel-Teilen, heiklen Abfrage-Parametern oder Zugangsdaten (V1). */
+function VERWEIS_WERT(w, name) {
+  if (SCHLUESSEL_TEIL(w)) return false;
+  if (/^https?:\/\//i.test(w)) {
+    let u; try { u = new URL(w); } catch { return false; }
+    if (u.username || u.password) return false;
+    if ([...u.searchParams.keys()].some((k) => HEIKLER_PARAMETER.test(k))) return false;
+    return /^https?:\/\/[^\s@]+$/i.test(w);
+  }
+  if (/^\/[\w./:-]*$/.test(w)) return true;
+  if (w.length > 40) return false;
+  if (/^[a-z][a-z0-9]*(?:[._:\/-][a-z0-9]+)+$/.test(w)) return true;
+  // Ein einzelnes Wort ohne Trennzeichen: nicht bei …Id/…Header/…Cookie/…Param (dort sind solche Werte oft selbst der Schlüssel)
+  if (/^[a-z][a-z0-9]*$/.test(w)) return !/(id|header|cookie|param)$/i.test(name);
+  return /^[a-z][a-z0-9_]*$/.test(w);
+}
 const istJwt = (w) => /^eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}$/.test(w);
 const jwtRolle = (w) => { try { return JSON.parse(Buffer.from(w.split(".")[1], "base64url").toString("utf8"))?.role ?? null; } catch { return null; } };
 /**
@@ -111,11 +141,12 @@ function wertZaehlt(name, roh, ui) {   // ui = "code" (Code-Datei) | "text" (Üb
   // Öffentlich nur ohne geheimen Namensteil – auch starke Schlüssel-Namen heben das auf (B3: pk_signing_key, public_db_key zählen)
   if ((OEFFENTLICH_TEIL.test(name) || OEFFENTLICH_CAMEL.test(name)) && !GEGENLISTE.test(name) && !STARK_SCHLUESSEL.test(name)) return false;
   // Pfad, Adresse, Bezeichner oder Speicher-Schlüssel unter einem passenden Namen (…Url, …Path, …Id, …Name, …_STORAGE_KEY) ist kein Geheimnis
-  if (VERWEIS_NAME.test(name) && VERWEIS_WERT(w)) return false;
+  if (VERWEIS_NAME.test(name) && VERWEIS_WERT(w, name)) return false;
   // Beschriftungs-Name (passwordLabel …) nur in Code-/Übersetzungs-Dateien und nur, wenn der Wert wie UI-Text aussieht (B1): nur Buchstaben,
   // Leerzeichen und Satzzeichen – mit Leerzeichen auch Ziffern („Passwort zu kurz (min. 8)“) – oder mit Beschriftungswort.
   // Ohne Leerzeichen mit Ziffern/Sonderzeichen zählt es: „Xk9!mQ2pLz“, „Pillersee77“, „Sommer2024!“.
-  const uiText = /^[\p{L} .,:;!?()'’-]+$/u.test(w) || (/\s/.test(w) && /^[\p{L}\d .,:;!?()'’+-]+$/u.test(w));
+  // Mit Ziffern nur zusammen mit einem Beschriftungswort (V3): „Passwort zu kurz (min. 8)“ ja, „Sommer 2024!“ / „Pillersee 77“ nein
+  const uiText = /^[\p{L} .,:;!?()'’-]+$/u.test(w) || (/\s/.test(w) && /^[\p{L}\d .,:;!?()'’+-]+$/u.test(w) && BESCHRIFTUNG.test(w));
   if (ui && BESCHRIFTUNG_NAME.test(name) && (uiText || BESCHRIFTUNG.test(w))) return false;
   if (ui === "text" && BEGRIFF.test(w)) return false;   // nur in Übersetzungs-Dateien: Übersetzung genau des Begriffs ist eine Beschriftung
   if (/\s/.test(w) && BESCHRIFTUNG.test(w)) return false;
@@ -131,7 +162,7 @@ function wertZaehlt(name, roh, ui) {   // ui = "code" (Code-Datei) | "text" (Üb
 export function zuweisungenZaehlen(text, rel = "") {
   const datei = String(rel).split("/").pop();
   let n = 0; const code = CODE_DATEI.test(datei); const t = String(text || "");
-  const ui = code ? "code" : UI_DATEI.test(datei) && !/^\.env/i.test(datei) ? "text" : false;
+  const ui = code ? "code" : uebersetzungsDatei(rel) ? "text" : false;
   for (const m of t.matchAll(ZUWEISUNG)) {
     const [, , k, , w] = m;
     if (nurSchalter(k, w)) continue;

@@ -135,7 +135,19 @@ Das Original (ZIP bzw. Ordner) bleibt unverändert. Bricht das Einlesen ab, steh
 | N4 | Bearer-Platzhalter nur genau `TOKEN`, `ACCESS_TOKEN`, `YOUR_…`, `<…>`. `os.getenv("PW", default="…")` wird erkannt. `ohneGeheimnisse` ersetzt Standard- und Ersatzwerte nur, wenn sie nach derselben Regel ein Geheimnis sind (`localhost`, `3000` bleiben stehen). Stripe-Testschlüssel ab 10 Zeichen. |
 | N5 | 409 „Git Repository is empty“ gilt bei allen abgefragten Listen (Zweige, Tags, Hooks, Keys, Rulesets, Teams, Einladungen) als leer. |
 
-**Bewusste Lücken nach diesen Regeln:** Ein Wert aus reinen Buchstaben (auch mit Leerzeichen) unter einem Beschriftungs-Namen in Code oder Übersetzungs-Dateien (`passwordHint = "Pillersee"`, `dbPasswordText = "Sommer Sonne"`) zählt nicht; ebenso ein Bearer-Wert der Form `YOUR_…` (z. B. `YOUR_SECRET_VALUE_HERE_X`).
+## 5. Nachprüfung (02.11.2026, GELB, V1–V3)
+| Nr. | Umsetzung |
+|---|---|
+| V1 | Die Verweis-Ausnahme (…Url/…Path/…Id/…Name/…Header/…Cookie/…Param …) gilt nie für Werte mit Schlüssel-Teilen: ≥ 16 Hex-Zeichen am Stück oder ein Teil ≥ 12 Zeichen aus Ziffern und Buchstaben. Bezeichner höchstens 40 Zeichen. Adressen mit Zugangsdaten oder heiklen Abfrage-Parametern (token, key, secret, sig, signature, password, auth, access_token, client_secret, code) und Pfade mit Schlüssel-Teil zählen. Ein einzelnes Wort ohne Trennzeichen ist unter …Id/…Header/…Cookie/…Param keine Ausnahme. |
+| V2 | Begriffs- und Beschriftungs-Ausnahme in Text-Dateien nur in echten Übersetzungsdateien (`uebersetzungsDatei`): `.po .pot .arb .xliff .xlf .resx`, `messages*.properties`, `.json/.yaml/.yml` unter `locales/locale/i18n/lang/langs/translations/l10n` oder mit Sprach-Dateinamen (`de.json`, `en-US.yml`, `de_AT.yaml`); nie `docker-compose*`, `application*`, `config*`, `settings*`, `secrets*`, `values*`, `.env*`. In Code gilt weiter nur die Beschriftungs-Ausnahme (keine Begriffs-Übersetzung). |
+| V3 | UI-Text mit Ziffern nur zusammen mit einem Beschriftungswort („Passwort zu kurz (min. 8)“); „Sommer 2024!“, „Pillersee 77“, „k9x2 m4p7 q1z8“ zählen. |
+
+**Bewusste Lücken nach diesen Regeln** (in den Tests als Lücken markiert):
+- Ein Wert aus reinen Buchstaben (auch mit Leerzeichen, ohne Ziffern) unter einem Beschriftungs-Namen in Code oder Übersetzungsdateien (`passwordHint = "Pillersee"`, `dbPasswordText = "Sommer Sonne"`, `signingKeyText = "Geheimwort"`).
+- Eine Passphrase, die ein Beschriftungswort enthält (`"Sommer 2024 bitte"`).
+- Bearer-Werte der Form `YOUR_…` (`YOUR_SECRET_VALUE_HERE_X`).
+- Werte unter Namen ohne geheimen Namensteil (`sessionCookie = "s%3A…"`) – erkannt werden nur bekannte Schlüssel-Muster.
+- Base64-/anders kodierte und zusammengesetzte Schlüssel, Schlüssel in Binärdateien; Werte unter 6 Zeichen.
 
 ## Offen / bewusst nicht gebaut
 - Zuordnung je Eintrag der **obersten Ebene** (Datei oder Ordner), nicht je einzelner Datei in Unterordnern.
