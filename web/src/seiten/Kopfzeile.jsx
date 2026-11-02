@@ -1,6 +1,6 @@
 // Kopfzeile – aus App.jsx ausgelagert (Befund B1 vom 01.11.2026, kein Verhaltenswechsel).
 import { useEffect, useState } from "react";
-import { BellRing, Check, ChevronDown, ClipboardList, FolderCog, FolderPlus, Info, Layers, Loader2, MessageSquare, Power, Search } from "lucide-react";
+import { BellRing, Check, ChevronDown, ClipboardList, FolderCog, FolderInput, FolderPlus, Info, Layers, Loader2, MessageSquare, Power, Search } from "lucide-react";
 import CodeschmiedeZeichen from "../Zeichen";
 import { LogoZeichen } from "../Logo";
 import { ROLLEN, WS_ICON } from "../config";
@@ -9,7 +9,7 @@ import { supabase } from "../supabase";
 import { PushEinstellung } from "../Push";
 
 // ---------------- Kopfzeile (Entwurf 1.1) ----------------
-export function ProjektWahl({ projekte, aktuell, PIcon, admin, onWahl, onNeu, onVerwalten }) {
+export function ProjektWahl({ projekte, aktuell, PIcon, admin, onWahl, onNeu, onEinlesen, onVerwalten }) {
   const [offen, setOffen] = useState(false);
   return (
     <div className="relative">
@@ -25,6 +25,7 @@ export function ProjektWahl({ projekte, aktuell, PIcon, admin, onWahl, onNeu, on
               {p.logo ? <LogoZeichen werte={p.logo} groesse={18} /> : <I className="w-4 h-4" />}<span className="truncate">{p.name}</span>{p.id === aktuell?.id && <Check className="w-4 h-4 ml-auto text-emerald-700" />}</button>); })}
           {admin && <div className="border-t border-slate-100 dark:border-slate-800 mt-1.5 pt-1.5">
             <button role="menuitem" type="button" onClick={() => { onNeu(); setOffen(false); }} className="w-full flex items-center gap-2 rounded-lg px-2.5 py-2 hover:bg-slate-50 dark:hover:bg-slate-800"><FolderPlus className="w-4 h-4" />Neues Projekt</button>
+            {onEinlesen && <button role="menuitem" type="button" onClick={() => { onEinlesen(); setOffen(false); }} className="w-full flex items-center gap-2 rounded-lg px-2.5 py-2 hover:bg-slate-50 dark:hover:bg-slate-800"><FolderInput className="w-4 h-4" />Bestehendes Projekt einlesen</button>}
             <button role="menuitem" type="button" onClick={() => { onVerwalten(); setOffen(false); }} className="w-full flex items-center gap-2 rounded-lg px-2.5 py-2 hover:bg-slate-50 dark:hover:bg-slate-800"><FolderCog className="w-4 h-4" />Projekte verwalten</button>
           </div>}
         </div></>}

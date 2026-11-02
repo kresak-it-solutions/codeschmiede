@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "codeschmiede-web",
-  "description": "Die Oberfläche der Codeschmiede darf im Programm genau diese Befehle nutzen: Werkstatt starten/stoppen, Status lesen, Voraussetzungen prüfen, Statuszeile für Abo-Limits einrichten, Links öffnen, Design-Freigabe für Trainer to go (nur „ttg-design|…“ signieren), Projektordner (Stand lesen, Ordner über die Auswahl des Systems festlegen, verknüpften Ordner im Explorer öffnen – nie beliebige Pfade aus der Oberfläche).",
+  "description": "Die Oberfläche der Codeschmiede darf im Programm genau diese Befehle nutzen: Werkstatt starten/stoppen, Status lesen, Voraussetzungen prüfen, Statuszeile für Abo-Limits einrichten, Links öffnen, Design-Freigabe für Trainer to go (nur „ttg-design|…“ signieren), Projektordner (Stand lesen, Ordner über die Auswahl des Systems festlegen, verknüpften Ordner im Explorer öffnen – nie beliebige Pfade aus der Oberfläche), Projekt einlesen (Quelle über die Auswahl des Systems wählen – die Oberfläche bekommt nur eine Kennung; neuen Zielordner anlegen, nie einen vorhandenen).",
   "windows": ["main"],
   "remote": { "urls": ["https://codeschmiede.pages.dev/*"] },
   "permissions": [
@@ -10,6 +10,7 @@
     "allow-ws-update-status", "allow-ws-update-neustart",
     "allow-ws-design-geraet", "allow-ws-design-signieren",
     "allow-ws-ordner-stand", "allow-ws-ordner-basis-waehlen", "allow-ws-ordner-verknuepfen", "allow-ws-ordner-oeffnen",
+    "allow-ws-einlesen-quelle", "allow-ws-einlesen-ziel",
     { "identifier": "opener:allow-open-url", "allow": [{ "url": "https://*" }] }
   ]
 }

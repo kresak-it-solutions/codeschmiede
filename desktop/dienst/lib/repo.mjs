@@ -192,3 +192,98 @@ export async function repoIstPrivat({ sh: shRoh, repo }) {
   if (!repoOk(repo)) return null;
   try { const { stdout } = await sh("gh", ["repo", "view", repo, "--json", "visibility", "--jq", ".visibility"]); const v = String(stdout).trim().toUpperCase(); return v === "PRIVATE" || v === "INTERNAL" ? true : v === "PUBLIC" ? false : null; } catch { return null; }
 }
+
+/** Kennung eines Repositorys bei GitHub: { id, node_id, sichtbarkeit } oder null. */
+export async function repoKennung({ sh, repo }) {
+  if (!repoOk(repo)) return null;
+  try {
+    const j = JSON.parse(String((await sh("gh", ["api", `repos/${repo}`, "--jq", "{id: .id, node_id: .node_id, sichtbarkeit: .visibility}"])).stdout || "null"));
+    return j && /^\d{1,20}$/.test(String(j.id)) && /^[A-Za-z0-9_=-]{1,100}$/.test(String(j.node_id)) ? { id: Number(j.id), node_id: String(j.node_id), sichtbarkeit: String(j.sichtbarkeit || "").toLowerCase() } : null;
+  } catch { return null; }
+}
+/**
+ * Darf ein schon vorhandenes Repository weiterverwendet werden (3. Nachprüfung B4)? Nur, wenn es GENAU das ist, das die Codeschmiede beim ersten
+ * Versuch angelegt hat (gleiche id und node_id, lokal gemerkt), und wenn es privat, leer (keine Zweige; 409 = leer), ohne Hooks, Deploy-Keys, Tags,
+ * Rulesets, Teams, offene Einladungen und ohne Mitarbeiter außer dem eigenen Konto ist (Abfrage scheitert → nicht weiterverwenden). Rückgabe: Grund (Text) oder null (weiterverwenden).
+ */
+export async function repoWiederGrund({ sh, repo, gemerkt, login }) {
+  const k = await repoKennung({ sh, repo });
+  if (!k) return "Kennung bei GitHub nicht lesbar";
+  if (!gemerkt || Number(gemerkt.id) !== k.id || String(gemerkt.node_id) !== k.node_id) return "nicht von diesem PC beim Einlesen angelegt";
+  if (k.sichtbarkeit !== "private") return "nicht privat";
+  const anzahl = async (pfad, { leer409 = false } = {}) => {
+    try { const n = Number(String((await sh("gh", ["api", `repos/${repo}/${pfad}`, "--jq", "length"])).stdout).trim()); return Number.isFinite(n) ? n : NaN; }
+    catch (e) { return leer409 && /409|empty/i.test(String(e?.stderr || e?.message || e)) ? 0 : NaN; }
+  };
+  // 409 „Git Repository is empty“ gilt bei allen Listen als leer (4. Nachprüfung N5); Teams und offene Einladungen zählen mit (N2)
+  for (const [pfad, was, o] of [["branches", "Zweige"], ["tags", "Tags"], ["hooks", "Webhooks"], ["keys", "Deploy-Keys"], ["rulesets", "Rulesets"], ["teams", "Teams"], ["invitations", "offene Einladungen"]].map(([p, w]) => [p, w, { leer409: true }])) {
+    const n = await anzahl(pfad, o);
+    if (Number.isNaN(n)) return `${was} nicht prüfbar`;
+    if (n > 0) return `hat ${was}`;
+  }
+  let leute;
+  try { leute = JSON.parse(String((await sh("gh", ["api", `repos/${repo}/collaborators?affiliation=direct`, "--jq", "[.[].login]"])).stdout || "[]")); } catch { return "Mitarbeiter nicht prüfbar"; }
+  if (!Array.isArray(leute) || leute.some((x) => String(x).toLowerCase() !== String(login || "").toLowerCase())) return "hat weitere Mitarbeiter";
+  return null;
+}
+/** GitHub Actions für das Repository abschalten und prüfen (enabled = false). Fehler → Ausnahme (nie still weitermachen). */
+export async function actionsAus({ sh, repo }) {
+  if (!repoOk(repo)) throw new Error("Ungültiges Repository");
+  try { await sh("gh", ["api", "-X", "PUT", `repos/${repo}/actions/permissions`, "-F", "enabled=false"]); }
+  catch { throw new Error(`GitHub Actions ließ sich für ${repo} nicht abschalten – nichts hochgeladen. Bitte bei GitHub › Settings › Actions „Disable actions“ wählen und neu einlesen.`); }
+  const stand = await sh("gh", ["api", `repos/${repo}/actions/permissions`, "--jq", ".enabled"]).then((r) => String(r.stdout).trim(), () => "");
+  if (stand !== "false") throw new Error(`GitHub Actions ist für ${repo} nicht nachweislich aus – nichts hochgeladen.`);
+}
+
+/**
+ * Eingelesenes Projekt (0.16.0): neues PRIVATES Repository anlegen und den Inhalt von ordner (fertig einsortierter Code, Geheimnis-Prüfung
+ * schon gelaufen) als ersten Stand „Projekt eingelesen am <TT.MM.JJJJ>“ auf main hochladen – keine Vorlage, keine Prüfungen, kein Regelwerk
+ * (die ergänzt ein eigener Auftrag). Keine vorhandene Git-Geschichte (ordner hat kein .git). Kein Projekt-Code wird ausgeführt (Hooks aus).
+ * Der Zugang kommt nur für diesen Aufruf aus gh (Credential-Helfer im Wegwerf-Ordner); die Codeschmiede speichert keine Zugangsdaten.
+ */
+export async function repoEinlesen({ sh: shRoh, ordner, keineHooks, projekt, heute = new Date(), melde = () => {}, gemerkt = null, merken = async () => {} }) {
+  const sh = mitGrenze(shRoh);
+  const name = repoName(projekt.id);
+  if (!name) throw new Error("Ungültige Projekt-Kennung für GitHub");
+  const repo = `${REPO_KONTO}/${name}`;
+  if (!repoOk(repo)) throw new Error("Ungültiger Repository-Name");
+  if (await lstat(path.join(ordner, ".git")).then(() => true, () => false)) throw new Error("Im Code liegt noch eine Git-Geschichte – abgebrochen");
+  const { stdout: login } = await sh("gh", ["api", "user", "--jq", ".login"]).catch(() => ({ stdout: "" }));
+  const ich = String(login).trim().replace(/[^A-Za-z0-9-]/g, "");
+  const schonDa = await sh("gh", ["repo", "view", repo, "--json", "name"]).then(() => true, () => false);
+  // Ein früherer Versuch kann das Repository angelegt und dann (z. B. beim Abschalten von Actions) abgebrochen haben: weiterverwenden nur, wenn es
+  // genau DIESES ist (gemerkte id/node_id) und unberührt (privat, leer, keine Hooks/Keys/Tags/Rulesets/fremden Mitarbeiter) – sonst nichts anfassen
+  let wiederverwenden = false;
+  if (schonDa) {
+    const grund = await repoWiederGrund({ sh, repo, gemerkt, login: ich });
+    if (grund) throw new Error(`Repository ${repo} liegt schon bei GitHub, bitte dort prüfen oder löschen (${grund}). Nichts hochgeladen.`);
+    wiederverwenden = true;
+  }
+  // Jeder git-Aufruf ohne Hooks, ohne fsmonitor, ohne ext-Transport; Zugang nur für diesen Aufruf aus gh (nichts in der Git-Einstellung gespeichert)
+  const SICHER = ["-c", `core.hooksPath=${keineHooks}`, "-c", "core.fsmonitor=false", "-c", "protocol.ext.allow=never"];
+  const g = (...a) => sh("git", [...SICHER, ...a], { cwd: ordner });
+  const wer = ich || "codeschmiede";
+  await g("init", "-q", "-b", "main");
+  await g("add", "-A");
+  const datum = heute.toLocaleDateString("de-AT", { day: "2-digit", month: "2-digit", year: "numeric" });
+  await g("-c", `user.name=${wer}`, "-c", `user.email=${wer}@users.noreply.github.com`, "commit", "-q", "--no-verify", "--allow-empty", "-m", `Projekt eingelesen am ${datum}`);
+  // 1) Leeres PRIVATES Repository anlegen (ohne --source/--push), 2) Sichtbarkeit bei GitHub prüfen, 3) erst dann selbst hochladen
+  if (wiederverwenden) melde(`${repo} ist leer und privat (früherer Versuch) – wird weiterverwendet`);
+  else melde(`Lege ${repo} (privat) an …`);
+  if (!wiederverwenden) {
+    await sh("gh", ["repo", "create", repo, "--private", "--description", String(projekt.name).replace(/[\u0000-\u001f\u007f]/g, " ").slice(0, 300), "--disable-wiki"]);
+    // Kennung sofort merken (lokal in der Werkstatt, dazu in der Vorgangszeile) – nur ein so gemerktes Repository darf später weiterverwendet werden
+    const k = await repoKennung({ sh, repo });
+    if (k) await Promise.resolve(merken({ id: k.id, node_id: k.node_id })).catch((e) => melde(`Kennung des Repositorys nicht gemerkt (${String(e?.message || e).slice(0, 120)})`));
+  }
+  // Genau PRIVATE (nicht „internal“: das sehen alle Mitglieder der Enterprise) – geprüft wie repoIstPrivat, nur strenger
+  const sicht = await sh("gh", ["repo", "view", repo, "--json", "visibility", "--jq", ".visibility"]).then((r) => String(r.stdout).trim().toUpperCase(), () => "");
+  if (sicht !== "PRIVATE" || (await repoIstPrivat({ sh: shRoh, repo })) !== true) throw new Error(`${repo} ist bei GitHub nicht privat (oder nicht prüfbar) – nichts hochgeladen. Bitte bei GitHub prüfen.`);
+  // GitHub Actions VOR dem ersten Hochladen abschalten (Nachprüfung N5): Abläufe im eingelesenen Code (.github/workflows) liefen sonst beim Push
+  // auf GitHub los – das wäre doch ausgeführter Projekt-Code. Scheitert das Abschalten oder lässt es sich nicht bestätigen: nichts hochladen.
+  await actionsAus({ sh, repo });
+  melde("Lade den ersten Stand hoch …");
+  await sh("git", [...SICHER, "-c", "credential.helper=", "-c", "credential.helper=!gh auth git-credential", "push", "-q", `https://github.com/${repo}.git`, "main:main"],
+    { cwd: ordner, maxBuffer: 50 * 1024 * 1024, timeout: 600000 });
+  return { repo };
+}

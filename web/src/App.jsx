@@ -2,6 +2,7 @@ import React, { Suspense, lazy, useCallback, useEffect, useState } from "react";
 import { AlertTriangle, Bell, BookOpen, ChevronDown, ClipboardList, Code2, Cpu, Download, Eye, Gauge, GitBranch, Globe, History, Inbox, KeyRound, Layers, ListChecks, Menu, MessageSquare, Palette, Plug, Plus, Scale, Search, Settings, ShieldCheck, Wrench } from "lucide-react";
 import { Aenderungsprotokoll, Dokumentation, Pruefstand, Wissensdatenbank, ZweigeVersionen } from "./Ablauf";
 import Anbindungen, { NeuesProjektAssistent } from "./ProjektArten";
+import ProjektEinlesen from "./seiten/ProjektEinlesen";
 import { Anmelden } from "./seiten/Anmelden";
 import Aufgaben, { useMeineAufgaben } from "./Aufgaben";
 import { Befehlsleiste, Benutzermenue, EinladungAnnehmen, Kennzahlen, ProjektWahl, UnbekannteAnsicht, Zentriert } from "./seiten/Kopfzeile";
@@ -48,7 +49,7 @@ export default function App() {
   const [projekt, setProjekt] = useState(() => merke.lies("cs-projekt"));
   const [toast, setToast] = useState("");
   const [menueOffen, setMenueOffen] = useState(false); const [sucheOffen, setSucheOffen] = useState(false); const [chatStart, setChatStart] = useState(null);
-  const [neuesProjekt, setNeuesProjekt] = useState(false); const [projekteVerwalten, setProjekteVerwalten] = useState(false); const [einrichtung, setEinrichtung] = useState(false); const [aboOffen, setAboOffen] = useState(false);
+  const [neuesProjekt, setNeuesProjekt] = useState(false); const [einlesenOffen, setEinlesenOffen] = useState(false); const [projekteVerwalten, setProjekteVerwalten] = useState(false); const [einrichtung, setEinrichtung] = useState(false); const [aboOffen, setAboOffen] = useState(false);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSitzung(data.session || null));
@@ -126,7 +127,7 @@ export default function App() {
       <div className="min-w-0 h-screen grid grid-rows-[auto_minmax(0,1fr)]">
         <header className="flex items-center gap-2 md:gap-3 px-3 md:px-5 py-2.5 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
           <button type="button" className="md:hidden p-2 rounded-lg border border-slate-200 dark:border-slate-700" onClick={() => setMenueOffen(true)} aria-label="Menü öffnen"><Menu className="w-4 h-4" /></button>
-          <ProjektWahl projekte={daten.projekte} aktuell={aktuell} PIcon={PIcon} admin={ich.rolle === "admin"} onWahl={waehle} onNeu={() => setNeuesProjekt(true)} onVerwalten={() => setProjekteVerwalten(true)} />
+          <ProjektWahl projekte={daten.projekte} aktuell={aktuell} PIcon={PIcon} admin={ich.rolle === "admin"} onWahl={waehle} onNeu={() => setNeuesProjekt(true)} onEinlesen={() => setEinlesenOffen(true)} onVerwalten={() => setProjekteVerwalten(true)} />
           <button type="button" onClick={() => setSucheOffen(true)} className="hidden sm:flex flex-1 max-w-[440px] items-center gap-2 rounded-xl bg-slate-100 dark:bg-slate-800 px-3 py-2 text-sm text-slate-500 hover:bg-slate-200/70 dark:hover:bg-slate-700/70">
             <Search className="w-4 h-4" />Suchen oder springen … Feature, Auftrag, Chat<kbd className="ml-auto font-mono text-xs border border-slate-300 dark:border-slate-600 rounded px-1.5">Strg K</kbd></button>
           <button type="button" onClick={() => setSucheOffen(true)} className="sm:hidden p-2 rounded-lg border border-slate-200 dark:border-slate-700" aria-label="Suchen"><Search className="w-4 h-4" /></button>
@@ -185,6 +186,7 @@ export default function App() {
       {!daten.laden && daten.projektId && <KonzeptAuto d={daten} ich={ich} />}
       {!daten.laden && daten.projektId && <ProjektordnerAbfrage d={daten} ich={ich} toast={setToast} />}
       {projekteVerwalten && <ProjekteVerwalten toast={setToast} aktiv={daten.projektId} onClose={() => setProjekteVerwalten(false)} onWeg={(id) => { if (id === daten.projektId) { const n = daten.projekte.find((p) => p.id !== id); if (n) waehle(n.id); } }} />}
+      {einlesenOffen && <ProjektEinlesen projekte={daten.projekte} toast={setToast} onClose={() => setEinlesenOffen(false)} onFertig={(id) => { daten.holen?.(); waehle(id); geh("anbindungen"); }} />}
       {neuesProjekt && <NeuesProjektAssistent projekte={daten.projekte} toast={setToast} onClose={() => setNeuesProjekt(false)} onFertig={(id) => { waehle(id); geh("anbindungen"); }} />}
       <Toast text={toast} onDone={() => setToast("")} />
     </div>
