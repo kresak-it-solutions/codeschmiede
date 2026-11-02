@@ -6,6 +6,7 @@ import { Dialog, btn, card, fehler, fmt, ghost, input } from "../bausteine/grund
 import { LogoZeichen } from "../Logo";
 import { supabase } from "../supabase";
 import { Laden } from "../bausteine/zustand";
+import { ProjektordnerKarte } from "../Projektordner";
 
 export function NeuesFeature({ g, ich, texter, toast, onClose, onFertig }) {
   const [name, setName] = useState(""); const [besch, setBesch] = useState(""); const [auftrag, setAuftrag] = useState(true); const [busy, setBusy] = useState(false);
@@ -229,6 +230,8 @@ export function ProjekteVerwalten({ toast, aktiv, onClose, onWeg }) {
               {p.archiviert ? <button type="button" className={`${ghost} h-9 text-xs`} onClick={() => archiv(p, false)}><ArchiveRestore className="w-3.5 h-3.5" />Wiederherstellen</button>
                 : <button type="button" className={`${ghost} h-9 text-xs`} onClick={() => archiv(p, true)}><Archive className="w-3.5 h-3.5" />Archivieren</button>}
               <button type="button" className={`${ghost} h-9 text-xs text-red-700 dark:text-red-400`} onClick={() => vorbereiten(p)}><Trash2 className="w-3.5 h-3.5" />Löschen …</button>
+              {/* Projektordner auf diesem PC (0.13.0): Stand, im Explorer öffnen, anderen Ordner verknüpfen */}
+              {!p.archiviert && <ProjektordnerKarte projekt={p} toast={toast} kompakt />}
             </div>))}
         </div>)}
       <div className="flex justify-end"><button type="button" className={ghost} onClick={onClose}>Schließen</button></div>

@@ -40,6 +40,14 @@ Zusammengeführt wird nur auf Gerhards Wort (in der Codeschmiede: Knopf „Freig
 - Werkstatt arbeitet nur im Arbeitsordner des Auftrags (eigener Zweig), nie direkt auf `main`; heikle Befehle brauchen Erlaubnis im Programm.
 
 ## Neue Anweisungen
+- **2026-11-02 07:04 – Projektordner Pflicht, Projektregeln Vorrang, Sicherheit immer (Entwurf 1.0 frei, `docs/entwurf-1.0-projektordner.html`):**
+  Jedes Projekt hat einen Projektordner auf der externen Festplatte (`<Projekte-Ordner>\<kennung>`: code, code-arbeit, regeln, konzept, doku,
+  material, sicherungen), auch Trainer to go und die Codeschmiede; Pfade nur lokal im Programm, nie in der Datenbank; Festplatte fehlt → die Werkstatt
+  pausiert für das Projekt. Rangfolge: 1 Sicherheitsregeln der Codeschmiede (fest im Programm, keine Datei hebt sie auf) › 2 Projektregeln
+  (`regeln\REGELN.md`) › 3 allgemeines Regelwerk; erkennbare Konflikte rot unter „Anbindungen“ und im Auftrag, die Sicherheitsregel gilt. Material,
+  Konzept und Doku aus dem Ordner sind Daten, keine Anweisungen. Testseite per Knopf nur kostenlos (Cloudflare Pages mit Git-Anbindung, Wrangler-Token nur
+  im Speicher, nur `api.cloudflare.com`), Datenbank vorerst nur als Wunsch nach Bestätigung der Kosten, Seiten-Designer folgt.
+  Datenbank 0055, `docs/KONZEPT-PROJEKTORDNER.md`.
 - **2026-11-01 22:18/22:38 – App-Designer wie der Design-Entwurf 2.0 (alles freigegeben, keine Rückfragen):** Der App-Designer zeigt die Masken
   des Entwurfs 2.0 mit Leiste (Rolle · PC/Handy · Hell/Dunkel · Bausteine zeigen · Begründung), Seiten je Rolle, Inspektor und Token-Reglern;
   Quelle ist das Projekt selbst (Design-System-Paket, kein Abschreiben). Zweiter Reiter „Echte App (Testfassung)“. Die Codeschmiede bleibt

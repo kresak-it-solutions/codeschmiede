@@ -1,6 +1,6 @@
 // Projekt-Arten und Anbindungen (Entwurf 1.0 „Neues Projekt“, freigegeben von Gerhard 2026-10-24 14:43, Datenbank 0030).
-// Assistent „Neues Projekt“ in vier Schritten (Art, Grunddaten, Anbindungen, Anlegen) und die Seite „Anbindungen“
-// mit Ampel und Vorschau je Art. Geprüft und ausgeführt wird von der Werkstatt des Admins; hier wird nur gewünscht und angezeigt.
+// Assistent „Neues Projekt“ in fünf Schritten (Art, Grunddaten, Projektordner, Anbindungen, Anlegen) und die Seite „Anbindungen“
+// mit Ampel und Vorschau je Art. Seit 0.13.0 (Entwurf 1.0 „Projektordner“, 02.11.2026): Pflichtschritt Projektordner, Ein-Klick-Anbindungen. Geprüft und ausgeführt wird von der Werkstatt des Admins; hier wird nur gewünscht und angezeigt.
 import React, { useCallback, useEffect, useState } from "react";
 import { Globe, Monitor, Smartphone, Terminal, Loader2, RefreshCw, Play, ExternalLink, Box, Info, Check, ArrowLeft, ArrowRight, Eye } from "lucide-react";
 import { supabase } from "./supabase";
@@ -8,6 +8,10 @@ import { WS_ICON } from "./config";
 import { APP_ARTEN } from "./DesignerArten";
 import { FehlerSchluessel } from "./Fehler";
 import { useEscape, useFokusfalle } from "./bausteine/grund";
+import { isDesktop } from "./desktop";
+import { useProjektordner, verknuepfen } from "./daten/projektordner";
+import { ProjektordnerSchritt, ProjektordnerKarte, RegelnRangfolge } from "./Projektordner";
+import AnbindungenKacheln from "./AnbindungenKacheln";
 
 const fehler = (e) => (e?.message || "Unbekannter Fehler").replace(/^.*?ERROR:\s*/, "");
 const btn = "inline-flex items-center justify-center gap-2 h-10 px-4 rounded-xl bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 text-white font-display font-bold tracking-wide transition";
@@ -26,13 +30,13 @@ const DATENBANK = {
   spielwiese: ["Spielwiese (gemeinsam)", "Abgetrennter Bereich in einer gemeinsamen Datenbank. Braucht Supabase Pro – wird erst nach deiner Bestätigung angelegt"],
   eigen: ["Eigenes Supabase-Projekt", "Für ernste Apps mit echten Nutzern"],
 };
-const AMPEL_NAMEN = { github: "GitHub", pruefung: "Prüfungen", build: "Build Windows/Mac", signatur: "Automatische Updates", sandbox: "Windows-Sandbox", testseite: "Testseite", testlauf: "Testlauf", datenbank: "Datenbank (Test)", datenbank_live: "Datenbank (Live)", fehler: "Fehler-Meldungen" };
-const AMPEL_REIHE = ["github", "pruefung", "build", "testlauf", "testseite", "sandbox", "signatur", "datenbank", "datenbank_live", "fehler"];
+const AMPEL_NAMEN = { projektordner: "Projektordner (Admin-PC)", regeln: "Projektregeln", github: "GitHub", pruefung: "Prüfungen", build: "Build Windows/Mac", signatur: "Automatische Updates", sandbox: "Windows-Sandbox", testseite: "Testseite", testlauf: "Testlauf", datenbank: "Datenbank (Test)", datenbank_live: "Datenbank (Live)", fehler: "Fehler-Meldungen" };
+const AMPEL_REIHE = ["projektordner", "regeln", "github", "pruefung", "build", "testlauf", "testseite", "sandbox", "signatur", "datenbank", "datenbank_live", "fehler"];
 const PUNKT = { gruen: "bg-emerald-500 ring-emerald-500/25", gelb: "bg-amber-500 ring-amber-500/25", rot: "bg-red-500 ring-red-500/25", grau: "bg-slate-400 dark:bg-slate-600 ring-slate-400/20" };
 const STAND_TEXT = { gruen: "grün", gelb: "gelb", rot: "rot", grau: "grau" };
 
 // ---------------- Assistent „Neues Projekt“ ----------------
-export function NeuesProjektAssistent({ toast, onClose, onFertig }) {
+export function NeuesProjektAssistent({ toast, onClose, onFertig, projekte = [] }) {
   const fokusfalle = useFokusfalle();   // Fokus bleibt im Dialog (Befund B2)
   const [schritt, setSchritt] = useState(1);
   const [technik, setTechnik] = useState("web");
@@ -40,6 +44,9 @@ export function NeuesProjektAssistent({ toast, onClose, onFertig }) {
   const [repo, setRepo] = useState(""); const [anlegen, setAnlegen] = useState(true); const [privat, setPrivat] = useState(true);   // Befund S2 (01.11.2026): neue Repos standardmäßig privat
   const [symbol, setSymbol] = useState("layers"); const [art, setArt] = useState("verwaltung");
   const [db, setDb] = useState("keine"); const [busy, setBusy] = useState(false);
+  // Projektordner (Pflicht, 0.13.0): Projekte-Ordner einmal je PC; Projektordner = <Projekte-Ordner>\<kennung>
+  const [ordner, ordnerHolen] = useProjektordner([]); const [regelnVon, setRegelnVon] = useState("vorlage");
+  const ordnerOk = !!ordner && (!!ordner.ohne || (!!ordner.basis && !!ordner.basis_da));
   useEscape(onClose);   // nur der oberste Dialog (Review N2)
   const autoKennung = name.trim().toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40);
   const id = kennung || autoKennung;
@@ -58,12 +65,18 @@ export function NeuesProjektAssistent({ toast, onClose, onFertig }) {
         const r = await supabase.rpc("ws_repo_anfordern", { p_projekt: id, p_privat: privat });
         gh = r.error ? ` – GitHub: ${fehler(r.error)}` : " – deine Werkstatt legt Repository und Grundgerüst an";
       }
-      toast(`Projekt „${name.trim()}“ angelegt${gh}. Die Ampel unter „Anbindungen“ zeigt, was noch fehlt.`);
+      let po = "";
+      if (isDesktop() && ordner && !ordner.ohne) {
+        try { const pf = await verknuepfen(id, { regelnVon: regelnVon || "leer" }); po = pf ? ` – Projektordner ${pf}` : ""; }
+        catch (e) { po = ` – Projektordner: ${fehler(e)}`; }
+      }
+      toast(`Projekt „${name.trim()}“ angelegt${gh}${po}. Die Ampel unter „Anbindungen“ zeigt, was noch fehlt.`);
       onFertig(id); onClose();
     } catch (e) { toast(fehler(e)); } finally { setBusy(false); }
   };
-  const SCHRITTE = ["Art", "Grunddaten", "Anbindungen", "Anlegen"];
-  const weiterOk = schritt !== 2 || datenOk;
+  const SCHRITTE = ["Art", "Grunddaten", "Projektordner", "Anbindungen", "Anlegen"];
+  const weiterOk = (schritt !== 2 || datenOk) && (schritt !== 3 || ordnerOk);
+  const darfZu = (n) => n < schritt || n <= 2 || (datenOk && (n <= 3 || ordnerOk));
   return (
     <div className="fixed inset-0 z-40 grid place-items-center bg-black/45 p-4" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div ref={fokusfalle} role="dialog" aria-modal="true" aria-label="Neues Projekt" className={`${card} w-full max-w-3xl p-5 flex flex-col gap-4 max-h-[92vh] overflow-y-auto`}>
@@ -71,7 +84,7 @@ export function NeuesProjektAssistent({ toast, onClose, onFertig }) {
           <h3 className="font-display font-bold text-xl flex-1">Neues Projekt</h3>
           <ol className="flex flex-wrap gap-1.5" aria-label="Schritte">
             {SCHRITTE.map((t, i) => (
-              <li key={t}><button type="button" onClick={() => (i + 1 < schritt || (i + 1 > schritt && datenOk) || i + 1 <= 2) && setSchritt(i + 1)} aria-current={schritt === i + 1 ? "step" : undefined}
+              <li key={t}><button type="button" onClick={() => darfZu(i + 1) && setSchritt(i + 1)} aria-current={schritt === i + 1 ? "step" : undefined}
                 className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold ${schritt === i + 1 ? "border-emerald-600 bg-emerald-50 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300" : "border-slate-200 dark:border-slate-700 text-slate-500"}`}>
                 <span className={`grid place-items-center w-4 h-4 rounded-full text-xs ${schritt > i + 1 ? "bg-emerald-600 text-white" : schritt === i + 1 ? "bg-emerald-700 text-white" : "bg-slate-200 dark:bg-slate-700"}`}>{schritt > i + 1 ? <Check className="w-3 h-3" /> : i + 1}</span>{t}</button></li>))}
           </ol>
@@ -108,7 +121,9 @@ export function NeuesProjektAssistent({ toast, onClose, onFertig }) {
             </fieldset>
           </div>)}
 
-        {schritt === 3 && (
+        {schritt === 3 && <ProjektordnerSchritt id={id} stand={ordner} holen={ordnerHolen} regelnVon={regelnVon} setRegelnVon={setRegelnVon} andere={projekte.filter((p) => !p.archiviert && p.id !== id)} toast={toast} />}
+
+        {schritt === 4 && (
           <fieldset className="flex flex-col gap-2"><legend className="font-semibold mb-2">Datenbank</legend>
             {Object.entries(DATENBANK).map(([k, [t, b]]) => (
               <label key={k} className={`flex items-start gap-2.5 rounded-xl border p-3 cursor-pointer ${db === k ? "border-emerald-600 bg-emerald-50/60 dark:bg-emerald-950/40" : "border-slate-200 dark:border-slate-700"}`}>
@@ -117,22 +132,24 @@ export function NeuesProjektAssistent({ toast, onClose, onFertig }) {
             <p className="text-xs text-slate-500 flex gap-1.5 mt-1"><Info className="w-4 h-4 shrink-0" />
               {technik === "programm" ? "Builds für Windows und Mac laufen in GitHub; ausprobieren kannst du jeden Zweig in der Windows-Sandbox."
                 : technik === "werkzeug" ? "Testläufe laufen in GitHub, das Ergebnis kommt als Datei. Ein Zeitplan lässt sich im Ablauf „Lauf“ einschalten."
-                : "Die Testseite verbindest du einmal in Cloudflare Pages mit dem Repository – die Ampel führt dich hin."}</p>
+                : "Die Testseite richtest du danach unter „Anbindungen“ mit einem Klick ein (Cloudflare Pages, kostenlos) – die Codeschmiede trägt die Adresse selbst ein."}</p>
           </fieldset>)}
 
-        {schritt === 4 && (
+        {schritt === 5 && (
           <dl className="grid grid-cols-[150px_minmax(0,1fr)] gap-x-4 gap-y-1.5 text-sm">
             <dt className="text-slate-500">Art</dt><dd>{TECHNIK[technik].name}</dd>
             <dt className="text-slate-500">Name</dt><dd>{name.trim() || "–"}</dd>
             <dt className="text-slate-500">Repository</dt><dd className="font-mono text-xs break-all">{repo.trim() || (anlegen ? `kresak-it-solutions/${id} (${privat ? "privat" : "öffentlich"}, wird angelegt)` : "später")}</dd>
             <dt className="text-slate-500">Grundgerüst</dt><dd>{TECHNIK[technik].punkte.join(" · ")}</dd>
             <dt className="text-slate-500">Datenbank</dt><dd>{DATENBANK[db][0]}</dd>
+            <dt className="text-slate-500">Projektordner</dt><dd className="font-mono text-xs break-all">{ordner?.ohne ? "wird beim nächsten Start im Programm festgelegt" : ordner?.basis ? `${ordner.basis.replace(/[\\/]+$/, "")}${ordner.basis.includes("\\") ? "\\" : "/"}${id}` : "–"}</dd>
+            <dt className="text-slate-500">Projektregeln</dt><dd>{regelnVon === "leer" ? "leere REGELN.md" : regelnVon && regelnVon !== "vorlage" ? `kopiert aus „${projekte.find((p) => p.id === regelnVon)?.name || regelnVon}“` : "aus der Vorlage"} – Vorrang vor dem Regelwerk, Sicherheit gilt immer</dd>
             <dt className="text-slate-500">Regelwerk</dt><dd>AI-Dev-OS, Handbuch, CHANGELOG, Datenschutz</dd>
           </dl>)}
 
         <div className="flex justify-between gap-2">
           <button type="button" className={ghost} onClick={() => (schritt === 1 ? onClose() : setSchritt(schritt - 1))}>{schritt === 1 ? "Abbrechen" : <><ArrowLeft className="w-4 h-4" />Zurück</>}</button>
-          {schritt < 4 ? <button type="button" className={btn} disabled={!weiterOk} onClick={() => setSchritt(schritt + 1)}>Weiter<ArrowRight className="w-4 h-4" /></button>
+          {schritt < 5 ? <button type="button" className={btn} disabled={!weiterOk} onClick={() => setSchritt(schritt + 1)}>Weiter<ArrowRight className="w-4 h-4" /></button>
             : <button type="button" className={btn} disabled={busy || !datenOk} onClick={los}>{busy && <Loader2 className="w-4 h-4 animate-spin" />}Projekt anlegen</button>}
         </div>
       </div>
@@ -185,6 +202,11 @@ export default function Anbindungen({ d, ich, toast, onVorschau }) {
       </div>
       <p className="text-sm text-slate-500">Was das Projekt braucht und ob es läuft. Die Werkstatt des Admins prüft alle 10 Minuten{projekt.anbindungen_zeit ? `, zuletzt ${new Date(projekt.anbindungen_zeit).toLocaleString("de-AT", { dateStyle: "short", timeStyle: "short" })}` : ""}.
         Gelb heißt: du musst selbst etwas tun (z. B. in Cloudflare bestätigen) – Anmeldungen und Geheimnisse gibst du nur beim Anbieter ein.</p>
+      <AnbindungenKacheln projekt={projekt} d={d} admin={admin} toast={toast} />
+      <ProjektordnerKarte projekt={projekt} toast={toast} />
+      <h3 className="font-display font-bold text-lg mt-2">Welche Regeln gelten?</h3>
+      <RegelnRangfolge konflikt={ampel.regeln?.stand === "rot" ? `${ampel.regeln.text}.` : null} />
+      <h3 className="font-display font-bold text-lg mt-2">Ampel im Detail</h3>
       {reihe.length ? (
         <ul className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
           {reihe.map((k) => (

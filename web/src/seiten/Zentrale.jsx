@@ -300,7 +300,7 @@ export function AuftragsChat({ g, f, d, ich, darf, toast, onLoeschen, kanal = "c
                 const zu = beantwortet(m);
                 if (m.art === "system") return <ChatNachricht key={m.id} seite="system"><Markdown text={m.text} klein /></ChatNachricht>;
                 return (
-                <ChatNachricht key={m.id} seite={m.von ? "ich" : "andere"} ton={zu ? "blass" : m.art === "frage" ? "frage" : undefined}
+                <ChatNachricht key={m.id} seite={m.von ? "ich" : "andere"} ton={zu ? "blass" : m.art === "frage" ? "frage" : !m.von && /^Achtung – Regel-Konflikt/.test(m.text || "") ? "konflikt" : undefined}
                   kopf={<>{m.von ? (m.von === ich.id ? "Du" : name(m.von)) : `Werkstatt ${g.name}`} · {fmt(m.erstellt)}{m.art === "frage" ? " · Rückfrage" : ""}
                     {m.kanal === "gruppe" && f && <span className="px-1.5 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">aus Gruppe</span>}
                     {m.kanal === "claude-chat" && <span className="px-1.5 rounded-full bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300">aus Claude-Chat</span>}
