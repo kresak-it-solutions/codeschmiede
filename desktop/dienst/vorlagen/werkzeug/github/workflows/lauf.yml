@@ -1,8 +1,22 @@
 name: Lauf
-# Führt das Werkzeug aus und legt das Ergebnis (Ordner ausgabe/) als Datei ab. Start per Knopf in der Codeschmiede.
+# Führt das Werkzeug aus und legt das Ergebnis (Ordner ausgabe/, dazu konsole.txt) als Datei ab. Start per Knopf in der Codeschmiede
+# (Testlauf-Konsole: Befehl aus beispiele/befehle.json + Beispiel-Eingabe aus beispiele/). Ohne Eingaben: Standardlauf.
+# Sicherheit: Die Eingaben gehen NUR als Umgebungsvariablen in die Schritte (nie als ${{ }} in ein Skript), werden hier noch einmal
+# gegen feste Muster und die Liste geprüft und als einzelne Argumente übergeben – keine freie Befehlszeile.
 # Zeitplan: die zwei Zeilen unter „schedule“ einkommentieren (Zeiten in UTC).
 on:
   workflow_dispatch:
+    inputs:
+      befehl:
+        description: "Befehl aus beispiele/befehle.json (leer = Standardlauf)"
+        required: false
+        default: ""
+        type: string
+      eingabe:
+        description: "Beispiel-Eingabe: Dateiname in beispiele/"
+        required: false
+        default: ""
+        type: string
   # schedule:
   #   - cron: "0 5 * * *"
 permissions:
@@ -10,13 +24,37 @@ permissions:
 jobs:
   lauf:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
+        with: { persist-credentials: false }
       - uses: actions/setup-node@v4
         with: { node-version: 22 }
       - run: npm test
-      - run: npm start
+      - name: Eingaben prüfen
+        env:
+          CS_BEFEHL: ${{ inputs.befehl }}
+          CS_EINGABE: ${{ inputs.eingabe }}
+        run: |
+          if [ -z "$CS_BEFEHL" ] && [ -z "$CS_EINGABE" ]; then echo "Standardlauf ohne Eingaben"; exit 0; fi
+          [[ "$CS_BEFEHL" =~ ^[a-z][a-z0-9-]{0,39}$ ]] || { echo "::error::Ungültiger Befehl"; exit 1; }
+          [[ "$CS_EINGABE" =~ ^[A-Za-z0-9][A-Za-z0-9_-]{0,59}(\.[A-Za-z0-9]{1,8})?$ ]] || { echo "::error::Ungültige Beispiel-Eingabe"; exit 1; }
+          node -e 'const b = JSON.parse(require("fs").readFileSync("beispiele/befehle.json", "utf8")).befehle || {}; process.exit(Object.prototype.hasOwnProperty.call(b, process.env.CS_BEFEHL) ? 0 : 1)' \
+            || { echo "::error::Befehl steht nicht in beispiele/befehle.json"; exit 1; }
+          [ -f "beispiele/$CS_EINGABE" ] && [ ! -L "beispiele/$CS_EINGABE" ] || { echo "::error::Beispiel-Eingabe fehlt in beispiele/"; exit 1; }
+      - name: Werkzeug ausführen
+        env:
+          CS_BEFEHL: ${{ inputs.befehl }}
+          CS_EINGABE: ${{ inputs.eingabe }}
+        run: |
+          mkdir -p ausgabe
+          set +e
+          if [ -n "$CS_BEFEHL" ]; then node src/index.mjs "$CS_BEFEHL" "beispiele/$CS_EINGABE" > "$RUNNER_TEMP/konsole.txt" 2>&1
+          else node src/index.mjs > "$RUNNER_TEMP/konsole.txt" 2>&1; fi
+          code=$?
+          tail -c 1000000 "$RUNNER_TEMP/konsole.txt" > ausgabe/konsole.txt
+          tail -n 100 ausgabe/konsole.txt
+          exit $code
       - uses: actions/upload-artifact@v4
         if: always()
         with: { name: ergebnis, path: ausgabe/, retention-days: 30, if-no-files-found: ignore }

@@ -1,0 +1,5 @@
+{
+  "befehle": {
+    "zaehlen": "Zählt die Einträge je Kategorie (CSV mit Spalte „kategorie“)"
+  }
+}

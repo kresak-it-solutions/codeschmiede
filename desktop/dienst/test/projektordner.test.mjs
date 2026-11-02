@@ -179,7 +179,8 @@ test("Testseite: Anfrage mit Git-Anbindung, Vorschau nur für Werkstatt-Zweige, 
   assert.equal(d.source.config.preview_deployment_setting, "custom"); assert.deepEqual(d.source.config.preview_branch_includes, ["feature/cs-*"]); assert.equal(d.production_branch, "main");
   assert.deepEqual(d.build_config, { build_command: "npm run build", destination_dir: "dist", root_dir: "" });
   assert.equal(d.deployment_configs.preview.env_vars.VITE_CS_FEHLER_SCHLUESSEL.value, "csf_" + "0".repeat(32));
-  assert.equal(buildFuer("programm"), null);
+  assert.equal(buildFuer("programm", "dotnet"), null);   // 0.17.0: Tauri-Programme haben eine Testseite der Oberfläche, .NET nicht
+  assert.equal(buildFuer("programm").destination_dir, "vorschau-dist");
   assert.throws(() => projektDaten({ name: "x", repo: "a/b", art: "werkzeug" }));
 });
 

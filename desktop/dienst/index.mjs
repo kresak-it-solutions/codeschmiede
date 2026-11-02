@@ -57,6 +57,9 @@ import { einsortieren, geheimnisseImOrdner, repoKennungenLesen, repoKennungMerke
 import { repoEinlesen } from "./lib/repo.mjs";
 import { pfadOk } from "./lib/projektordner.mjs";
 import { diffSammeln, fingerabdruck, GitVerdaechtig, codeLiveUmgebung } from "./lib/codeLive.mjs";
+import { bildschirmfotoNehmen } from "./lib/bildschirmfoto.mjs";
+import { aufLaufWarten, artefaktHolen, testlaufErgebnis, dokumentSeiten, eingabenFehler } from "./lib/cloudLauf.mjs";
+import { vorschauEinrichten } from "./lib/vorschauEinrichten.mjs";
 
 const HIER = path.dirname(fileURLToPath(import.meta.url));
 // Claude Code finden. Windows: nativer Installer (claude.exe in %USERPROFILE%\.local\bin) oder npm (cli.js) – immer OHNE Shell
@@ -2769,12 +2772,100 @@ async function fehlerWerteFuer(projektId) {
   if (!schluessel) { const { data, error } = await db.rpc("ws_fehler_schluessel_erzeugen", { p_projekt: projektId }); if (error) return null; schluessel = data; }
   return { url: cfg.supabase_url, anon: cfg.anon_key, schluessel };
 }
+// ---------- Arbeitsplatz Stufen 2/3 (0.17.0, Datenbank 0060): Bildschirmfoto, Testlauf-Konsole, Dokument-Seiten, Vorschau einrichten ----------
+// Arten, die dieser Dienst kann – die Datenbank gibt nur diese heraus (ältere Dienste bekommen die neuen Arten nie)
+const AKTION_ARTEN = ["sandbox", "testlauf", "pruefen", "db_einrichten", "testseite", "regelwerk_vergleich", "bildschirmfoto", "dokument", "vorschau_einrichten"];
+const imHintergrund = new Set();   // lange Läufe (warten auf GitHub) laufen neben der Schleife, je Aktion nur einmal
+function hintergrund(id, f) {
+  if (imHintergrund.has(id)) return; imHintergrund.add(id);
+  Promise.resolve().then(f).catch(() => {}).finally(() => imHintergrund.delete(id));
+}
+// PowerShell (festes Skript) ohne Shell starten, Rückgabe-Code abwarten (höchstens 60 s)
+const fotoStarten = (befehl, args) => new Promise((ok) => {
+  // Nur die Werte, die PowerShell zum Übersetzen des festen Skripts braucht – keine Zugänge aus der Umgebung des Dienstes
+  const env = Object.fromEntries(["SystemRoot", "windir", "TEMP", "TMP", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "PATH"].filter((k) => typeof process.env[k] === "string").map((k) => [k, process.env[k]]));
+  const k = spawn(befehl, args, { shell: false, windowsHide: true, stdio: "ignore", env });
+  const t = setTimeout(() => { try { k.kill(); } catch { /* schon weg */ } }, 60000);
+  k.once("error", () => { clearTimeout(t); ok({ code: -1 }); });
+  k.once("exit", (code) => { clearTimeout(t); ok({ code: code ?? -1 }); });
+});
+/** Ältere Seiten-Ordner des Projekts im Speicher ws-vorschau aufräumen (die zwei neuesten bleiben). */
+async function vorschauAufraeumen(projektId) {
+  const basis = `${cfg.user_id}/${projektId}`;
+  const { data } = await db.storage.from("ws-vorschau").list(basis, { limit: 100 });
+  const ordner = (data || []).map((x) => x.name).filter((n) => /^\d{1,15}$/.test(n)).sort((x, y) => Number(y) - Number(x)).slice(2);
+  for (const o of ordner) {
+    const { data: d } = await db.storage.from("ws-vorschau").list(`${basis}/${o}`, { limit: 100 });
+    const pfade = (d || []).map((x) => `${basis}/${o}/${x.name}`).filter((p) => /seite-\d{3}\.png$/.test(p));
+    if (pfade.length) await db.storage.from("ws-vorschau").remove(pfade);
+  }
+}
+async function aktionNehmen() {
+  const r = await db.rpc("ws_projekt_aktion_nehmen", { p_pc: pcId, p_arten: AKTION_ARTEN });
+  // Datenbank noch ohne 0060: alte Fassung (nur die bisherigen Arten)
+  if (r.error && /p_arten|function .* does not exist|schema cache/i.test(r.error.message)) return db.rpc("ws_projekt_aktion_nehmen", { p_pc: pcId });
+  return r;
+}
+async function testlaufKonsole(a, ende) {
+  const zweig = a.zweig || "main"; const seit = Date.now();
+  const lebt = (hinweis) => db.rpc("ws_projekt_aktion_lebt", { p_pc: pcId, p_id: a.id, p_hinweis: hinweis }).then(() => {}, () => {});
+  const f = eingabenFehler(a.eingaben); if (f) throw new Error(f);
+  await testlaufStarten({ sh: ghGrenze, repo: a.repo, zweig, eingaben: a.eingaben });
+  await lebt(`Testlauf „${a.eingaben.befehl} ${a.eingaben.eingabe}“ in GitHub gestartet`);
+  hintergrund(a.id, async () => {
+    const tmp = await mkdtemp(path.join(os.tmpdir(), "cs-lauf-"));
+    try {
+      const lauf = await aufLaufWarten({ sh: ghGrenze, repo: a.repo, workflow: "lauf.yml", zweig, seit, lebt });
+      if (!lauf) { await ende(null, "Der Lauf braucht länger als 14 Minuten – Ergebnis bei GitHub ansehen", `https://github.com/${a.repo}/actions/workflows/lauf.yml`, true); return; }
+      const ordner = await artefaktHolen({ sh: ghGrenze, repo: a.repo, lauf, name: "ergebnis", ordner: path.join(tmp, "ergebnis") });
+      const e = ordner ? await testlaufErgebnis(ordner) : { ausgabe: "", gekuerzt: false, dateien: [] };
+      const ok = lauf.conclusion === "success";
+      await ende({ ...e, erfolg: ok, lauf: String(lauf.databaseId), befehl: a.eingaben.befehl, eingabe: a.eingaben.eingabe },
+        ok ? `Testlauf fertig: ${a.eingaben.befehl} ${a.eingaben.eingabe}` : `Testlauf ${lauf.conclusion === "failure" ? "mit Fehler beendet" : lauf.conclusion || "beendet"} – Ausgabe unten`, lauf.url, false);
+    } catch (e) { await ende(null, `Hat nicht geklappt: ${kuerzen(ohneGeheimnisse(e?.stderr || e?.message || String(e)), 400)}`, null, true); }
+    finally { await rm(tmp, { recursive: true, force: true }).catch(() => {}); }
+  });
+}
+async function dokumentBauen(a, ende) {
+  const zweig = a.zweig || "main"; const seit = Date.now();
+  const lebt = (hinweis) => db.rpc("ws_projekt_aktion_lebt", { p_pc: pcId, p_id: a.id, p_hinweis: hinweis }).then(() => {}, () => {});
+  await ghGrenze("gh", ["workflow", "run", "dokument.yml", "--repo", a.repo, "--ref", zweig]);
+  await lebt("Dokument wird in GitHub gebaut");
+  hintergrund(a.id, async () => {
+    const tmp = await mkdtemp(path.join(os.tmpdir(), "cs-dok-"));
+    try {
+      const lauf = await aufLaufWarten({ sh: ghGrenze, repo: a.repo, workflow: "dokument.yml", zweig, seit, lebt });
+      if (!lauf) { await ende(null, "Der Bau braucht länger als 14 Minuten – bei GitHub ansehen", `https://github.com/${a.repo}/actions/workflows/dokument.yml`, true); return; }
+      if (lauf.conclusion !== "success") { await ende(null, "Dokument bauen ist fehlgeschlagen – bei GitHub ansehen (fehlt das Skript „pdf“?)", lauf.url, true); return; }
+      const ordner = await artefaktHolen({ sh: ghGrenze, repo: a.repo, lauf, name: "dokument-seiten", ordner: path.join(tmp, "seiten") });
+      if (!ordner) { await ende(null, "Im Bau fehlen die Seitenbilder", lauf.url, true); return; }
+      const { seiten, gesamt, gekuerzt } = await dokumentSeiten(ordner);
+      if (!seiten.length) { await ende(null, "Keine gültigen Seitenbilder im Bau", lauf.url, true); return; }
+      const liste = [];
+      for (const x of seiten) {
+        const pfad = `${cfg.user_id}/${a.projekt_id}/${a.id}/seite-${String(x.nr).padStart(3, "0")}.png`;
+        const { error } = await db.storage.from("ws-vorschau").upload(pfad, x.buf, { contentType: "image/png", upsert: false });
+        if (error) throw error;
+        liste.push({ nr: x.nr, pfad, breite: x.breite, hoehe: x.hoehe });
+      }
+      await ende({ seiten: liste, gesamt, gekuerzt, lauf: String(lauf.databaseId) }, `Dokument gebaut: ${liste.length} Seite(n)${gekuerzt ? ` von ${gesamt} (gekürzt)` : ""}`, lauf.url, false);
+      await vorschauAufraeumen(a.projekt_id).catch(() => {});
+    } catch (e) { await ende(null, `Hat nicht geklappt: ${kuerzen(ohneGeheimnisse(e?.stderr || e?.message || String(e)), 400)}`, null, true); }
+    finally { await rm(tmp, { recursive: true, force: true }).catch(() => {}); }
+  });
+}
+
 async function aktionArbeit() {
   if (!cfg.admin) return false;
-  const { data, error } = await db.rpc("ws_projekt_aktion_nehmen", { p_pc: pcId });
+  const { data, error } = await aktionNehmen();
   if (error) { if (!/function .* does not exist|schema cache/i.test(error.message)) melde("fehler", ohneGeheimnisse(error.message)); return false; }
   const a = data?.[0]; if (!a) return false;
   const fertig = (hinweis, link = null, fehler = false) => db.rpc("ws_projekt_aktion_ergebnis", { p_pc: pcId, p_id: a.id, p_hinweis: hinweis, p_link: link, p_fehler: fehler });
+  // Testlauf-Konsole und Dokument: Ergebnis über ws_aktion_ergebnis_melden (geprüfte Form, Datenbank 0060)
+  const ende = async (ergebnis, hinweis, link, fehler) => {
+    const { error: e } = await db.rpc("ws_aktion_ergebnis_melden", { p_pc: pcId, p_aktion: a.id, p_ergebnis: ergebnis, p_hinweis: hinweis, p_link: link, p_fehler: fehler });
+    if (e) await fertig(`Ergebnis nicht gespeichert: ${kuerzen(ohneGeheimnisse(e.message), 300)}`, link, true).catch(() => {});
+  };
   try {
     if (a.art === "pruefen") {
       const { data: p } = await db.from("ws_projekte").select("*").eq("id", a.projekt_id).single();
@@ -2811,9 +2902,40 @@ async function aktionArbeit() {
       const dateien = fest ? regelwerkUnterschied(await git(repo, "diff", "--name-status", "--no-renames", fest, neu)) : (await regelwerkDateien(repo, neu, { max: 300, maxJe: 1024 * 1024, maxGesamt: 10 * 1024 * 1024 })).map((d) => ({ art: "A", pfad: d.pfad }));
       const { error: ev } = await db.rpc("ws_regelwerk_vergleich_melden", { p_pc: pcId, p_aktion: a.id, p_fest: fest, p_neu: neu, p_dateien: dateien });
       if (ev) throw ev;
+    } else if (a.art === "testlauf" && a.eingaben) {
+      melde("status", "Testlauf in der Cloud wird gestartet");
+      await testlaufKonsole(a, ende);
     } else if (a.art === "testlauf") {
       const r = await testlaufStarten({ sh: ghGrenze, repo: a.repo, zweig: a.zweig || "main" });
       await fertig("Testlauf in GitHub gestartet – Ergebnis in ein paar Minuten in der Ampel", r.link);
+    } else if (a.art === "dokument") {
+      melde("status", "Dokument wird in der Cloud gebaut");
+      await dokumentBauen(a, ende);
+    } else if (a.art === "bildschirmfoto") {
+      // Nur das Fenster der Windows-Sandbox (festes Skript), Ablage im eigenen Chat-Speicher; in den Chat erst nach Gerhards Bestätigung
+      melde("status", "Bildschirmfoto der Windows-Sandbox");
+      await bildschirmfotoNehmen({ a, ordner: path.join(cfg.daten_ordner, "bildschirmfotos"), benutzer: cfg.user_id, starten: fotoStarten,
+        hochladen: async (pfad, buf) => { const { error: e } = await db.storage.from("ws-chat").upload(pfad, buf, { contentType: "image/png", upsert: false }); if (e) throw e; },
+        melden: async (x) => {
+          const { error: e } = await db.rpc("ws_bildschirmfoto_melden", { p_pc: pcId, p_aktion: a.id, p_pfad: x.pfad, p_groesse: x.groesse, p_breite: x.breite, p_hoehe: x.hoehe });
+          if (e) { await db.storage.from("ws-chat").remove([x.pfad]).catch(() => {}); throw e; }
+        } });
+    } else if (a.art === "vorschau_einrichten") {
+      melde("status", "Auftrag für die Vorschau wird angelegt");
+      const { data: p } = await db.from("ws_projekte").select("*").eq("id", a.projekt_id).single();
+      let gruppe = null; let feature = null;
+      if (a.feature_id) { const { data: f } = await db.from("ws_features").select("id, gruppe_id").eq("id", a.feature_id).maybeSingle(); if (f) { gruppe = f.gruppe_id; feature = f.id; } }
+      if (!gruppe) {
+        const { data: gr } = await db.from("ws_gruppen").select("id, ws_bereiche!inner(projekt_id)").eq("ws_bereiche.projekt_id", p.id).order("reihenfolge").limit(1);
+        gruppe = gr?.[0]?.id;
+      }
+      if (!gruppe) throw new Error("Im Projekt gibt es noch keine Gruppe für den Auftrag");
+      await fertig(await vorschauEinrichten({ sh: ghGrenze, projekt: p, ziel: a.eingaben?.ziel, auftragAnlegen: async ({ titel, text, dateien, basis_sha }) => {
+        const { data: nr, error: e } = await db.rpc("ws_code_hand_auftrag", { p_gruppe: gruppe, p_titel: titel, p_text: text, p_basis_sha: basis_sha,
+          p_dateien: dateien.map((x) => ({ pfad: x.pfad, inhalt: x.inhalt, basis_blob: x.basis_blob })), p_feature: feature });
+        if (e) throw e;
+        return nr;
+      } }));
     } else if (a.art === "testseite") {
       // Cloudflare Pages mit Git-Anbindung (kostenlos). Wrangler-Anmeldung nur im Speicher; geht die Git-Anbindung nicht → Lotse
       melde("status", "Testseite wird eingerichtet (Cloudflare Pages)");

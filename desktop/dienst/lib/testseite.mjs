@@ -12,9 +12,13 @@ const SUBDOMAIN = /^[a-z0-9-]{1,63}\.pages\.dev$/;
 export class Lotse extends Error {}
 const kurz = (t, n = 300) => String(t ?? "").replace(/\s+/g, " ").trim().slice(0, n);
 
-/** Build-Einstellungen je Grundgerüst (vorlagen/web, vorlagen/handy: Vite → dist). Andere Arten haben keine Testseite. */
-export function buildFuer(art) {
+/**
+ * Build-Einstellungen je Grundgerüst (vorlagen/web, vorlagen/handy: Vite → dist). Seit 0.17.0 auch Tauri-Programme: Oberfläche als Testseite
+ * (vorlagen/programm/vorschau/bauen.mjs → vorschau-dist, Tauri-Funktionen nachgespielt). .NET und Werkzeuge haben keine Testseite.
+ */
+export function buildFuer(art, technik = null) {
   if (art === "web" || art === "handy" || !art) return { build_command: "npm run build", destination_dir: "dist", root_dir: "" };
+  if (art === "programm" && technik !== "dotnet") return { build_command: "node vorschau/bauen.mjs", destination_dir: "vorschau-dist", root_dir: "" };
   return null;
 }
 
@@ -62,14 +66,19 @@ export async function kontoFinden(holen, token) {
 }
 
 /** Pages-Projekt anlegen (Inhalt der Anfrage). fehlerWerte = { url, anon, schluessel } für den Fehler-Melder (VITE_CS_FEHLER_*), optional. */
-export function projektDaten({ name, repo, art, fehlerWerte = null }) {
+export function projektDaten({ name, repo, art, technik = null, fehlerWerte = null }) {
   const [owner, repoName] = String(repo || "").split("/");
-  const build = buildFuer(art);
+  const build = buildFuer(art, technik);
   if (!owner || !repoName || !build) throw new Error("Für dieses Projekt gibt es keine Testseite");
-  const env = fehlerWerte ? {
-    VITE_CS_FEHLER_URL: { type: "plain_text", value: fehlerWerte.url },
-    VITE_CS_FEHLER_ANON: { type: "plain_text", value: fehlerWerte.anon },
-    VITE_CS_FEHLER_SCHLUESSEL: { type: "plain_text", value: fehlerWerte.schluessel },
+  // Programme: VITE_CS_VORSCHAU=1 lässt Vite-Oberflächen die Tauri-Pakete gegen die Nachbildung tauschen (vorschau/vite-alias.mjs)
+  const vorschau = art === "programm" ? { VITE_CS_VORSCHAU: { type: "plain_text", value: "1" } } : {};
+  const env = fehlerWerte || art === "programm" ? {
+    ...vorschau,
+    ...(fehlerWerte ? {
+      VITE_CS_FEHLER_URL: { type: "plain_text", value: fehlerWerte.url },
+      VITE_CS_FEHLER_ANON: { type: "plain_text", value: fehlerWerte.anon },
+      VITE_CS_FEHLER_SCHLUESSEL: { type: "plain_text", value: fehlerWerte.schluessel },
+    } : {}),
   } : null;
   return {
     name, production_branch: "main", build_config: build,
@@ -101,7 +110,7 @@ const GIT_FEHLT = /git|github|installation|repository|repo|source|oauth|authoriz
  * projekt = { id, repo, technik_art }; sh für wrangler, holen = fetch.
  */
 export async function testseiteEinrichten({ sh, holen = fetch, projekt, fehlerWerte = null }) {
-  if (!buildFuer(projekt.technik_art)) throw new Error("Eine Testseite gibt es nur für Web- und Handy-Apps");
+  if (!buildFuer(projekt.technik_art, projekt.programm_technik)) throw new Error("Eine Testseite gibt es nur für Web- und Handy-Apps und Tauri-Programme");
   const name = String(projekt.id || "");
   if (!/^[a-z0-9][a-z0-9-]{1,39}$/.test(name)) throw new Error("Ungültige Projekt-Kennung");
   if (!/^[A-Za-z0-9-]{1,39}\/[A-Za-z0-9._-]{1,100}$/.test(projekt.repo || "")) throw new Error("Ungültiges Repository");
@@ -119,7 +128,7 @@ export async function testseiteEinrichten({ sh, holen = fetch, projekt, fehlerWe
         throw new Lotse(`In Cloudflare gibt es schon ein Pages-Projekt „${name}“, das nicht mit ${projekt.repo} verbunden ist – bitte dort prüfen.`);
       }
     } else {
-      try { p = await cf(holen, token, "POST", `/accounts/${konto}/pages/projects`, projektDaten({ name, repo: projekt.repo, art: projekt.technik_art, fehlerWerte: fw })); }
+      try { p = await cf(holen, token, "POST", `/accounts/${konto}/pages/projects`, projektDaten({ name, repo: projekt.repo, art: projekt.technik_art, technik: projekt.programm_technik, fehlerWerte: fw })); }
       catch (e) {
         if (e instanceof Lotse) throw e;
         if (e.status === 400 || e.status === 403 || GIT_FEHLT.test(e.message)) throw new Lotse(`Cloudflare konnte das Repository nicht verbinden (${kurz(e.message, 160)}). Meist fehlt die Cloudflare-App für GitHub in der Organisation.`);
@@ -131,7 +140,7 @@ export async function testseiteEinrichten({ sh, holen = fetch, projekt, fehlerWe
     let fehlerGesetzt = false;
     if (fw) {
       try {
-        const env = projektDaten({ name, repo: projekt.repo, art: projekt.technik_art, fehlerWerte: fw }).deployment_configs;
+        const env = projektDaten({ name, repo: projekt.repo, art: projekt.technik_art, technik: projekt.programm_technik, fehlerWerte: fw }).deployment_configs;
         await cf(holen, token, "PATCH", `/accounts/${konto}/pages/projects/${name}`, { deployment_configs: env });
         fehlerGesetzt = true;
       } catch { fehlerGesetzt = false; }

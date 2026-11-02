@@ -36,7 +36,7 @@ export async function dateiAufMain(sh, repo, pfad) {
 }
 
 /** Neue Zeile oben in die Tabelle des Änderungsprotokolls (AGENTS.md: jede Änderung ins CHANGELOG) – null, wenn keine Tabelle da ist. */
-export function changelogZeile(text, datum = new Date().toISOString().slice(0, 10)) {
+export function changelogZeile(text, datum = new Date().toISOString().slice(0, 10), eintrag = null) {
   if (typeof text !== "string") return null;
   const crlf = text.includes("\r\n");
   const zeilen = text.replace(/\r\n/g, "\n").split("\n");
@@ -45,7 +45,7 @@ export function changelogZeile(text, datum = new Date().toISOString().slice(0, 1
   if (i < 0) i = zeilen.findIndex((z) => /^\|\s*:?-{3,}/.test(z.trim()));
   if (i < 0) return null;
   const spalten = (zeilen[i].match(/\|/g) || []).length - 1;
-  const werte = ["– (Datenbank-Station)", datum, "Codeschmiede (Datenbank-Station „Einrichten“)",
+  const werte = eintrag ? [eintrag.version, datum, eintrag.wer, eintrag.was] : ["– (Datenbank-Station)", datum, "Codeschmiede (Datenbank-Station „Einrichten“)",
     "**Datenbank-Station:** Ablauf „Datenbank“ (`.github/workflows/datenbank.yml`) – neue Dateien in `supabase/migrations/` gehen nach dem Zusammenführen automatisch in die Test-Datenbank, in die Live-Datenbank erst beim Live-Schalten (vorher Sicherung des Aufbaus, ohne Daten). Zugang je Umgebung über das GitHub-Geheimnis `SUPABASE_DB_URL`."];
   const zelle = spalten >= 4 ? werte.concat(Array(spalten - 4).fill("")) : [werte[1], werte[3]].slice(0, Math.max(1, spalten));
   zeilen.splice(i + 1, 0, `| ${zelle.join(" | ")} |`);

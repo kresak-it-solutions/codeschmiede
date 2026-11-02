@@ -37,7 +37,11 @@ test("Ampel Programm: roter Build, Sandbox fehlt, ohne Signatur; Fehler einzelne
   const a = await ampelPruefen({ sh, projekt: { repo: "o/prog", technik_art: "programm", datenbank: "keine" }, plattform: "win32", sandbox: () => null });
   assert.equal(a.github.stand, "gruen"); assert.match(a.github.text, /privat/);
   assert.equal(a.pruefung.stand, "grau"); assert.equal(a.build.stand, "rot"); assert.equal(a.signatur.stand, "grau");
-  assert.equal(a.sandbox.stand, "gelb"); assert.ok(!("testseite" in a));
+  assert.equal(a.sandbox.stand, "gelb");
+  // 0.17.0: Tauri-Programme haben eine Testseite der Oberfläche (fehlt hier noch → gelb mit Hinweis auf den Einrichtungs-Auftrag); .NET nie
+  assert.equal(a.testseite.stand, "gelb"); assert.match(a.testseite.text, /Programm-Oberfläche/);
+  const b = await ampelPruefen({ sh, projekt: { repo: "o/prog", technik_art: "programm", programm_technik: "dotnet", datenbank: "keine" }, plattform: "win32", sandbox: () => null });
+  assert.ok(!("testseite" in b)); assert.ok(!("signatur" in b)); assert.equal(b.build.stand, "rot");
 });
 
 test("Ampel ohne Repository und mit ungültiger Testseite", async () => {
