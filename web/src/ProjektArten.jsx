@@ -12,6 +12,39 @@ import { isDesktop } from "./desktop";
 import { useProjektordner, verknuepfen } from "./daten/projektordner";
 import { ProjektordnerSchritt, ProjektordnerKarte, RegelnRangfolge } from "./Projektordner";
 import AnbindungenKacheln from "./AnbindungenKacheln";
+import { TECHNIK_EMPFEHLUNG, ZIELE, ZIEL_REIHE, zieleAusArt, zieleVon } from "./bausteine/arbeitsplatz";
+
+// Ziele mehrfach wählen (0.16.0, Entwurf „Arbeitsplatz für alle Arten“): Web, Handy (PWA), Windows, Mac, Cloud-Lauf, PDF
+function ZieleWahl({ ziele, onChange, name = "cs-ziele" }) {
+  const umschalten = (z) => { const n = ziele.includes(z) ? ziele.filter((x) => x !== z) : [...ziele, z]; if (n.length) onChange(ZIEL_REIHE.filter((x) => n.includes(x))); };
+  return (
+    <fieldset className="flex flex-col gap-1.5"><legend className="text-sm font-semibold mb-1">Ziele (mehrere möglich)</legend>
+      <div className="flex flex-wrap gap-1.5">
+        {ZIEL_REIHE.map((z) => <label key={z} className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-sm cursor-pointer ${ziele.includes(z) ? "border-emerald-600 bg-emerald-50 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200" : "border-slate-200 dark:border-slate-700"}`}>
+          <input type="checkbox" name={name} className="accent-emerald-700" checked={ziele.includes(z)} onChange={() => umschalten(z)} />{ZIELE[z].name}</label>)}
+      </div>
+      <span className="text-xs text-slate-500">Rechts im Arbeitsplatz gibt es dann einen Ziel-Umschalter. Windows/Mac, Cloud-Lauf und PDF zeigen bis Stufe 2/3 einen Platzhalter mit Sandbox, Testlauf und Builds.</span>
+    </fieldset>);
+}
+
+// Technik-Empfehlung aus dem Entwurf als Hilfe bei der Wahl (Klick auf eine Zeile übernimmt Art und Ziele)
+function TechnikEmpfehlung({ onWahl }) {
+  return (
+    <details className="rounded-xl border border-slate-200 dark:border-slate-700 p-3 text-sm" open>
+      <summary className="cursor-pointer font-semibold">Welche Technik passt? (Empfehlung)</summary>
+      <div className="mt-2 overflow-x-auto">
+        <table className="w-full text-left text-[13px]">
+          <thead className="text-xs text-slate-500"><tr><th className="py-1 pr-3 font-semibold">Du willst</th><th className="py-1 pr-3 font-semibold">Empfohlene Technik</th><th className="py-1 pr-3 font-semibold">Vorschau rechts</th><th className="py-1" /></tr></thead>
+          <tbody>{TECHNIK_EMPFEHLUNG.map((e) => <tr key={e.wunsch} className="border-t border-slate-100 dark:border-slate-800 align-top">
+            <td className="py-1.5 pr-3 font-semibold">{e.wunsch}</td>
+            <td className="py-1.5 pr-3">{e.technik}{e.vorschlag && <span className="ml-1.5 text-xs font-semibold px-1.5 rounded bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">Vorschlag</span>}{e.sonderfall && <span className="ml-1.5 text-xs font-semibold px-1.5 rounded border border-dashed border-slate-400 text-slate-600 dark:text-slate-300">Sonderfall</span>}</td>
+            <td className="py-1.5 pr-3 text-slate-600 dark:text-slate-300">{e.vorschau}</td>
+            <td className="py-1.5"><button type="button" className="text-xs font-semibold text-emerald-700 dark:text-emerald-400 underline underline-offset-2 whitespace-nowrap" onClick={() => onWahl(e)}>Übernehmen</button></td></tr>)}</tbody>
+        </table>
+      </div>
+      <p className="mt-2 text-xs text-slate-500">Für Windows und Mac ist <b>Tauri</b> der Standard (derselbe React-Code läuft auch als Web/PWA). .NET nur, wenn das Programm tief in Windows muss.</p>
+    </details>);
+}
 
 const fehler = (e) => (e?.message || "Unbekannter Fehler").replace(/^.*?ERROR:\s*/, "");
 const btn = "inline-flex items-center justify-center gap-2 h-10 px-4 rounded-xl bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 text-white font-display font-bold tracking-wide transition";
@@ -39,7 +72,10 @@ const STAND_TEXT = { gruen: "grün", gelb: "gelb", rot: "rot", grau: "grau" };
 export function NeuesProjektAssistent({ toast, onClose, onFertig, projekte = [] }) {
   const fokusfalle = useFokusfalle();   // Fokus bleibt im Dialog (Befund B2)
   const [schritt, setSchritt] = useState(1);
-  const [technik, setTechnik] = useState("web");
+  const [technik, setTechnikRoh] = useState("web");
+  const [ziele, setZieleRoh] = useState(["web"]); const [zieleEigen, setZieleEigen] = useState(false);   // vorbelegt aus der Art, bis man selbst wählt
+  const setTechnik = (k) => { setTechnikRoh(k); if (!zieleEigen) setZieleRoh(zieleAusArt(k)); };
+  const setZiele = (z) => { setZieleRoh(z); setZieleEigen(true); };
   const [name, setName] = useState(""); const [kennung, setKennung] = useState(""); const [besch, setBesch] = useState("");
   const [repo, setRepo] = useState(""); const [anlegen, setAnlegen] = useState(true); const [privat, setPrivat] = useState(true);   // Befund S2 (01.11.2026): neue Repos standardmäßig privat
   const [symbol, setSymbol] = useState("layers"); const [art, setArt] = useState("verwaltung");
@@ -61,6 +97,7 @@ export function NeuesProjektAssistent({ toast, onClose, onFertig, projekte = [] 
       const t = await supabase.rpc("ws_projekt_technik", { p_projekt: id, p_art: technik, p_datenbank: db });
       if (t.error) toast(`Art nicht gespeichert: ${fehler(t.error)}`);
       if (zeigeDesignArt && art !== "verwaltung") { const ra = await supabase.rpc("ws_projekt_app_art", { p_projekt: id, p_art: art }); if (ra.error) toast(fehler(ra.error)); }
+      if (ziele.join(",") !== zieleAusArt(technik).join(",")) { const rz = await supabase.rpc("ws_projekt_ziele_setzen", { p_projekt: id, p_ziele: ziele }); if (rz.error) toast(`Ziele nicht gespeichert: ${fehler(rz.error)}`); }
       let gh = "";
       if (!repo.trim() && anlegen) {
         const r = await supabase.rpc("ws_repo_anfordern", { p_projekt: id, p_privat: privat });
@@ -103,6 +140,8 @@ export function NeuesProjektAssistent({ toast, onClose, onFertig, projekte = [] 
                   <ul className="text-xs text-slate-500 list-disc pl-4">{t.punkte.map((p) => <li key={p}>{p}</li>)}</ul>
                 </label>))}
             </div>
+            <ZieleWahl ziele={ziele} onChange={setZiele} />
+            <TechnikEmpfehlung onWahl={(e) => { setTechnikRoh(e.art); setZiele(e.ziele); }} />
           </fieldset>)}
 
         {schritt === 2 && (
@@ -139,6 +178,7 @@ export function NeuesProjektAssistent({ toast, onClose, onFertig, projekte = [] 
         {schritt === 5 && (
           <dl className="grid grid-cols-[150px_minmax(0,1fr)] gap-x-4 gap-y-1.5 text-sm">
             <dt className="text-slate-500">Art</dt><dd>{TECHNIK[technik].name}</dd>
+            <dt className="text-slate-500">Ziele</dt><dd>{ziele.map((z) => ZIELE[z].name).join(" · ")}</dd>
             <dt className="text-slate-500">Name</dt><dd>{name.trim() || "–"}</dd>
             <dt className="text-slate-500">Repository</dt><dd className="font-mono text-xs break-all">{repo.trim() || (anlegen ? `kresak-it-solutions/${id} (${privat ? "privat" : "öffentlich"}, wird angelegt)` : "später")}</dd>
             <dt className="text-slate-500">Grundgerüst</dt><dd>{TECHNIK[technik].punkte.join(" · ")}</dd>
@@ -251,22 +291,30 @@ export default function Anbindungen({ d, ich, toast, onVorschau }) {
 
 function ArtAendern({ projekt, toast, onGeaendert }) {
   const [art, setArt] = useState(projekt.technik_art || "web"); const [db, setDb] = useState(projekt.datenbank || "keine"); const [busy, setBusy] = useState(false);
+  const zieleJetzt = zieleVon(projekt).join(",");
+  const [ziele, setZiele] = useState(() => zieleVon(projekt));
   useEffect(() => { setArt(projekt.technik_art || "web"); setDb(projekt.datenbank || "keine"); }, [projekt.technik_art, projekt.datenbank]);
-  const geaendert = art !== (projekt.technik_art || "web") || db !== (projekt.datenbank || "keine");
+  useEffect(() => { setZiele(zieleJetzt.split(",")); }, [zieleJetzt]);
+  const artGeaendert = art !== (projekt.technik_art || "web") || db !== (projekt.datenbank || "keine");
+  const zieleGeaendert = ziele.join(",") !== zieleJetzt;
+  const geaendert = artGeaendert || zieleGeaendert;
   const speichern = async () => {
     setBusy(true);
-    const { error } = await supabase.rpc("ws_projekt_technik", { p_projekt: projekt.id, p_art: art, p_datenbank: db });
-    setBusy(false);
-    if (error) toast(fehler(error)); else { toast("Gespeichert – die Ampel prüft beim nächsten Durchlauf neu"); onGeaendert(); }
+    try {
+      if (artGeaendert) { const { error } = await supabase.rpc("ws_projekt_technik", { p_projekt: projekt.id, p_art: art, p_datenbank: db }); if (error) throw error; }
+      if (zieleGeaendert) { const { error } = await supabase.rpc("ws_projekt_ziele_setzen", { p_projekt: projekt.id, p_ziele: ziele }); if (error) throw error; }
+      toast("Gespeichert – die Ampel prüft beim nächsten Durchlauf neu"); onGeaendert();
+    } catch (e) { toast(fehler(e)); } finally { setBusy(false); }
   };
   return (
     <details className={`${card} p-4`}>
-      <summary className="cursor-pointer font-semibold text-sm">Art und Datenbank ändern</summary>
+      <summary className="cursor-pointer font-semibold text-sm">Art, Ziele und Datenbank ändern</summary>
       <div className="mt-3 flex flex-wrap items-end gap-3">
         <label className="flex flex-col gap-1 text-xs text-slate-500">Art<select className={input} value={art} onChange={(e) => setArt(e.target.value)}>{Object.entries(TECHNIK).map(([k, t]) => <option key={k} value={k}>{t.name}</option>)}</select></label>
         <label className="flex flex-col gap-1 text-xs text-slate-500">Datenbank<select className={input} value={db} onChange={(e) => setDb(e.target.value)}>{Object.entries(DATENBANK).map(([k, [t]]) => <option key={k} value={k}>{t}</option>)}</select></label>
         <button type="button" className={btn} disabled={!geaendert || busy} onClick={speichern}>Speichern</button>
       </div>
+      <div className="mt-3"><ZieleWahl ziele={ziele} onChange={setZiele} name="cs-ziele-aendern" /></div>
       <p className="mt-2 text-xs text-slate-500">Ändert nur die Einordnung und Ampel. Ein neues Grundgerüst im bestehenden Repository gibst du als Auftrag.</p>
     </details>);
 }

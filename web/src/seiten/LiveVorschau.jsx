@@ -4,6 +4,8 @@ import { ArrowLeft, ArrowRightLeft, CircleCheck, ExternalLink, Eye, Info, Monito
 import { ABGESCHLOSSEN, btn, card, fehler, ghost, input, merke, mitCs, oeffneExtern, seiteOk, vorschauUrl } from "../bausteine/grund";
 import { pfadNorm, seitenFilter, zuordnung } from "../bausteine/vorschauZuordnung";
 import { AuftragsChat } from "./Zentrale";
+import { BaumKurz, PruefwegZeile, PunkteListe, RechteHaelfte } from "./Arbeitsplatz";
+import { punkteMitStatus } from "../bausteine/arbeitsplatz";
 import GeraeteRahmen from "../GeraeteRahmen";
 import { supabase } from "../supabase";
 
@@ -127,8 +129,10 @@ function FolgeHinweis({ h, gruppen, gruppeVon, darfMerken, onOeffnen, onMerken, 
     </div>);
 }
 
-// ---------------- Feature-Arbeitsplatz (Doppelklick): Chat links, Live-Vorschau rechts ----------------
-export function FeatureArbeitsplatz({ f, g, d, ich, darf, toast, onZurueck, onLoeschen }) {
+// ---------------- Feature-Arbeitsplatz (Doppelklick) ----------------
+// Seit 0.16.0 (Entwurf „Ein Arbeitsplatz für jede Art von Programm“, Gerhard 02.11.2026, docs/KONZEPT-ARBEITSPLATZ.md):
+// links (breite Bildschirme) der Baum mit Status-Punkten, in der Mitte Prüfweg, offene Punkte und Chat, rechts Vorschau | Code live | Verlauf.
+export function FeatureArbeitsplatz({ f, g, d, ich, darf, toast, onZurueck, onLoeschen, punkteDaten, onFeature, onCode }) {
   const projekt = d.projekte.find((p) => p.id === d.projektId);
   const js = d.auftraege.filter((a) => a.feature_id === f.id);
   const aktiv = [...js].reverse().find((a) => !ABGESCHLOSSEN.includes(a.stand) && a.zweig) || null;
@@ -142,26 +146,46 @@ export function FeatureArbeitsplatz({ f, g, d, ich, darf, toast, onZurueck, onLo
     const los = () => { window.removeEventListener("pointermove", bewegen); window.removeEventListener("pointerup", los); };
     window.addEventListener("pointermove", bewegen); window.addEventListener("pointerup", los); e.preventDefault();
   };
+  // Offene Punkte = Aufgaben an diesem Feature (kein zweites System); Status aus verknüpften Aufträgen
+  const { aufgaben = [], sendungen = [], holen: punkteHolen } = punkteDaten || {};
+  const punkte = punkteMitStatus(aufgaben, f.id, sendungen, d.auftraege);
+  const [punktId, setPunktId] = useState(null);
+  useEffect(() => { setPunktId(null); }, [f.id]);
+  const punkt = punkte.find((p) => p.id === punktId) || null;
+  const rolle = ich.rolle === "admin" ? "admin" : d.mitglieder.find((m) => m.projekt_id === d.projektId && m.benutzer_id === ich.id)?.rolle;
+  const kannPunkte = ["admin", "entwickler", "texter"].includes(rolle);
   return (
     <section className="flex flex-col gap-3" aria-label={`Arbeitsplatz ${f.name}`}>
       <div className="flex flex-wrap items-center gap-3">
         <button type="button" className={ghost} onClick={onZurueck}><ArrowLeft className="w-4 h-4" />Zentrale</button>
         <div className="min-w-0"><div className="text-xs text-slate-500">{g?.name} · <span className="font-mono">{f.id}</span></div><h2 className="font-display font-bold text-xl leading-tight">{f.name}</h2></div>
-        {laufend && <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-blue-600"><i className="w-2 h-2 rounded-full bg-blue-600 animate-pulse" />Hier wird gerade gearbeitet</span>}
+        {laufend && <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-blue-600"><i className="w-2 h-2 rounded-full bg-blue-600 motion-safe:animate-pulse" />Hier wird gerade gearbeitet</span>}
         <span className="flex-1" />
         {onLoeschen && darf(g?.bereich_id, "loeschen") && <button type="button" className={`${ghost} h-9 text-xs`} onClick={onLoeschen}><Trash2 className="w-3.5 h-3.5" />{f.ausgeblendet ? "Wieder einblenden" : "Feature löschen …"}</button>}
       </div>
-      <div ref={raster} className="grid gap-0 lg:[grid-template-columns:var(--links)_8px_minmax(0,1fr)] h-auto lg:h-[calc(100vh-190px)] min-h-[560px]" style={{ "--links": `${links}%` }}>
-        <AuftragsChat g={g} f={f} d={d} ich={ich} darf={darf} toast={toast} eingebettet baustein={baustein} onBausteinFertig={() => setBaustein(null)} />
-        <div className="hidden lg:block cursor-col-resize group" onPointerDown={ziehen} role="separator" aria-orientation="vertical" aria-label="Breite ändern"><div className="mx-auto w-1 h-full rounded bg-slate-200 dark:bg-slate-800 group-hover:bg-emerald-600" /></div>
-        <LiveVorschau projekt={projekt} a={aktiv} f={f} darfMerken={darf(g?.bereich_id, "auftraege")} toast={toast} onBaustein={setBaustein} baustein={baustein} />
+      <div className="flex gap-3 items-stretch">
+        {onFeature && <BaumKurz d={d} punkte={punkteDaten} aktivId={f.id} onWahl={onFeature} />}
+        <div ref={raster} className="flex-1 min-w-0 grid gap-0 lg:[grid-template-columns:var(--links)_8px_minmax(0,1fr)] h-auto lg:h-[calc(100vh-190px)] min-h-[560px]" style={{ "--links": `${links}%` }}>
+          <div className={`${card} flex flex-col min-h-0 overflow-hidden`}>
+            <div className="px-3 py-2 border-b border-slate-200 dark:border-slate-800"><PruefwegZeile f={f} projekt={projekt} darf={darf(g?.bereich_id, "auftraege")} toast={toast} onGespeichert={() => d.holen?.()} /></div>
+            <PunkteListe punkte={punkte} gewaehlt={punktId} onWahl={setPunktId} kannAnlegen={kannPunkte} projektId={d.projektId} featureId={f.id} toast={toast} onNeu={punkteHolen} />
+            <div className="flex-1 min-h-0 flex flex-col [&>aside]:border-0 [&>aside]:rounded-none">
+              <AuftragsChat g={g} f={f} d={d} ich={ich} darf={darf} toast={toast} eingebettet baustein={baustein} onBausteinFertig={() => setBaustein(null)}
+                punkt={punkt} onPunktFertig={() => punkteHolen?.()} />
+            </div>
+          </div>
+          <div className="hidden lg:block cursor-col-resize group" onPointerDown={ziehen} role="separator" aria-orientation="vertical" aria-label="Breite ändern"><div className="mx-auto w-1 h-full rounded bg-slate-200 dark:bg-slate-800 group-hover:bg-emerald-600" /></div>
+          <RechteHaelfte projekt={projekt} f={f} d={d} ich={ich} toast={toast} onCode={onCode}
+            vorschau={(ziel) => <LiveVorschau key={ziel} projekt={projekt} a={aktiv} f={f} darfMerken={darf(g?.bereich_id, "auftraege")} toast={toast} onBaustein={setBaustein} baustein={baustein} startGeraet={ziel === "handy_pwa" ? "handy" : undefined} eingebettet />} />
+        </div>
       </div>
     </section>);
 }
 
 // Live-Vorschau: echte Testseite des Auftrags (Cloudflare), meldet neue Stände, „Zeigen & kommentieren“ über den Vorschau-Helfer der App
 // onSeite(pfad) (optional, 0.13.2): meldet jeden Seitenwechsel der Testseite nach oben – nur der Menüpunkt Live-Vorschau nutzt es.
-export function LiveVorschau({ projekt, a, f, darfMerken, toast, onBaustein, baustein, onSeite }) {
+// startGeraet (0.16.0): Gerät beim Öffnen (Ziel „Handy (PWA)“ → handy) · eingebettet: ohne eigenen Rahmen (in der rechten Hälfte des Arbeitsplatzes)
+export function LiveVorschau({ projekt, a, f, darfMerken, toast, onBaustein, baustein, onSeite, startGeraet, eingebettet = false }) {
   const url = vorschauUrl(projekt, a);
   const onSeiteRef = useRef(onSeite); onSeiteRef.current = onSeite;
   // Erste Seiten-Meldung je Laden des Rahmens nicht weiterreichen – links folgen nur angeklickte Seitenwechsel (Nachbesserung 0.13.2)
@@ -191,7 +215,7 @@ export function LiveVorschau({ projekt, a, f, darfMerken, toast, onBaustein, bau
     const { error } = await supabase.rpc("ws_feature_vorschau_setzen", { p_feature: f.id, p_pfad: jetztSeite });
     if (error) toast(fehler(error)); else { setGemerkt(jetztSeite); toast(`Gemerkt: ${f.name} öffnet ab jetzt ${jetztSeite}`); }
   };
-  const [geraet, setGeraet] = useState("pc");   // echte Gerätebreite, eingepasst (GeraeteRahmen, Fehlerkorrektur 0.9.5)
+  const [geraet, setGeraet] = useState(startGeraet || "pc");   // echte Gerätebreite, eingepasst (GeraeteRahmen, Fehlerkorrektur 0.9.5)
   const [neu, setNeu] = useState(false); const [stand, setStand] = useState(null); const [schluessel, setSchluessel] = useState(0);
   const [zeigen, setZeigen] = useState(false); const [helfer, setHelfer] = useState(false);
   const frame = useRef(null);
@@ -237,9 +261,10 @@ export function LiveVorschau({ projekt, a, f, darfMerken, toast, onBaustein, bau
   }, [herkunft, onBaustein, toast, designWahl, entwuerfe]);
   useEffect(() => { if (herkunft && frame.current?.contentWindow) frame.current.contentWindow.postMessage({ cs: "zeigen", an: zeigen }, herkunft); }, [zeigen, herkunft]);
   const neuLaden = () => { setNeu(false); setStand(null); setSchluessel((k) => k + 1); };
-  if (!url) return <div className={`${card} grid place-items-center p-8 text-sm text-slate-500`}>Für dieses Projekt ist noch keine Vorschau-Adresse hinterlegt.</div>;
+  const rahmen = eingebettet ? "flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden" : `${card} flex flex-col min-h-[480px] min-w-0 overflow-hidden`;
+  if (!url) return <div className={`${eingebettet ? "flex-1" : card} grid place-items-center p-8 text-sm text-slate-500`}>Für dieses Projekt ist noch keine Vorschau-Adresse hinterlegt.</div>;
   return (
-    <div className={`${card} flex flex-col min-h-[480px] min-w-0 overflow-hidden`}>
+    <div className={rahmen}>
       <div className="flex flex-wrap items-center gap-2 p-2 border-b border-slate-200 dark:border-slate-800">
         <span className="min-w-0 flex-1 truncate font-mono text-xs text-slate-500 bg-slate-50 dark:bg-slate-950 rounded-lg px-2.5 py-1.5" title={url}>{url.replace("https://", "")}{a ? ` · Auftrag #${a.id}` : " · aktuelle App"}</span>
         {[["handy", Smartphone, "Handy (390 px)"], ["tablet", Tablet, "Tablet (820 px)"], ["pc", Monitor, "PC (1280 px)"]].map(([w, I, t]) => <button key={w} type="button" title={t} aria-pressed={geraet === w} onClick={() => setGeraet(w)} className={`p-2 rounded-lg border ${geraet === w ? "border-emerald-600 bg-emerald-50 dark:bg-emerald-950" : "border-slate-200 dark:border-slate-800"}`}><I className="w-4 h-4" /></button>)}

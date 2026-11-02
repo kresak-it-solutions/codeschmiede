@@ -16,11 +16,13 @@ import { supabase } from "../supabase";
 import { useAuftragDetails } from "../daten/werkstattDaten";
 import { ChatKopf, ChatNachricht, ChatEingabe } from "../bausteine/chat";
 import { Leerzustand } from "../bausteine/zustand";
+import { StatusPunkt, useFeatureStatus } from "./Arbeitsplatz";
+import { usePunkte } from "../daten/punkte";
 
 // ---------------- Zentrale ----------------
 // nurGlobal: Ansicht „Globale Einstellungen“ (Anweisung Gerhard 2026-10-23 10:20) – Bereich, der in der App nie als eigener Bereich erscheint;
 // seine Features gelten für die ganze App. In der Auftrags-Zentrale wird er ausgeblendet.
-export function Zentrale({ d: alle, ich, toast, nurGlobal = false, onDesigner, start }) {
+export function Zentrale({ d: alle, ich, toast, nurGlobal = false, onDesigner, start, onCode }) {
   const d = useMemo(() => {
     const bereiche = alle.bereiche.filter((b) => !!b.global === nurGlobal);
     const bids = new Set(bereiche.map((b) => b.id));
@@ -39,6 +41,9 @@ export function Zentrale({ d: alle, ich, toast, nurGlobal = false, onDesigner, s
   const aufFor = (gid, fid) => d.auftraege.filter((a) => (fid === undefined ? a.gruppe_id === gid : a.feature_id === fid));
   const [station, setStation] = useState(null);
   const [platz, setPlatz] = useState(() => start?.f || null); // Feature-Arbeitsplatz (Doppelklick)
+  // Offene Punkte (Aufgaben an Features) und Status-Punkt je Feature (0.16.0, Arbeitsplatz für alle Arten)
+  const punkteDaten = usePunkte(alle.projektId);
+  const statusVon = useFeatureStatus(d, punkteDaten);
   useEffect(() => { if (!start) return; setStation(null); if (start.f) setPlatz(start.f); else { setPlatz(null); setSel({ g: start.g, f: null }); } }, [start?.n]); // eslint-disable-line react-hooks/exhaustive-deps
   // Features selbst zuordnen (Anweisung Gerhard 2026-10-23 10:26): Admin, per Dialog oder Ziehen auf eine Gruppe
   const kannVerschieben = ich.rolle === "admin";
@@ -115,7 +120,8 @@ export function Zentrale({ d: alle, ich, toast, nurGlobal = false, onDesigner, s
         })}
       </div>
       {station ? <StationsUebersicht station={station} d={d} darf={darf} toast={toast} onSchliessen={() => setStation(null)} onOeffne={(fid) => { setStation(null); setPlatz(fid); }} onGruppe={(gid) => { setStation(null); setSel({ g: gid, f: null }); }} />
-      : platzF ? <FeatureArbeitsplatz f={platzF} g={platzG} d={d} ich={ich} darf={darf} toast={toast} onZurueck={() => setPlatz(null)} onLoeschen={() => setDlg({ art: "loeschen", f: platzF })} />
+      : platzF ? <FeatureArbeitsplatz key={platzF.id} f={platzF} g={platzG} d={d} ich={ich} darf={darf} toast={toast} onZurueck={() => setPlatz(null)} onLoeschen={() => setDlg({ art: "loeschen", f: platzF })}
+          punkteDaten={punkteDaten} onFeature={(fid) => setPlatz(fid)} onCode={onCode} />
       : <div className="grid gap-5 grid-cols-[minmax(0,1fr)] lg:grid-cols-[280px_minmax(0,1fr)] xl:grid-cols-[280px_minmax(0,1fr)_400px] items-start">
         <nav className={`${card} overflow-hidden`} aria-label="Bereiche und Gruppen">
           {d.bereiche.map((b) => (
@@ -178,7 +184,7 @@ export function Zentrale({ d: alle, ich, toast, nurGlobal = false, onDesigner, s
                   draggable={kannVerschieben} onDragStart={(e) => { e.dataTransfer.setData("text/cs-feature", x.id); e.dataTransfer.effectAllowed = "move"; }} onDragEnd={() => setZiel(null)}
                   onKeyDown={(e) => { if (e.key === "Enter" && sel.f === x.id) { e.preventDefault(); setPlatz(x.id); } }} title="Einmal klicken: Kurzinfo · doppelt klicken: Arbeitsplatz mit Chat und Live-Vorschau"
                   className={`text-left flex flex-col gap-2 rounded-xl border p-3.5 min-w-0 ${frageHier ? "ring-1 ring-amber-400" : ""} ${x.ausgeblendet ? "opacity-55" : ""} ${sel.f === x.id ? "border-emerald-600 ring-1 ring-emerald-600 bg-emerald-50 dark:bg-emerald-950/40" : "border-slate-200 dark:border-slate-800 hover:border-emerald-600"} ${arbeitet ? "shadow-[inset_0_3px_0_#2563eb]" : ""}`}>
-                  <div className="flex items-start justify-between gap-2"><h3 className="font-display font-semibold text-[17px] leading-tight">{x.name}</h3>
+                  <div className="flex items-start justify-between gap-2"><h3 className="font-display font-semibold text-[17px] leading-tight flex items-center gap-2 min-w-0"><StatusPunkt status={statusVon(x)} /><span className="min-w-0">{x.name}</span></h3>
                     <span className="flex gap-1 flex-wrap justify-end">{frageHier && <span className="text-xs font-semibold px-2 py-0.5 rounded-md bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-200">Rückfrage an dich</span>}{x.ausgeblendet && <span className="text-xs font-semibold px-2 py-0.5 rounded-md border border-dashed border-slate-400 text-slate-500">Ausgeblendet</span>}{neu && <span className="text-xs font-semibold px-2 py-0.5 rounded-md bg-emerald-700 text-white">Neu</span>}<Badge stand={x.stand} /></span></div>
                   {x.beschreibung && <p className="text-[13px] text-slate-500 line-clamp-2">{x.beschreibung}</p>}
                   <div className="mt-auto text-xs text-slate-500 flex items-center gap-1.5">
@@ -210,7 +216,9 @@ export function Zentrale({ d: alle, ich, toast, nurGlobal = false, onDesigner, s
 
 // onEntwurf(boolean): meldet, ob im Eingabefeld gerade ungesendeter Text steht (Live-Vorschau 0.13.2: dann wird links nicht gewechselt).
 // entwurfSpeicher (optional, Map im Speicher der Seite): Entwurf je Gruppe/Feature – bleibt beim Wechseln erhalten, solange die Seite offen ist.
-export function AuftragsChat({ g, f, d, ich, darf, toast, onLoeschen, kanal = "codeschmiede", baustein, onBausteinFertig, eingebettet, onKonzept, onEntwurf, entwurfSpeicher }) {
+// punkt (optional, 0.16.0 Arbeitsplatz für alle Arten): gewählter offener Punkt des Features ({ id, titel, status, auftrag }) –
+// dann „Fragen“ (Konzept-Chat, nur klären) und „Weiterarbeiten“ (genau dieser Punkt als Auftrag, ws_punkt_weiterarbeiten).
+export function AuftragsChat({ g, f, d, ich, darf, toast, onLoeschen, kanal = "codeschmiede", baustein, onBausteinFertig, eingebettet, onKonzept, onEntwurf, entwurfSpeicher, punkt, onPunktFertig }) {
   const auftraege = d.auftraege.filter((a) => (f ? a.feature_id === f.id : a.gruppe_id === g.id));   // je Feature: Verlauf bleibt beim Verschieben
   const ids = auftraege.map((a) => a.id);
   const { nachrichten, log, erlaubnisse } = useAuftragDetails(ids);
@@ -239,7 +247,8 @@ export function AuftragsChat({ g, f, d, ich, darf, toast, onLoeschen, kanal = "c
   const fragen = async () => {
     const t = text.trim(); if (!t) return; setBusy(true);
     try {
-      const herkunft = f ? `Feature „${f.name}“ (${f.id}) in der Gruppe „${g.name}“` : `Gruppe „${g.name}“`;
+      const herkunft = (f ? `Feature „${f.name}“ (${f.id}) in der Gruppe „${g.name}“` : `Gruppe „${g.name}“`)
+        + (punkt ? `, zum offenen Punkt „${punkt.titel}“ (Aufgabe #${punkt.id})` : "");
       const { error } = await supabase.from("ws_claude_chat").insert({ projekt_id: d.projektId, ort: "konzept", text: `Frage zu ${herkunft}: ${t}`.slice(0, 8000),
         kontext: `Gerhard fragt aus der ${herkunft}${g.app_key ? `, Menüpunkt der App: ${g.app_key}` : ""}. Nur beantworten – gebaut wird erst, wenn er es bestätigt.`.slice(0, 6000) });
       if (error) throw error;
@@ -269,6 +278,17 @@ export function AuftragsChat({ g, f, d, ich, darf, toast, onLoeschen, kanal = "c
     } catch (e) { toast(fehler(e)); } finally { setBusy(false); }
   };
   const bausteinText = (t) => (baustein ? `[Baustein: ${baustein.name}${baustein.seite ? ` · Seite ${baustein.seite}` : ""}]\n${t}` : t);
+  // „Weiterarbeiten“ (Entwurf Arbeitsplatz für alle Arten, Gerhard 02.11.2026): genau dieser Punkt als Auftrag – bestehender Auftrags-Weg der
+  // Aufgaben (Sendung + Auftrag + erste Nachricht mit daten.aufgabe), gleiche Rechte; Text im Feld geht als Zusatz mit.
+  const kannWeiter = !!punkt && punkt.status !== "laeuft" && punkt.status_aufgabe !== "erledigt";
+  const weiterarbeiten = async () => {
+    if (!punkt) return; setBusy(true);
+    try {
+      const { data, error } = await supabase.rpc("ws_punkt_weiterarbeiten", { p_aufgabe: punkt.id, p_text: text.trim() || null });
+      if (error) throw error;
+      setText(""); toast(`Auftrag #${data} zu „${punkt.titel}“ an Werkstatt ${g.name} gestellt`); await d.holen?.(); onPunktFertig?.(data);
+    } catch (e) { toast(fehler(e)); } finally { setBusy(false); }
+  };
   const freigeben = async (a) => { const { error } = await supabase.rpc("ws_freigeben", { p_auftrag: a.id }); toast(error ? fehler(error) : `Auftrag #${a.id} freigegeben – Sicherheitsprüfung startet`); };
   const zusammen = async (a) => { const { error } = await supabase.rpc("ws_zusammenfuehren", { p_auftrag: a.id }); toast(error ? fehler(error) : `Auftrag #${a.id}: Zusammenführen gestartet`); };
   const beantwortet = (m) => m.art === "frage" && nachrichten.some((x) => x.auftrag_id === m.auftrag_id && x.id > m.id && x.von);
@@ -280,7 +300,7 @@ export function AuftragsChat({ g, f, d, ich, darf, toast, onLoeschen, kanal = "c
 
   return (
     <aside className={`${card} flex flex-col min-h-0 ${eingebettet ? "h-full" : "lg:col-span-2 xl:col-span-1 xl:sticky xl:top-3 xl:max-h-[calc(100vh-24px)]"}`} aria-label="Auftrags-Chat">
-      <ChatKopf bezug={[f ? { art: "feature", name: f.name } : { art: "gruppe", name: g.name }, ...(baustein ? [{ art: "baustein", name: baustein.name }] : [])]}
+      <ChatKopf bezug={[f ? { art: "feature", name: f.name } : { art: "gruppe", name: g.name }, ...(punkt ? [{ art: "punkt", name: punkt.titel }] : []), ...(baustein ? [{ art: "baustein", name: baustein.name }] : [])]}
         unten={<>
           <span className="text-xs text-slate-500">{f ? `in der Gruppe ${g.name} · ` : ""}geht an Werkstatt {g.name}</span>
           {(laufend || (f && onLoeschen && darf(g.bereich_id, "loeschen"))) && <div className="flex gap-2 flex-wrap">
@@ -335,11 +355,14 @@ export function AuftragsChat({ g, f, d, ich, darf, toast, onLoeschen, kanal = "c
           „Als Auftrag“ nur mit einem Baustein aus „Zeigen & kommentieren“ (wie bisher „Senden“). Regel 26.10.2026 09:11: erst besprechen. */}
       <ChatEingabe value={text} onChange={setText} busy={busy} id="ws-auftrag"
         gesperrt={kannAuftrag ? null : "Für diesen Bereich hast du kein Recht, Aufträge zu geben."}
-        aktionen={frage ? { antworten: senden } : baustein ? { auftrag: senden } : { besprechen: fragen }}
-        titel={{ besprechen: "Die eingestellte KI antwortet im Konzept-Chat und legt Aufträge erst an, wenn alles geklärt ist", auftrag: "Auftrag mit diesem Baustein an die Werkstatt", antworten: "Antwort an den laufenden Auftrag" }}
-        hinweis={frage ? "Antwort geht an den laufenden Auftrag" : istFrage ? "Wird zuerst im Konzept-Chat besprochen – gebaut wird erst, wenn alles geklärt ist. Bitte keine Daten von Vereinsmitgliedern." : "Wird vom nächsten freien Werkstatt-PC übernommen"}
+        aktionen={frage ? { antworten: senden } : baustein ? { auftrag: senden } : punkt ? { fragen, ...(kannWeiter ? { weiterarbeiten } : {}) } : { besprechen: fragen }}
+        ohneText={["weiterarbeiten"]}
+        titel={{ besprechen: "Die eingestellte KI antwortet im Konzept-Chat und legt Aufträge erst an, wenn alles geklärt ist", auftrag: "Auftrag mit diesem Baustein an die Werkstatt", antworten: "Antwort an den laufenden Auftrag",
+          fragen: "Nur klären – die eingestellte KI antwortet im Konzept-Chat, gebaut wird nichts", weiterarbeiten: punkt ? `„${punkt.titel}“ als Auftrag an die Werkstatt (Freigabe und Prüfungen wie immer)` : undefined }}
+        hinweis={frage ? "Antwort geht an den laufenden Auftrag" : punkt && !baustein ? (punkt.status === "laeuft" ? `Zu „${punkt.titel}“ läuft schon ein Auftrag – Fragen geht, Weiterarbeiten wieder, wenn er fertig ist.` : `„Fragen“ klärt nur. „Weiterarbeiten“ gibt „${punkt.titel}“ als Auftrag an die Werkstatt. Bitte keine Daten von Vereinsmitgliedern.`)
+          : istFrage ? "Wird zuerst im Konzept-Chat besprochen – gebaut wird erst, wenn alles geklärt ist. Bitte keine Daten von Vereinsmitgliedern." : "Wird vom nächsten freien Werkstatt-PC übernommen"}
         feld={({ los }) => <MitErwaehnung id="ws-auftrag" className="w-full resize-none bg-transparent px-3 pt-2.5 pb-1 text-[15px] min-h-[72px] focus:outline-none" value={text} onChange={setText} features={d.features.filter((x) => !x.ausgebaut)}
-          placeholder={frage ? "Antwort auf die Rückfrage …" : f ? `Frage oder Änderung zu „${f.name}“ … (@ verweist auf ein Feature als Vorlage)` : `Frage oder Änderung zu ${g.name} …`} aria-label="Nachricht"
+          placeholder={frage ? "Antwort auf die Rückfrage …" : punkt ? `Frage oder Zusatz zu „${punkt.titel}“ …` : f ? `Frage oder Änderung zu „${f.name}“ … (@ verweist auf ein Feature als Vorlage)` : `Frage oder Änderung zu ${g.name} …`} aria-label="Nachricht"
           onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); los(); } }} />} />
     </aside>
   );

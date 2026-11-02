@@ -3,6 +3,9 @@
 **Stand:** 2026-11-02 · **Wer:** Gerhard Kresak (Entscheidungen, Entwurf freigegeben 02.11.2026), Claude (Konzept, Umsetzung)
 **Entwurf:** `docs/entwurf-1.0-arbeitsplatz-alle-arten.html` · **Version:** vorläufig 0.16.0 (Stufe 1; parallel entstehen 0.14.0 und 0.15.0, die Nummer wird beim Zusammenführen angepasst)
 **Datenbank:** 0059 (`supabase/migrations/0059_arbeitsplatz.sql`, Test `supabase/tests/t46_arbeitsplatz.sql`; 0057 und 0058 sind für parallele Features reserviert)
+**Umgesetzt (Stufe 1):** `web/src/seiten/Arbeitsplatz.jsx` (Baum, Punkte, Prüfweg, rechte Hälfte), `web/src/bausteine/arbeitsplatz.js` (reine Funktionen,
+Test `desktop/dienst/test/arbeitsplatz.test.mjs`), `web/src/daten/punkte.js`, `desktop/dienst/lib/codeLive.mjs` (Diff-Filter, Test `codeLive.test.mjs`),
+Einbau in `seiten/LiveVorschau.jsx` (`FeatureArbeitsplatz`), `seiten/Zentrale.jsx` (`AuftragsChat`, Status-Punkte), `bausteine/chat.jsx`, `ProjektArten.jsx`, `desktop/dienst/index.mjs`.
 
 ## Ziel
 Der Feature-Arbeitsplatz der Codeschmiede war auf Web-Apps zugeschnitten: links der Chat, rechts die Testseite. Gerhard baut aber auch
@@ -128,6 +131,37 @@ ein Entwickler-PC arbeitet – also **muss der Diff über die Datenbank** gehen.
 | **1 – Rahmen für alle Arten** | Offene Punkte am Feature mit Status, „Weiterarbeiten“/„Fragen“, Status-Punkt im Baum, rechts Vorschau / Code live / Verlauf, Ziele und Prüfweg, Technik-Empfehlung im Assistenten | **diese Version (0.16.0 vorläufig)** |
 | 2 – Windows/Mac mit Tauri | Oberfläche des Programms als **Testseite** (gleicher React-Code; Tauri-Funktionen wie Dateien öffnen werden nachgespielt), dazu **Sandbox-Start** mit **Bildschirmfoto an den Chat** | offen |
 | 3 – Werkzeuge, Dokumente, Handy, .NET | **Werkzeug-Konsole** (Cloud-Lauf mit Beispiel-Eingaben, Ausgabe an den Chat), **Dokument-Vorschau** (PDF-Seiten), **Handy-QR-Code** (Testseite am echten Handy), **.NET-Sonderfall** (letzter Bau und Bildschirmfotos aus der Sandbox) | offen |
+
+## Umsetzung – Abweichungen und Ergänzungen zum Entwurf
+- **Enter = „Fragen“**: Im Entwurf ist „Weiterarbeiten“ der Hauptknopf. Gebaut ist „Fragen“ als Hauptknopf (Enter), „Weiterarbeiten“ daneben –
+  damit ein Tastendruck nie einen Auftrag auslöst. „Weiterarbeiten“ geht auch ohne Text (der Punkt ist der Auftrag), ein Text geht als „Dazu: …“ mit.
+- **Begriffe im Chat-Baustein:** Zu „Besprechen · Als Auftrag · Antworten“ kommen „Fragen“ und „Weiterarbeiten“ – nur mit gewähltem Punkt im Feature-Arbeitsplatz.
+- **Baum links im Arbeitsplatz** nur auf sehr breiten Bildschirmen (ab 1536 px); sonst bleibt „Zentrale“ oben als Rückweg. Der Status-Punkt steht auch auf den Feature-Karten der Zentrale.
+- **Vierter Punkt-Zustand „grau“** (noch nichts offen und nicht live) – der Entwurf kennt nur blau/orange/grün.
+- **„Punkt hinzufügen“** im Arbeitsplatz (nur Titel) als Schnellweg; alles Weitere (Beschreibung, Anhänge, Zuständig) wie bisher unter „Aufgaben“.
+- **„Auf diesen Stand zurück …“** im Verlauf **weggelassen**: Es gibt keinen sicheren Weg je Feature, nur das Zurücksetzen der ganzen App (Admin, „Zu erledigen › Live“). Hinweis steht im Verlauf.
+- **Platzhalter statt Mock-Vorschau** für Windows/Mac/Cloud-Lauf/PDF (Thermax-, Waage-, Werkzeug-, Dokument-Beispiele des Entwurfs sind Stufe 2/3). Sandbox- und Testlauf-Knopf gehen nur bei der passenden Art (Programm bzw. Werkzeug), wie unter „Anbindungen“.
+- Der **Diff des letzten Auftrags** wird beim Öffnen von „Code live“ automatisch geholt (eine Anfrage, höchstens 6 je Minute) und braucht eine eingeschaltete Werkstatt.
+
+## So arbeitest du im Arbeitsplatz (Handbuch)
+1. **Öffnen:** In der Zentrale ein Feature doppelt anklicken. Der farbige Punkt vor dem Namen zeigt den Stand: **blau blinkend** = die Werkstatt arbeitet,
+   **orange** = es gibt offene Punkte, **grün** = fertig, **grau** = noch nichts offen.
+2. **Prüfweg:** Oben in der Mitte steht, wie man das Feature ausprobiert – eine Seite (`/calendar`), ein Fenster („Hauptfenster › Pläne“), ein Befehl
+   („abgleichen klein.csv“) oder ein Kapitel. Mit dem Stift änderst du ihn (Admin oder Recht „Aufträge“ im Bereich). Bei „Seite“ öffnet die Vorschau genau diese Seite.
+3. **Offene Punkte:** Darunter stehen die Punkte des Features (Aufgaben mit Bezug zu diesem Feature). Neuen Punkt unten eintippen und „+“.
+   Klick auf einen Punkt: Der Chat bezieht sich darauf (Chip „Punkt“ oben im Chat). Noch einmal klicken hebt den Bezug auf.
+4. **Fragen oder Weiterarbeiten:** Mit gewähltem Punkt
+   - **Fragen** (Enter): Die eingestellte KI antwortet im Konzept-Chat, gebaut wird nichts.
+   - **Weiterarbeiten**: Genau dieser Punkt geht als Auftrag an die Werkstatt (Text im Feld geht als Zusatz mit). Danach steht der Punkt auf „läuft“, nach dem Live-Schalten auf „erledigt“.
+     Freigabe, Prüfungen und Live laufen wie bei jedem Auftrag.
+   Ohne Punkt bleibt alles wie bisher („Besprechen“, „Antworten“ bei einer Rückfrage).
+5. **Rechts umschalten:**
+   - **Vorschau** – die Testseite wie bisher. Hat das Projekt mehrere Ziele (z. B. Web und Windows), wählst du oben das Ziel. Für Windows/Mac, Cloud-Lauf und PDF steht
+     bis Stufe 2/3 ein Platzhalter mit dem, was es schon gibt (Sandbox, Testlauf, Builds).
+   - **Code live** – während die Werkstatt arbeitet: welche Dateien sie geändert hat, Zeile für Zeile (grün hinzugefügt, rot entfernt), darunter die Schritte. Ohne laufenden Auftrag
+     die Änderungen des letzten Auftrags gegenüber main. Nur ansehen – eigene Änderungen über „Im Code-Editor ändern“. Geheimnis-Dateien sind ausgeblendet.
+   - **Verlauf** – Aufträge und Live-Schaltungen dieses Features mit Zeit.
+6. **Ziele des Projekts** stellt der Admin beim Anlegen (Assistent, Schritt „Art“ mit Technik-Empfehlung) oder unter „Anbindungen“ › „Art, Ziele und Datenbank ändern“ ein.
 
 ## Bekannte Grenzen
 - Code live zeigt den Stand höchstens alle 5 Sekunden, nicht jeden Tastendruck; sehr große Änderungen sind gekürzt. Er braucht eine laufende Werkstatt.
