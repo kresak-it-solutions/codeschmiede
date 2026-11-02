@@ -15,6 +15,10 @@ select ws_projekt_anlegen('vereinsheft','Vereinsheft','Test','kresak-it-solution
 :DEV
 select ws_einladung_annehmen('Dev') \g /dev/null
 insert into ws_werkstatt_pcs(id,benutzer_id,name,an) values ('00000000-0000-0000-0000-0000000000d1',auth.uid(),'PC-Dev-Mac',true);
+insert into ws_werkstatt_pcs(id,benutzer_id,name,an) values ('00000000-0000-0000-0000-0000000000d2',auth.uid(),'PC-Dev-ohne-Meldung',true);
+\echo [0] PC ohne gemeldetes Betriebssystem: Codex „sperrbar“ -> FEHLER (Erlaubnisliste: nur darwin)
+select ws_werkzeug_melden('00000000-0000-0000-0000-0000000000d2','codex','{"installiert":true,"sperrbar":true}');
+update ws_werkstatt_pcs set faehigkeiten = '{"plattform":"darwin"}' where id = '00000000-0000-0000-0000-0000000000d1';
 
 \echo [1] Bestehende und neue Projekte programmieren mit Claude Code -> 0 Zeilen mit anderem Werkzeug, vereinsheft/bauen = claude-code
 reset role;

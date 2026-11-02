@@ -324,13 +324,24 @@ test("Gegenprobe-Programm: fester Text, keine Ausführung von Projekt-Inhalten",
 // ---------- Installation: Lock-Datei, Programmsuche ----------
 const lock = (o = {}) => ({ lockfileVersion: 3, packages: { "": { dependencies: { "@openai/codex": "0.166.0" } },
   "node_modules/@openai/codex": { version: "0.166.0", resolved: "https://registry.npmjs.org/@openai/codex/-/codex-0.166.0.tgz", integrity: `sha512-${"A".repeat(86)}==` }, ...o } });
-test("Lock-Datei: nur feste Version, nur registry.npmjs.org, nur sha512", () => {
+test("Lock-Datei: nur feste Version, nur registry.npmjs.org, nur sha512", async () => {
   assert.equal(lockPruefen("codex", lock()).ok, true);
   assert.equal(lockPruefen("codex", lock({ "node_modules/x": { version: "1.0.0", resolved: "https://example.com/x.tgz", integrity: `sha512-${"A".repeat(86)}==` } })).ok, false);
   assert.equal(lockPruefen("codex", lock({ "node_modules/x": { version: "1.0.0", resolved: "https://registry.npmjs.org/x/-/x-1.0.0.tgz", integrity: "sha1-abc" } })).ok, false);
   assert.equal(lockPruefen("codex", lock({ "node_modules/x": { link: true, resolved: "../x" } })).ok, false);
   const falsch = lock(); falsch.packages["node_modules/@openai/codex"].version = "0.165.0"; assert.equal(lockPruefen("codex", falsch).ok, false);
   const zwei = lock(); zwei.packages[""].dependencies.boese = "1.0.0"; assert.equal(lockPruefen("codex", zwei).ok, false);
+  const sha = `sha512-${"A".repeat(86)}==`;
+  // Schlussprüfung: resolved genau beim Paket, Erlaubnisliste je Hersteller, Alias nur auf das eigene Hauptpaket
+  assert.equal(lockPruefen("codex", lock({ "node_modules/@openai/codex-darwin-arm64": { name: "@openai/codex", version: "0.166.0-darwin-arm64", resolved: "https://registry.npmjs.org/@openai/codex/-/codex-0.166.0-darwin-arm64.tgz", integrity: sha } })).ok, true);
+  assert.equal(lockPruefen("codex", lock({ "node_modules/@openai/codex-darwin-arm64": { name: "boese-paket", version: "1.0.0", resolved: "https://registry.npmjs.org/boese-paket/-/boese-paket-1.0.0.tgz", integrity: sha } })).ok, false, "fremder Alias");
+  assert.equal(lockPruefen("codex", lock({ "node_modules/@openai/codex-darwin-arm64": { version: "0.166.0", resolved: "https://registry.npmjs.org/boese/-/codex-0.166.0.tgz", integrity: sha } })).ok, false, "resolved bei anderem Paket");
+  assert.equal(lockPruefen("codex", lock({ "node_modules/left-pad": { version: "1.0.0", resolved: "https://registry.npmjs.org/left-pad/-/left-pad-1.0.0.tgz", integrity: sha } })).ok, false, "nicht in der Erlaubnisliste");
+  assert.equal(lockPruefen("codex", lock({ "node_modules/@openai/codex/node_modules/@evil/x": { version: "1.0.0", resolved: "https://registry.npmjs.org/@evil/x/-/x-1.0.0.tgz", integrity: sha } })).ok, false, "verschachtelt");
+  for (const id of ["codex", "gemini-cli", "opencode"]) {
+    const echt = JSON.parse(await readFile(new URL(`../werkzeuge/${id}/package-lock.json`, import.meta.url), "utf8"));
+    assert.equal(lockPruefen(id, echt).ok, true, `mitgelieferte Lock-Datei ${id}`);
+  }
   assert.equal(lockPruefen("gemini-cli", lock()).ok, false);
 });
 test("Programmsuche: natives Codex bzw. OpenCode (dann kein node in der Sperre), Gemini als Node-Programm", async () => {
@@ -339,7 +350,7 @@ test("Programmsuche: natives Codex bzw. OpenCode (dann kein node in der Sperre),
   // Ablage wie Codex 0.166.0: Plattform-Paket @openai/codex-darwin-arm64, Programm vendor/<ziel>/bin/codex
   const nat = path.join(nm, "@openai", "codex-darwin-arm64", "vendor", "aarch64-apple-darwin", "bin", "codex"); await mkdir(path.dirname(nat), { recursive: true }); await writeFile(nat, "");
   assert.deepEqual(programmIn("codex", d, { plattform: "darwin", arch: "arm64" }), { befehl: nat, vorne: [], nodeNoetig: false, login: null });
-  assert.equal(programmIn("codex", d, { plattform: "darwin", arch: "x64" }).nodeNoetig, true);   // kein natives Programm für x64 → Node-Rückfall
+  assert.equal(programmIn("codex", d, { plattform: "darwin", arch: "x64" }), null, "kein natives Programm → kein Node-Rückfall, Installation unvollständig");
   const g = path.join(nm, "@google", "gemini-cli"); await mkdir(path.join(g, "dist"), { recursive: true }); await writeFile(path.join(g, "package.json"), '{"bin":{"gemini":"dist/index.js"}}'); await writeFile(path.join(g, "dist", "index.js"), "");
   assert.deepEqual(programmIn("gemini-cli", d), { befehl: process.execPath, vorne: [path.join(g, "dist", "index.js")], nodeNoetig: true, login: null });
   // OpenCode (@opencode/cli): Start-Link ist ohne postinstall nur ein Platzhalter → nur das Plattform-Paket zählt
@@ -376,10 +387,13 @@ test("Installation: npm ci ohne Skripte mit leerer user- und globalconfig; danac
   const schon = await readFile(quelle, "utf8").catch(() => null);
   if (!schon) { await mkdir(path.dirname(quelle), { recursive: true }); await writeFile(quelle, JSON.stringify(lock())); }
   let aufruf = null;
+  const ziel = { "darwin-arm64": "aarch64-apple-darwin", "darwin-x64": "x86_64-apple-darwin", "linux-x64": "x86_64-unknown-linux-musl", "linux-arm64": "aarch64-unknown-linux-musl" }[`${process.platform}-${process.arch}`];
+  const nativ = (d) => path.join(d, "node_modules", "@openai", `codex-${process.platform}-${process.arch}`, "vendor", ziel, "bin", "codex");
   const run = async (befehl, args, o) => {   // „npm ci“ nachgestellt: legt das Paket mit nativem Programm an, Lock bleibt
     aufruf = args;
     const c = path.join(o.cwd, "node_modules", "@openai", "codex"); await mkdir(path.join(c, "bin"), { recursive: true });
     await writeFile(path.join(c, "package.json"), JSON.stringify({ version: "0.166.0", bin: { codex: "bin/codex.js" } })); await writeFile(path.join(c, "bin", "codex.js"), "// codex");
+    await mkdir(path.dirname(nativ(o.cwd)), { recursive: true }); await writeFile(nativ(o.cwd), "nativ");
     return { code: 0, aus: "", err: "" };
   };
   try {
@@ -409,10 +423,13 @@ test("Installation: npm ci ohne Skripte mit leerer user- und globalconfig; danac
     await writeFile(f, alt); await utimes(f, t0.atime, t0.mtime);
     assert.equal((await ordnerManifest(dir)).anzahl > 3, true);
     // Programm verändert → nicht mehr in Ordnung
-    await writeFile(path.join(installOrdner(daten, "codex"), "node_modules", "@openai", "codex", "bin", "codex.js"), "// anders");
+    await writeFile(nativ(installOrdner(daten, "codex")), "anders");
     assert.equal((await installiertPruefen("codex", { daten })).ok, false);
+    // natives Programm fehlt → „Installation unvollständig“
+    await rm(nativ(installOrdner(daten, "codex")));
+    assert.match((await installiertPruefen("codex", { daten })).grund, /Installation unvollständig/);
     // Lock-Datei verändert → nicht mehr in Ordnung
-    await writeFile(path.join(installOrdner(daten, "codex"), "node_modules", "@openai", "codex", "bin", "codex.js"), "// codex");
+    await writeFile(nativ(installOrdner(daten, "codex")), "nativ");
     const l = JSON.parse(await readFile(path.join(installOrdner(daten, "codex"), "package-lock.json"), "utf8")); l.packages["node_modules/@openai/codex"].integrity = `sha512-${"B".repeat(86)}==`;
     await writeFile(path.join(installOrdner(daten, "codex"), "package-lock.json"), JSON.stringify(l));
     assert.equal((await installiertPruefen("codex", { daten })).ok, false);

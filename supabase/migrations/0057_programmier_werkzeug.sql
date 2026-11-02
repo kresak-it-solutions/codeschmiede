@@ -34,11 +34,11 @@ language sql immutable set search_path = public as $$
   select case p_werkzeug when 'codex' then '0.166.0' when 'gemini-cli' then '0.64.0' when 'opencode' then '2.2.5' end
 $$;
 revoke execute on function public.ws_werkzeug_soll_version(text) from public, anon;
--- Wo ein Werkzeug sicher gesperrt werden kann (gleiche Regel wie sperrbar() im Dienst): Gemini CLI nirgends (Ordner-Vertrauen, B2),
--- Windows und Linux nie (keine bzw. keine ausreichende Sperre, B5). Meldet ein PC kein Betriebssystem, entscheidet der Dienst.
+-- Wo ein Werkzeug sicher gesperrt werden kann (gleiche Regel wie sperrbar() im Dienst) – Erlaubnisliste (Schlussprüfung): nur Codex und
+-- OpenCode und nur auf PCs, die macOS („darwin“) melden. Gemini CLI nirgends (Ordner-Vertrauen, B2); Windows, Linux und PCs ohne Meldung nie.
 create or replace function public.ws_werkzeug_erlaubt(p_werkzeug text, p_plattform text) returns boolean
 language sql immutable set search_path = public as $$
-  select p_werkzeug in ('codex', 'opencode') and coalesce(p_plattform, '') not in ('win32', 'linux')
+  select coalesce(p_werkzeug in ('codex', 'opencode') and p_plattform = 'darwin', false)
 $$;
 revoke execute on function public.ws_werkzeug_erlaubt(text, text) from public, anon;
 -- Die 17 Prüfpunkte des Sperren-Tests (Schreiben, harter Link, Programmstarts, Lesen) – jede Kennung höchstens einmal (Sicherheitsprüfung B7)
@@ -101,7 +101,7 @@ begin
   -- Gemini CLI und Windows/Linux (wenn gemeldet): nie sperrbar, nie „bestanden“ (Nachprüfung, Punkt 4)
   if not public.ws_werkzeug_erlaubt(p_werkzeug, w.faehigkeiten ->> 'plattform')
      and (coalesce((v ->> 'sperrbar')::boolean, false) or v ->> 'test' = 'bestanden') then
-    raise exception 'Dieses Werkzeug ist auf diesem PC gesperrt (Gemini CLI überall, Windows und Linux nie)'; end if;
+    raise exception 'Dieses Werkzeug ist auf diesem PC gesperrt (nur Codex und OpenCode, nur auf macOS)'; end if;
   -- Der Admin-PC programmiert nie mit fremden Werkzeugen (kein Projekt-Code auf dem Admin-PC)
   if w.admin_pc and (coalesce((v ->> 'installiert')::boolean, false) or coalesce((v ->> 'sperrbar')::boolean, false) or v ->> 'test' = 'bestanden') then
     raise exception 'Der Admin-PC programmiert nie mit fremden Werkzeugen'; end if;

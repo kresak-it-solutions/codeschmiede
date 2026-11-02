@@ -16,6 +16,12 @@ import { minimaleUmgebung } from "./ki.mjs";
 const HIER = path.dirname(fileURLToPath(import.meta.url));
 export const REGISTRY = "https://registry.npmjs.org/";
 export const lockQuelle = (id) => path.join(HIER, "..", "werkzeuge", id, "package-lock.json");
+// Erlaubte Paketnamen je Werkzeug: Scope des Herstellers und die bekannten Abhängigkeiten aus den Lock-Dateien (Stand 0.14.0, Ablauf-Commit 7cba22d)
+export const ERLAUBTE_PAKETE = {
+  codex: [/^@openai\/codex(-(darwin|linux|win32)-(arm64|x64))?$/],
+  "gemini-cli": [/^@google\/gemini-cli$/, /^@github\/keytar$/, /^@lydell\/node-pty(-(darwin|linux|win32)-(arm64|x64))?$/, /^nan$/, /^node-addon-api$/, /^node-pty$/],
+  opencode: [/^@opencode\/cli(-(darwin|linux|windows)-(arm64|x64)(-baseline)?(-musl)?)?$/],
+};
 export const installOrdner = (daten, id) => path.join(daten, "werkzeuge", id, WERKZEUGE[id].version);
 
 /**
@@ -30,11 +36,17 @@ export function lockPruefen(id, lock) {
   if (wurzel?.dependencies?.[w.paket] !== w.version || Object.keys(wurzel.dependencies || {}).length !== 1) return { ok: false, grund: `Lock-Datei passt nicht zu ${w.paket}@${w.version}` };
   const haupt = lock.packages[`node_modules/${w.paket}`];
   if (haupt?.version !== w.version) return { ok: false, grund: `Lock-Datei enthält nicht ${w.paket}@${w.version}` };
+  const erlaubt = ERLAUBTE_PAKETE[id] || [];
   for (const [k, p] of Object.entries(lock.packages)) {
     if (k === "") continue;
     if (!k.startsWith("node_modules/") || k.split("/").includes("..")) return { ok: false, grund: `Ungültiger Eintrag ${k.slice(0, 80)}` };
     if (p.link) return { ok: false, grund: `Verknüpfung in der Lock-Datei (${k.slice(0, 80)})` };
-    if (typeof p.resolved !== "string" || !p.resolved.startsWith(REGISTRY)) return { ok: false, grund: `Nicht aus der offiziellen Quelle: ${k.slice(0, 80)}` };
+    // Paketname (auch verschachtelt) nur aus der Erlaubnisliste des Herstellers; ein Alias nur auf das eigene Hauptpaket (Schlussprüfung)
+    const name = k.slice(k.lastIndexOf("node_modules/") + 13);
+    if (!erlaubt.some((re) => re.test(name))) return { ok: false, grund: `Paket nicht erlaubt: ${name.slice(0, 80)}` };
+    const echt = p.name ?? name;
+    if (echt !== name && !(echt === w.paket && name.startsWith(`${w.paket}-`))) return { ok: false, grund: `Alias auf ein anderes Paket: ${name.slice(0, 60)} → ${String(echt).slice(0, 60)}` };
+    if (typeof p.resolved !== "string" || !p.resolved.startsWith(`${REGISTRY}${echt}/-/`)) return { ok: false, grund: `Nicht aus der offiziellen Quelle: ${k.slice(0, 80)}` };
     if (typeof p.integrity !== "string" || !/^sha512-[A-Za-z0-9+/]{86}==$/.test(p.integrity)) return { ok: false, grund: `Keine sha512-Prüfsumme: ${k.slice(0, 80)}` };
   }
   return { ok: true, grund: null, integrity: haupt.integrity };
@@ -103,7 +115,7 @@ export async function installieren(id, { daten, plattform = process.platform, ru
     // Lock-Datei nach der Installation = mitgelieferte (B8); Prüfsumme des Programms merken (vor jedem Lauf verglichen)
     const nach = JSON.parse(await readFile(path.join(tmp, "package-lock.json"), "utf8"));
     if (JSON.stringify(nach.packages) !== JSON.stringify(lock.packages)) throw new Error("Lock-Datei wurde bei der Installation verändert – abgebrochen");
-    const prog = programmIn(id, tmp); if (!prog) throw new Error("Programm des Werkzeugs nicht gefunden");
+    const prog = programmIn(id, tmp); if (!prog) throw new Error("Installation unvollständig – natives Programm des Werkzeugs für diesen PC nicht gefunden");
     const datei = prog.vorne[0] || prog.befehl;
     // Prüfsumme des GANZEN Installationsordners (Pfad + sha256 je Datei, Verknüpfungen nicht gefolgt) – vor jedem Start ohne Zwischenspeicher verglichen
     const ordnerSha = (await ordnerManifest(tmp)).sha;
@@ -141,7 +153,8 @@ export async function installiertPruefen(id, { daten, mitgeliefert = lockQuelle(
     const ps = JSON.parse(await readFile(path.join(dir, PRUEFSUMME), "utf8"));
     const prog = programmIn(id, dir);
     const datei = prog ? prog.vorne[0] || prog.befehl : null;
-    if (!datei || path.relative(dir, datei) !== ps.programm || (await dateiSha(datei)) !== ps.sha256) return { ok: false, version: w.version, grund: "Programm verändert (Prüfsumme) – bitte neu installieren" };
+    if (!datei) return { ok: false, version: w.version, grund: "Installation unvollständig (natives Programm fehlt) – bitte neu installieren" };
+    if (path.relative(dir, datei) !== ps.programm || (await dateiSha(datei)) !== ps.sha256) return { ok: false, version: w.version, grund: "Programm verändert (Prüfsumme) – bitte neu installieren" };
     if (!ps.ordner) return { ok: false, version: w.version, grund: "Installation ohne Ordner-Prüfsumme (ältere Fassung) – bitte neu installieren" };
     return { ok: true, version: w.version, dir, prog, programmSha: `${ps.sha256}:${ps.ordner}` };
   } catch { return { ok: false, version: null }; }
@@ -214,6 +227,7 @@ export function programmIn(id, dir, { plattform = process.platform, arch = proce
     const kand = [path.join(plattformPaket, "vendor", ziel, "bin", "codex"), path.join(pkg, "vendor", ziel, "bin", "codex"),
       path.join(plattformPaket, "vendor", ziel, "codex", "codex"), path.join(pkg, "vendor", ziel, "codex", "codex")];
     for (const k of kand) { const r = gibt(k) && drin(k); if (r) return { befehl: r, vorne: [], nodeNoetig: false, login }; }
+    return null;   // kein Rückfall auf bin/codex.js über node (Schlussprüfung) – „Installation unvollständig“
   }
   if (id === "opencode") {
     // Plattform-Pakete @opencode/cli-<os>-<arch>[-baseline][-musl] (wie bin/opencode.cjs im offiziellen Repo); zuerst das genaue, dann baseline/musl
