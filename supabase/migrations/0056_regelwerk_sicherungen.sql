@@ -5,7 +5,8 @@
 --     Eine neue Fassung gilt nur nach Gerhards Klick: Vergleich anfordern (Aktion „regelwerk_vergleich“, Werkstatt des Admins meldet festgelegte
 --     und neueste Fassung samt geänderten Dateien) → „Übernehmen“ (ws_regelwerk_uebernehmen, nur Admin, nur genau die verglichene Fassung, Protokoll).
 --     Ohne festgelegte Fassung (neues Projekt) setzt die Werkstatt des Admins EINMAL die erste (ws_regelwerk_erstfassung) – danach nie wieder.
---   * Ampel: neue Lampe „sicherungen“ (Anzahl und letzte Sicherung im Ordner sicherungen\ des Admin-PCs, ohne Pfade).
+--   * Ampel: neue Lampen „sicherungen“ (Anzahl und letzte Sicherung im Ordner sicherungen\ des Admin-PCs, ohne Pfade) und „setup“
+--     (letzte Version der Installationsdateien in setup\, Entscheidung Gerhard 02.11.2026 10:00).
 --   * Globale Regeln der ganzen Codeschmiede (Gerhard 02.11.2026 09:50/09:54/09:55): <basis>\Regeln\CLAUDE.md – gleicher Schutz wie die
 --     REGELN.md der Projekte: Werkstatt meldet Prüfsumme und Text je PC (ws_regeln_global_melden), nur der Admin bestätigt bzw. widerruft, es gilt
 --     nur die neueste Bestätigung. Projekt-Kennung „regeln“ gesperrt (der Ordner „Regeln“ liegt neben den Projektordnern).
@@ -120,7 +121,7 @@ create or replace function public.ws_anbindungen_ok(w jsonb) returns boolean
 language sql immutable set search_path = public as $$
   select jsonb_typeof(w) = 'object' and not exists (
     select 1 from jsonb_each(w) e
-     where e.key not in ('github','pruefung','testseite','build','signatur','sandbox','datenbank','datenbank_live','testlauf','fehler','projektordner','regeln','sicherungen')
+     where e.key not in ('github','pruefung','testseite','build','signatur','sandbox','datenbank','datenbank_live','testlauf','fehler','projektordner','regeln','sicherungen','setup')
         or jsonb_typeof(e.value) <> 'object'
         or exists (select 1 from jsonb_object_keys(e.value) k where k not in ('stand','text'))
         or coalesce(e.value ->> 'stand', '') not in ('gruen','gelb','rot','grau')

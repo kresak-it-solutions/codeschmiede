@@ -88,6 +88,12 @@ Regeln: Datum im Namen, **nie überschreiben** (`sicherNeu`: neue Datei über Hi
 | Schreibsperre | `lib/rechte.mjs` › `sperrListe({ global })`: `<Projekte-Ordner>\Regeln\**` ist in jedem Bau-Lauf absolut gesperrt (Groß/Klein egal; Wirkungs-Test POSIX und Windows), auch wenn die Festplatte gerade fehlt. |
 | Anzeige | „Regelwerk“ › Bereich **„Globale Regeln“**: Stand dieses PCs, „Ordner anlegen“, „Im Explorer öffnen“ (Programm-Befehle mit der Kennung `_regeln`, nie Pfade aus der Oberfläche), Stand je PC, Bestätigen/Widerrufen, rote Konflikt-Zeile, Hinweis „Nur CLAUDE.md gilt“. Datenbank 0056, Test `t44_globale_regeln.sql`. |
 
+## Setup-Dateien (0.13.1, Entscheidung Gerhard 02.11.2026 10:00)
+Ordner `setup\<version>\` im Projektordner (gehört zum Gerüst, für die Werkstatt-KI gesperrt, „Im Explorer öffnen“ erlaubt). Nur die Werkstatt des Admins (`index.mjs` › `setupPflegen`, `lib/setup.mjs`):
+- **Programme (technik_art „programm“):** Nach jedem erfolgreichen Live-Schalten wird der Live-Commit vorgemerkt (`<Daten>\setup-offen.json`). Sobald der Ablauf „Programm bauen“ (`programm.yml`) für **genau diesen Commit** erfolgreich fertig ist (Prüfung alle 10 Minuten, höchstens einen Tag), lädt die Werkstatt dessen Artefakte `installation-*` als ZIP (`gh api …/artifacts/<id>/zip`, direkt in eine Datei mit Größengrenze) und entpackt nur einfache Dateien mit erwarteter Endung (`.exe`, `.msi`, `.dmg`, `.app.tar.gz`, `.AppImage`, `.deb`, jeweils auch `.sig`) – ohne Ordner, CRC geprüft, je ≤ 400 MB, zusammen ≤ 1 GB. Ordnername `v<version>_<stand>` (Version aus package.json) bzw. `stand_<stand>`.
+- **Releases „programm-v<version>“** (die Codeschmiede selbst, Programme mit Releases): die neueste veröffentlichte Version wird mit ihren erlaubten Dateien nach `setup\v<version>\` gelegt (`gh api …/releases/assets/<id>`, Größe aus der Schnittstelle, gleiche Grenzen).
+- Nur das eigene Repository des Projekts, **nie überschreiben** (gibt es den Versions-Ordner schon, wird nichts geladen; abgelegt wird über einen Hilfsordner und Umbenennen), **nichts automatisch löschen**. Lampe **„Setup-Dateien“** unter „Anbindungen“ (Zahl der Versionen, letzte Version, wartet auf den Bau).
+
 ## Nicht in diesem Schritt / offen
 - Seiten-Designer für jede Web-App (nächste Etappe).
 - Datenbank tatsächlich anlegen (nur Wunsch vermerkt).

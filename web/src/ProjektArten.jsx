@@ -30,8 +30,8 @@ const DATENBANK = {
   spielwiese: ["Spielwiese (gemeinsam)", "Abgetrennter Bereich in einer gemeinsamen Datenbank. Braucht Supabase Pro – wird erst nach deiner Bestätigung angelegt"],
   eigen: ["Eigenes Supabase-Projekt", "Für ernste Apps mit echten Nutzern"],
 };
-const AMPEL_NAMEN = { projektordner: "Projektordner (Admin-PC)", regeln: "Projektregeln", sicherungen: "Sicherungen (Admin-PC)", github: "GitHub", pruefung: "Prüfungen", build: "Build Windows/Mac", signatur: "Automatische Updates", sandbox: "Windows-Sandbox", testseite: "Testseite", testlauf: "Testlauf", datenbank: "Datenbank (Test)", datenbank_live: "Datenbank (Live)", fehler: "Fehler-Meldungen" };
-const AMPEL_REIHE = ["projektordner", "regeln", "sicherungen", "github", "pruefung", "build", "testlauf", "testseite", "sandbox", "signatur", "datenbank", "datenbank_live", "fehler"];
+const AMPEL_NAMEN = { projektordner: "Projektordner (Admin-PC)", regeln: "Projektregeln", sicherungen: "Sicherungen (Admin-PC)", setup: "Setup-Dateien (Admin-PC)", github: "GitHub", pruefung: "Prüfungen", build: "Build Windows/Mac", signatur: "Automatische Updates", sandbox: "Windows-Sandbox", testseite: "Testseite", testlauf: "Testlauf", datenbank: "Datenbank (Test)", datenbank_live: "Datenbank (Live)", fehler: "Fehler-Meldungen" };
+const AMPEL_REIHE = ["projektordner", "regeln", "sicherungen", "setup", "github", "pruefung", "build", "testlauf", "testseite", "sandbox", "signatur", "datenbank", "datenbank_live", "fehler"];
 const PUNKT = { gruen: "bg-emerald-500 ring-emerald-500/25", gelb: "bg-amber-500 ring-amber-500/25", rot: "bg-red-500 ring-red-500/25", grau: "bg-slate-400 dark:bg-slate-600 ring-slate-400/20" };
 const STAND_TEXT = { gruen: "grün", gelb: "gelb", rot: "rot", grau: "grau" };
 

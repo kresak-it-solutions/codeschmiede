@@ -212,6 +212,7 @@ export default function AnbindungenKacheln({ projekt, d, admin, toast }) {
           {tsDa && <a className="text-xs underline self-start" href={`https://${projekt.vorschau_domain}`} target="_blank" rel="noopener noreferrer">Testseite im Browser öffnen</a>}
           <span className="text-xs text-slate-500 flex gap-1.5"><Globe className="w-3.5 h-3.5 shrink-0 mt-0.5" aria-hidden="true" />Öffentlich: Testfassung (main) und Vorschauen der Werkstatt-Zweige (feature/cs-…) sind für jeden mit der Adresse erreichbar – keine echten Daten, in Zweig-Vorschauen nicht anmelden.</span>
         </Lampe>}
+        {(projekt.technik_art === "programm" || projekt.id === "codeschmiede") && <Lampe stand={ampel.setup?.stand || "grau"} titel="Setup-Dateien" text={ampel.setup?.text || "Nach jedem Live-Schalten (bzw. Release) legt die Werkstatt des Admins die Installationsdateien dieser Version in setup\\<version> ab. Nichts wird überschrieben oder automatisch gelöscht."} />}
         <Lampe stand={db[0]} titel="Datenbank" text={db[1]}>
           {admin && (!projekt.datenbank || projekt.datenbank === "keine") && (projekt.datenbank_wunsch
             ? <button type="button" className={`${ghost} self-start h-9 text-xs`} disabled={!!busy} onClick={() => dbWunsch(false)}><X className="w-3.5 h-3.5" />Wunsch zurückziehen</button>

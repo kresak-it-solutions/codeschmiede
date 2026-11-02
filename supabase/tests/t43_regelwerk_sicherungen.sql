@@ -56,7 +56,7 @@ reset role; select was, details ->> 'von' is not null von, left(details ->> 'nac
 :ADM
 select ws_regelwerk_uebernehmen('trainer-to-go',:'A2');
 \echo [17] Lampe „sicherungen“ -> OK
-select ws_anbindungen_melden('00000000-0000-0000-0000-0000000000a1','vereinsheft','{"sicherungen":{"stand":"gruen","text":"3 Sicherung(en) · letzte 02.11.26, 14:05 (Repo-Stand)"}}') \g /dev/null
+select ws_anbindungen_melden('00000000-0000-0000-0000-0000000000a1','vereinsheft','{"sicherungen":{"stand":"gruen","text":"3 Sicherung(en) · letzte 02.11.26, 14:05 (Repo-Stand)"},"setup":{"stand":"gruen","text":"1 Version(en) · letzte v0.13.1"}}') \g /dev/null
 select anbindungen -> 'sicherungen' ->> 'stand' sicherungen from ws_projekte where id = 'vereinsheft';
 \echo [18] Entwickler sieht die Fassung (lesen) -> 2222
 :DEV

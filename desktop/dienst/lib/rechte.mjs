@@ -12,7 +12,7 @@ import { readdir } from "node:fs/promises";
 import path from "node:path";
 
 const WERKZEUGE = ["Edit", "Write", "NotebookEdit"];
-export const GESCHUETZT = ["code", "regeln", "material", "konzept", "doku", "sicherungen"];
+export const GESCHUETZT = ["code", "regeln", "material", "konzept", "doku", "sicherungen", "setup"];
 
 /** Sonderzeichen für die Muster-Bibliothek (ignore 7.x, gitignore-Regeln) maskieren. „?“ bleibt (passt auf genau ein Zeichen – für ein Verbot nur weiter). */
 export const maskieren = (t) => String(t).replace(/[\\*[\]!#]/g, "\\$&");

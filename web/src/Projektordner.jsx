@@ -25,6 +25,7 @@ export function OrdnerBaum({ pfad }) {
       {z("konzept", "Konzept aus der Gruppe „Konzept“, eigene Entwürfe in entwuerfe")}
       {z("doku", "Handbuch, Änderungsprotokoll, PDFs – nach jedem Auftrag gespiegelt")}
       {z("material", "Logos, Bilder, Vorlagen von dir – liest die Werkstatt als Daten mit")}
+      {z("setup", "Installationsdateien je Version (Programme) – nach jedem Live-Schalten bzw. Release")}
       {z("sicherungen", "Repo-Stand und Datenbank-Aufbau bei jedem Live-Schalten (nie überschrieben)", "└─")}
     </div>);
 }

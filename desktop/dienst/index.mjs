@@ -13,7 +13,7 @@ import { createInterface } from "node:readline";
 import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import { mkdir, mkdtemp, readFile, writeFile, access, stat, rename } from "node:fs/promises";
-import { createReadStream } from "node:fs";
+import { createReadStream, createWriteStream } from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
@@ -45,6 +45,7 @@ import { rm, rmdir, readdir, lstat, realpath } from "node:fs/promises";
 import { GLOBAL_ORDNER, GLOBAL_KENNUNG, GLOBAL_DATEI, GLOBAL_LIESMICH, globalVorlage, imGlobal } from "./lib/projektordner.mjs";
 import { kennungPasst, konfigLesen, ordnerStand, sicherOrdner, sicherSchreiben, sicherNeu, sicherLesen, sicherLoeschen, dateienSammeln, dateienKopieren, geruestAnlegen, altOrdner, dokuListe, projektregelnAusAgents, regelnVorlage } from "./lib/projektordner.mjs";
 import { konflikteFinden, konfliktKurz, konfliktNachricht, regelBlock, regelBlockText, PRUEF_SCHLUSS, regelwerkListe, regelwerkUnterschied, altName, SHA1 } from "./lib/regeln.mjs";
+import { setupNameOk, versionOrdner, releaseVersion, releaseDateien, zipDateien, setupLampe, SETUP_JE, SETUP_GESAMT } from "./lib/setup.mjs";
 import { sicherungsName, freierName, uebersicht as sicherungenUebersicht, sicherungenLampe, aufbauPruefen, aufbauArtefakt, BUNDLE_MAX } from "./lib/sicherungen.mjs";
 import { testseiteEinrichten, lotsePruefen, Lotse } from "./lib/testseite.mjs";
 import { laufSperren, sperrListe, gefaehrlicheGitConfig, gefaehrlicheAttribute, gitdirOk, linksNachAussen } from "./lib/rechte.mjs";
@@ -1263,7 +1264,7 @@ async function projektordnerPflegen(zwingend = false) {
   pflegeLaeuft = true; pflegeZuletzt = Date.now();
   const meldung = [];
   try {
-    const { data: projekte } = await db.from("ws_projekte").select("id, name, repo, archiviert");
+    const { data: projekte } = await db.from("ws_projekte").select("id, name, repo, archiviert, technik_art");
     for (const p of projekte || []) {
       if (p.archiviert || stopp) continue;
       const { data: rolle } = await db.rpc("ws_rolle_im_projekt", { p_projekt: p.id });
@@ -1288,6 +1289,7 @@ async function projektordnerPflegen(zwingend = false) {
           // Aktuelle Fassung zur Bestätigung durch den Admin melden (Text und Prüfsumme über genau diese Bytes, keine Pfade)
           if (r.sha && !r.zuLang) await db.rpc("ws_regeln_melden", { p_pc: pcId, p_projekt: p.id, p_sha: r.sha, p_text: r.aktuell, p_konflikte: Math.min(50, r.konflikte.length) }).then(({ error }) => { if (error && !/does not exist|schema cache/i.test(error.message)) melde("fehler", `REGELN.md melden: ${kuerzen(ohneGeheimnisse(error.message), 160)}`); }, () => {});
           await spiegeln(p, po).catch((e) => melde("fehler", `Spiegel ${p.name}: ${kuerzen(ohneGeheimnisse(e?.message || String(e)), 200)}`));
+          await setupPflegen(p, po).catch((e) => melde("fehler", `Setup-Dateien ${p.name}: ${kuerzen(ohneGeheimnisse(e?.message || String(e)), 200)}`));
         }
       } catch (e) {
         m.stand = "fehler"; m.hinweis = "Projektordner konnte nicht gepflegt werden – Meldung der Werkstatt ansehen";
@@ -2335,6 +2337,11 @@ async function ampelMelden(p) {
         werte.sicherungen = { stand: "grau", text: "Sicherungen nicht prüfbar – der Projektordner ist auf dem Admin-PC nicht erreichbar" };
       } else {
         werte.sicherungen = sicherungenLampe(sicherungenUebersicht(await sicherungenNamen(po).catch(() => [])));
+        if (p.technik_art === "programm" || p.id === "codeschmiede") {
+          const vers = (await readdir(await sicherOrdner(po.wurzel, "setup"), { withFileTypes: true }).catch(() => [])).filter((e) => e.isDirectory()).map((e) => e.name);
+          const o = (await setupOffen())[p.id];
+          werte.setup = setupLampe(vers, o ? o.ordner : null);
+        }
         const umzug = !(await existiert(path.join(po.code, ".git"))) && await altRepoDa(p.id);
         werte.projektordner = umzug ? { stand: "gelb", text: "Verknüpft · Arbeitskopie wird umgezogen, sobald kein Auftrag offen ist" } : { stand: "gruen", text: "Verknüpft · Festplatte angesteckt" };
         const r = await regelnLesen(po, p.id);
@@ -2505,6 +2512,93 @@ async function sicherungenAblegen(projekt, { commit = null, dbLauf = null } = {}
   return teile.filter((t) => !/gesichert \(|Aufbau gesichert/.test(t)).join(" · ");
 }
 
+// ---------- Setup-Dateien im Projektordner (0.13.1, Ordner setup\<version>\) – nur Werkstatt des Admins ----------
+// Nach dem Live-Schalten eines Programms wird der Live-Commit vorgemerkt (Daten-Ordner, setup-offen.json); sobald der Ablauf „Programm bauen“ für
+// genau diesen Commit fertig ist, werden seine Installationsdateien (Artefakte installation-*) abgelegt. Releases „programm-v<version>“ (z. B. die
+// Codeschmiede selbst) werden ebenso abgelegt. Nie überschreiben (gibt es den Versions-Ordner schon, wird nichts geladen), nichts löschen.
+const setupOffenDatei = () => path.join(cfg.daten_ordner, "setup-offen.json");
+async function setupOffen() { try { const j = JSON.parse(await readFile(setupOffenDatei(), "utf8")); return j && typeof j === "object" && !Array.isArray(j) ? j : {}; } catch { return {}; } }
+async function setupOffenSchreiben(j) { await writeFile(setupOffenDatei(), JSON.stringify(j)); }
+async function setupVormerken(projekt, commit, bezeichnung) {
+  if (!SHA1.test(commit || "")) return;
+  const j = await setupOffen();
+  j[projekt.id] = { commit, ordner: versionOrdner(bezeichnung, commit), seit: new Date().toISOString() };
+  await setupOffenSchreiben(j);
+}
+/** gh-Ausgabe direkt in eine Datei, höchstens max Bytes (sonst abgebrochen). */
+function ghZuDatei(args, ziel, max) {
+  return new Promise((fertig, fehl) => {
+    const k = spawn("gh", args, { shell: false, windowsHide: true, env: { ...process.env, GH_PROMPT_DISABLED: "1", GIT_TERMINAL_PROMPT: "0" }, stdio: ["ignore", "pipe", "pipe"] });
+    const aus = createWriteStream(ziel, { flags: "wx" }); let n = 0; let zuGross = false; let err = "";
+    const uhr = setTimeout(() => k.kill(), 20 * 60 * 1000);
+    k.stdout.on("data", (d) => { n += d.length; if (n > max) { zuGross = true; k.kill(); } else aus.write(d); });
+    k.stderr.on("data", (d) => { err = (err + d).slice(-400); });
+    k.on("error", (e) => { clearTimeout(uhr); aus.destroy(); fehl(e); });
+    k.on("close", (code) => { clearTimeout(uhr); aus.end(() => (zuGross ? fehl(new Error("Setup-Datei zu groß – nichts abgelegt")) : code === 0 ? fertig(n) : fehl(new Error(`gh: ${ohneGeheimnisse(err)}`)))); });
+  });
+}
+/** Dateien in setup/<ordner> ablegen – nur, wenn es den Versions-Ordner noch nicht gibt (nie überschreiben). */
+async function setupAblegen(po, ordner, dateien) {
+  if (!/^(v\d[\w.]*|stand_[0-9a-f]{7})$/.test(ordner)) throw new Error("Ungültige Version");
+  if (await lstat(path.join(await sicherOrdner(po.wurzel, "setup"), ordner)).catch(() => null)) return 0;
+  const tmpRel = `setup/.${ordner}.cs-neu`;
+  const tmp = path.join(po.wurzel, ...tmpRel.split("/"));
+  const st = await lstat(tmp).catch(() => null); if (st) await rm(tmp, { recursive: st.isDirectory() && !st.isSymbolicLink(), force: true });
+  for (const d of dateien) await sicherNeu(po.wurzel, `${tmpRel}/${d.name}`, d.inhalt);
+  await rename(tmp, path.join(po.wurzel, "setup", ordner));
+  return dateien.length;
+}
+const setupZuletzt = new Map();
+async function setupPflegen(p, po) {
+  if (!cfg.admin || !p.repo || Date.now() - (setupZuletzt.get(p.id) || 0) < 10 * 60 * 1000) return;
+  setupZuletzt.set(p.id, Date.now());
+  const repo = p.repo; if (!/^[A-Za-z0-9-]+\/[A-Za-z0-9._-]+$/.test(repo)) return;
+  const tmp = await mkdtemp(path.join(os.tmpdir(), "cs-setup-"));
+  try {
+    // 1 Releases „programm-v<version>“ (Codeschmiede selbst, Programme mit Releases): neueste veröffentlichte Version
+    if (p.technik_art === "programm" || p.id === "codeschmiede") {
+      const { stdout } = await ghGrenze("gh", ["api", `repos/${repo}/releases?per_page=10`, "--jq", "[.[] | select(.draft | not) | {tag: .tag_name, assets: [.assets[] | {id, name, size, state}]}]"]).catch(() => ({ stdout: "[]" }));
+      let rel = []; try { rel = JSON.parse(stdout || "[]"); } catch { rel = []; }
+      const r = (Array.isArray(rel) ? rel : []).find((x) => releaseVersion(x?.tag));
+      if (r) {
+        const ordner = releaseVersion(r.tag);
+        if (!(await lstat(path.join(await sicherOrdner(po.wurzel, "setup"), ordner)).catch(() => null))) {
+          const { dateien, ausgelassen } = releaseDateien(r.assets);
+          const geladen = [];
+          for (const d of dateien) {
+            const ziel = path.join(tmp, `r-${d.id}`);
+            await ghZuDatei(["api", "-H", "Accept: application/octet-stream", `repos/${repo}/releases/assets/${d.id}`], ziel, Math.min(d.groesse + 1024, SETUP_JE));
+            geladen.push({ name: d.name, inhalt: createReadStream(ziel) });
+          }
+          if (geladen.length) { await setupAblegen(po, ordner, geladen); melde("status", `Setup-Dateien ${p.name} ${ordner} abgelegt (${geladen.length})${ausgelassen.length ? ` · ${ausgelassen.length} ausgelassen` : ""}`); }
+        }
+      }
+    }
+    // 2 Live-Stand eines Programms: Artefakte installation-* des Ablaufs „Programm bauen“ für genau den Live-Commit
+    const offen = await setupOffen(); const o = offen[p.id];
+    if (!o) return;
+    if (Date.now() - Date.parse(o.seit) > 24 * 60 * 60 * 1000) { delete offen[p.id]; await setupOffenSchreiben(offen); melde("fehler", `Setup-Dateien ${p.name}: Programm-Bau für ${o.commit.slice(0, 7)} nach einem Tag nicht fertig – nicht abgelegt`); return; }
+    const { stdout: l } = await ghGrenze("gh", ["run", "list", "--repo", repo, "--workflow", "programm.yml", "--commit", o.commit, "--limit", "5", "--json", "databaseId,status,conclusion,headSha"]);
+    const lauf = (JSON.parse(l || "[]") || []).find((x) => x.headSha === o.commit && x.status === "completed");
+    if (!lauf) return;   // läuft noch
+    if (lauf.conclusion !== "success" || !/^\d{1,20}$/.test(String(lauf.databaseId))) { delete offen[p.id]; await setupOffenSchreiben(offen); melde("fehler", `Setup-Dateien ${p.name}: Programm-Bau für ${o.commit.slice(0, 7)} nicht erfolgreich – nichts abgelegt`); return; }
+    const { stdout: a } = await ghGrenze("gh", ["api", `repos/${repo}/actions/runs/${lauf.databaseId}/artifacts`, "--jq", '[.artifacts[] | select((.name | startswith("installation-")) and (.expired | not)) | [.id, .size_in_bytes]]']);
+    const arte = JSON.parse(a || "[]");
+    const alle = []; let summe = 0;
+    for (const [id, groesse] of Array.isArray(arte) ? arte.slice(0, 6) : []) {
+      if (!/^\d{1,20}$/.test(String(id)) || !(Number(groesse) > 0) || summe + Number(groesse) > SETUP_GESAMT) continue;
+      const ziel = path.join(tmp, `a-${id}.zip`);
+      await ghZuDatei(["api", `repos/${repo}/actions/artifacts/${id}/zip`], ziel, Math.min(Number(groesse) + 1024 * 1024, SETUP_GESAMT));
+      for (const d of zipDateien(await readFile(ziel), { maxGesamt: SETUP_GESAMT - summe })) { summe += d.daten.length; alle.push({ name: d.name, inhalt: d.daten }); }
+      await rm(ziel, { force: true });
+    }
+    const namen = new Set();
+    const eindeutig = alle.filter((d) => setupNameOk(d.name) && !namen.has(d.name) && namen.add(d.name));
+    if (eindeutig.length) { const n = await setupAblegen(po, o.ordner, eindeutig); melde("status", `Setup-Dateien ${p.name} ${o.ordner}: ${n ? `${n} abgelegt` : "Ordner gibt es schon – nichts überschrieben"}`); }
+    delete offen[p.id]; await setupOffenSchreiben(offen);
+  } finally { await rm(tmp, { recursive: true, force: true }).catch(() => {}); }
+}
+
 async function liveArbeit() {
   if (!cfg.admin) return false;
   const { data, error } = await db.rpc("ws_live_nehmen", { p_pc: pcId });
@@ -2512,7 +2606,7 @@ async function liveArbeit() {
   const a = data?.[0]; if (!a) return false;
   melde("status", a.art === "einrichten" ? "Test & Live wird eingerichtet" : a.art === "live" ? "Live schalten" : "Live zurücksetzen");
   try {
-    const { data: projekt } = await db.from("ws_projekte").select("id, name, repo, vorschau_domain, db_live_ref").eq("id", a.projekt_id).single();
+    const { data: projekt } = await db.from("ws_projekte").select("id, name, repo, vorschau_domain, db_live_ref, technik_art").eq("id", a.projekt_id).single();
     const r = await liveAusfuehren({ sh: ghGrenze, auftrag: a, mussLaufen: !!projekt?.vorschau_domain, melde: (t) => melde("status", t) });
     // Datenbank-Station: Live-Datenbank nach dem Live-Schalten aktualisieren und das Ergebnis melden
     const dbLauf = {};
@@ -2523,6 +2617,7 @@ async function liveArbeit() {
     }
     // Sicherungen im Projektordner (0.13.1): Stand des Repositorys und – falls entstanden – der Aufbau der Live-Datenbank. Scheitert das, bleibt
     // das Live-Schalten trotzdem gültig (Hinweis im Ergebnis).
+    if (a.art === "live" && projekt?.technik_art === "programm") await setupVormerken(projekt, r.commit, r.bezeichnung).catch(() => {});
     if (a.art === "live") {
       const h = await sicherungenAblegen(projekt, { commit: r.commit, dbLauf: dbLauf.lauf || null }).catch((e) => `Sicherung im Projektordner nicht abgelegt: ${kuerzen(ohneGeheimnisse(e?.message || String(e)), 160)}`);
       if (h) r.hinweis = [r.hinweis, h].filter(Boolean).join(" · ");

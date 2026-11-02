@@ -373,7 +373,7 @@ pub async fn ws_ordner_verknuepfen(app: tauri::AppHandle, projekt: String, eigen
 }
 
 /// Feste Unterordner, die „Im Explorer öffnen“ zeigen darf.
-const UNTERORDNER: &[&str] = &["code", "regeln", "konzept", "doku", "material", "sicherungen"];
+const UNTERORDNER: &[&str] = &["code", "regeln", "konzept", "doku", "material", "sicherungen", "setup"];
 
 /// Verknüpften Projektordner (oder einen festen Unterordner) im Explorer bzw. Finder öffnen – nie einen beliebigen Pfad.
 #[tauri::command]
