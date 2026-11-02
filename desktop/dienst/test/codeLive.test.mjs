@@ -322,3 +322,24 @@ test("N2: neue Datei mit mindestens 50 % der Zeilen einer Geheimnis-Datei wird a
     assert.ok(!/s3hr-geheim|tok_abc|noch-ein-geheimnis/.test(JSON.stringify(r)));
   } finally { await rm(wurzel, { recursive: true, force: true }); }
 });
+
+test("M1 (Kurzprüfung): Baum-Modus – leicht geänderte Kopie einer unveränderten Geheimnis-Datei wird ausgeblendet", async () => {
+  const { d, wurzel } = await arbeitsordner();
+  try {
+    const pg = ["db.intern.beispiel:5432:app:dienst:Kennwort-sehr-geheim-1", "db.intern.beispiel:5432:test:dienst:Kennwort-sehr-geheim-2", "backup.beispiel:5432:*:sicherung:Noch-ein-Kennwort-3"].join("\n");
+    await writeFile(path.join(d, ".pgpass"), pg + "\n"); await git(d, "add", "-A"); await commit(d, "pgpass");
+    const von = await git(d, "rev-parse", "HEAD");
+    await writeFile(path.join(d, "notiz.txt"), pg + "\nZusatzzeile mit etwas Text\n");
+    await writeFile(path.join(d, "harmlos.txt"), "ganz andere Notiz ohne Bezug\n");
+    await git(d, "add", "-A"); await commit(d, "kopie");
+    const bis = await git(d, "rev-parse", "HEAD");
+    // Gegenprobe: ohne die neue Prüfung fände --find-copies (ohne -harder) die Kopie nicht, weil die Quelle unverändert ist
+    const ohne = await git(d, "diff", "--name-status", "-z", "--find-renames", "--find-copies", von, bis, "--");
+    assert.ok(!/^C/m.test(ohne.split("\0").join("\n")), "Gegenprobe: ohne --find-copies-harder keine Kopie erkannt");
+    const r = await diffSammeln({ git, ordner: d, von, bis });
+    const nach = Object.fromEntries(r.dateien.map((x) => [x.p, x]));
+    assert.deepEqual(nach["notiz.txt"], { p: "notiz.txt", art: "ausgeblendet" });
+    assert.equal(nach["harmlos.txt"].art, "neu");
+    assert.ok(!/Kennwort-sehr-geheim|Noch-ein-Kennwort/.test(JSON.stringify(r)));
+  } finally { await rm(wurzel, { recursive: true, force: true }); }
+});

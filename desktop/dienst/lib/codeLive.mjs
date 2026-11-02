@@ -303,9 +303,9 @@ export async function diffSammeln({ git, ordner, von, bis = null, gitDir = null,
   const geheimZiele = new Set(); let bisBaum = null;
   if (bis) {
     // Baum-Modus: Umbenennungen nur zur Erkennung – ist die Quelle geheim, bleibt auch das Ziel ausgeblendet
-    for (const u of umbenennungenLesen(await g("diff", "--name-status", "-z", "--no-ext-diff", "--no-textconv", "--ignore-submodules=all", "--find-renames", "--find-copies", von, bis, "--")))
+    for (const u of umbenennungenLesen(await g("diff", "--name-status", "-z", "--no-ext-diff", "--no-textconv", "--ignore-submodules=all", "--find-renames", "--find-copies", "--find-copies-harder", von, bis, "--")))
       if (geheimDatei(u.von)) geheimZiele.add(u.nach);
-    bisBaum = lsTreeLesen(await g("ls-tree", "-r", "-z", "--full-tree", bis));
+    bisBaum = new Map(lsTreeEintraege(await g("ls-tree", "-r", "-l", "-z", "--full-tree", bis)).map((y) => [y.p, y]));
   } else {
     const schon = new Set(liste.map((x) => x.p));
     for (const p of neuAusStatus(await g("status", "--porcelain=v1", "-z", "--untracked-files=all", "--ignore-submodules=all"))) if (!schon.has(p)) liste.push({ p, neu: true, plus: 0, minus: 0 });
@@ -317,7 +317,17 @@ export async function diffSammeln({ git, ordner, von, bis = null, gitDir = null,
     if (dateien.length >= grenzen.dateien) { gekuerzt = true; break; }
     if (geheimDatei(x.p) || geheimZiele.has(x.p)) { dateien.push({ p: x.p, art: "ausgeblendet" }); continue; }   // nie lesen
     const hinzu = !basis.has(x.p);
-    if (bis && hinzu && geheimShas.has(bisBaum.get(x.p))) { dateien.push({ p: x.p, art: "ausgeblendet" }); continue; }
+    if (bis && hinzu) {
+      const b = bisBaum.get(x.p);
+      if (b && geheimShas.has(b.sha)) { dateien.push({ p: x.p, art: "ausgeblendet" }); continue; }
+      // Kurzprüfung M1: leicht geänderte Kopie einer (unverändert gebliebenen) Geheimnis-Datei – Inhalt aus Git lesen (bis neuMax, nur im Speicher)
+      // und wie im Arbeitsordner-Modus mit den Geheimnis-Texten des Startstands vergleichen. Zu groß zum Prüfen → nur genannt.
+      if (geheimListe.length && b && !x.binaer) {
+        if (b.groesse > grenzen.neuMax) { dateien.push({ p: x.p, art: "gross" }); continue; }
+        const text = await g("cat-file", "blob", b.sha).catch(() => "");
+        if ((await geheimeTexte()).some((t) => zeilenAehnlich(text, t))) { dateien.push({ p: x.p, art: "ausgeblendet" }); continue; }
+      }
+    }
     if (x.binaer) { dateien.push({ p: x.p, art: "binaer", plus: 0, minus: 0 }); continue; }
     const platz = grenzen.gesamt - gesamt;
     let d; let r = null;

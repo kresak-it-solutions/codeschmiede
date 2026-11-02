@@ -2,7 +2,7 @@
 
 **Stand:** 2026-11-02 · **Wer:** Gerhard Kresak (Entscheidungen, Entwurf freigegeben 02.11.2026), Claude (Konzept, Umsetzung)
 **Entwurf:** `docs/entwurf-1.0-arbeitsplatz-alle-arten.html` · **Version:** vorläufig 0.15.0 (Stufe 1; 0.14.0 entsteht parallel, die endgültige Nummer wird beim Zusammenführen gesetzt)
-**Datenbank:** 0059 (`supabase/migrations/0059_arbeitsplatz.sql`, Test `supabase/tests/t46_arbeitsplatz.sql`; 0057 und 0058 sind für parallele Features reserviert)
+**Datenbank:** 0059 (`supabase/migrations/0059_arbeitsplatz.sql`, Test `supabase/tests/t46_arbeitsplatz.sql`; 0057 kommt aus 0.14.0, 0058 ist reserviert) – eingetragen in `supabase/einspielen.txt` nach der Sicherheitsprüfung (GRÜN 02.11.2026)
 **Umgesetzt (Stufe 1):** `web/src/seiten/Arbeitsplatz.jsx` (Baum, Punkte, Prüfweg, rechte Hälfte), `web/src/bausteine/arbeitsplatz.js` (reine Funktionen,
 Test `desktop/dienst/test/arbeitsplatz.test.mjs`), `web/src/daten/punkte.js`, `desktop/dienst/lib/codeLive.mjs` (Diff-Filter, Test `codeLive.test.mjs`),
 Einbau in `seiten/LiveVorschau.jsx` (`FeatureArbeitsplatz`), `seiten/Zentrale.jsx` (`AuftragsChat`, Status-Punkte), `bausteine/chat.jsx`, `ProjektArten.jsx`, `desktop/dienst/index.mjs`.
@@ -118,10 +118,10 @@ ein Entwickler-PC arbeitet – also **muss der Diff über die Datenbank** gehen.
    bzw. `info/attributes`: `filter.<name>.clean=`, `.smudge=`, `.process=` leer und `.required=false`. Ungültige Filter-Namen oder nicht vollständig prüfbare
    Attribute → abgeschaltet. Tests zeigen: plain git führt die Filter aus (Gegenprobe), Code live nicht – weder über ein Untermodul mit eigener Konfiguration noch über
    eine umgeleitete `.git`-Datei.
-2b. **Umbenannte Geheimnisse:** Im Baum-Modus erkennt `git diff --name-status --find-renames --find-copies` Umbenennungen und Kopien – ist die Quelle eine
+2b. **Umbenannte Geheimnisse:** Im Baum-Modus erkennt `git diff --name-status --find-renames --find-copies --find-copies-harder` Umbenennungen und Kopien – ist die Quelle eine
    Geheimnis-Datei, bleibt das Ziel ausgeblendet. In beiden Modi werden neue Dateien ausgeblendet, deren Inhalt (Blob-Kennung wie `git hash-object --no-filters`)
    einer Geheimnis-Datei des Startstands entspricht.
-2b'. **Ähnliche Inhalte** (Nachprüfung N2): Im Arbeitsordner wird eine neue Datei auch ausgeblendet, wenn sie mindestens 50 % der bedeutsamen Zeilen
+2b'. **Ähnliche Inhalte** (Nachprüfung N2, Kurzprüfung M1): In beiden Modi (im Baum-Modus Inhalt per `git cat-file blob`) wird eine neue Datei auch ausgeblendet, wenn sie mindestens 50 % der bedeutsamen Zeilen
    (getrimmt, nicht leer, mindestens 8 Zeichen) einer Geheimnis-Datei des Startstands enthält. Verglichen werden höchstens 50 Geheimnis-Dateien zu je 64 KB,
    nur im Speicher; nichts davon geht in ein Log oder in die Datenbank.
 2d. **Keine persönliche oder System-Konfiguration** (Nachprüfung N1): Jeder git-Aufruf von Code live läuft mit `GIT_CONFIG_GLOBAL=/dev/null` (Windows `NUL`),
@@ -187,9 +187,16 @@ ein Entwickler-PC arbeitet – also **muss der Diff über die Datenbank** gehen.
 ## Bekannte Grenzen
 - Code live zeigt den Stand höchstens alle 5 Sekunden, nicht jeden Tastendruck; sehr große Änderungen sind gekürzt. Er braucht eine laufende Werkstatt.
 - Der Diff des letzten Auftrags braucht eine eingeschaltete Werkstatt (Admin-PC oder eigener PC) und den Zweig bei GitHub (nach dem Zusammenführen gelöschte Zweige: „nicht mehr vorhanden“).
-- **Restrisiko umbenannte Geheimnisse:** Erkannt werden umbenannte/kopierte Geheimnis-Dateien mit gleichem Inhalt (Arbeitsordner und Baum) bzw. mit ähnlichem
-  Inhalt (Baum: Ähnlichkeit ab 50 %; Arbeitsordner: mindestens 50 % der bedeutsamen Zeilen). Nicht erkannt: eine Geheimnis-Datei, die erst im Lauf angelegt **und** dann umbenannt wird, ein stark umgeschriebener oder
-  zerstückelter Inhalt, und Inhalte, die nur durch Zeilenende-Umwandlung (autocrlf) abweichen. Dort greift nur noch die Maskierung bekannter Schlüssel-Muster.
+- **Restrisiko umbenannte Geheimnisse:** Erkannt werden umbenannte bzw. kopierte Geheimnis-Dateien
+  - mit gleichem Inhalt (Blob-Kennung, Arbeitsordner und Baum-Modus),
+  - im Baum-Modus über Gits Umbenennungs- und Kopie-Erkennung (`--find-renames --find-copies --find-copies-harder`, Ähnlichkeit ab 50 %; auch wenn die Quelle unverändert bleibt),
+  - in beiden Modi über den Zeilenvergleich: neue Datei mit mindestens 50 % der bedeutsamen Zeilen einer Geheimnis-Datei des Startstands (im Baum-Modus Inhalt per `git cat-file blob`, bis 512 KB; größere neue Dateien werden dann nur genannt).
+
+  **Grenzen des Zeilenvergleichs:** höchstens **50 Geheimnis-Dateien** des Startstands zu je **64 KB**, in Pfad-Reihenfolge (weitere bzw. größere werden nicht verglichen);
+  es zählen nur Zeilen ab **8 Zeichen** (getrimmt); ab da gilt nur **exakte Gleichheit** der Zeile – schon ein geändertes Zeichen, andere Einrückung innerhalb der Zeile
+  oder ein anderes Zeilenende-Zeichen in der Zeile macht sie ungleich. Nicht erkannt werden außerdem: eine Geheimnis-Datei, die erst im Lauf angelegt **und** dann
+  umbenannt wird (sie ist nicht im Startstand), ein stark umgeschriebener, umformatierter oder zerstückelter Inhalt, und Inhalte, die nur durch Zeilenende-Umwandlung
+  (autocrlf) abweichen (Blob-Kennung). Dort greift nur noch die Maskierung bekannter Schlüssel-Muster.
 - Die Maskierung erkennt bekannte Schlüssel-Muster; ein Geheimnis ohne erkennbares Muster in einer normalen Code-Datei würde angezeigt (wie im Code-Editor). Geheimnisse gehören nie in den Code.
 - Kein „Zurück auf diesen Stand“ je Feature (nur das Zurücksetzen der ganzen App durch den Admin).
 - Ziele steuern in Stufe 1 nur Anzeige und Umschalter; Grundgerüst, Ampel und Abläufe richten sich weiter nach der Art.
