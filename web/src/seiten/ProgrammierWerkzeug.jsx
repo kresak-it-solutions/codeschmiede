@@ -56,7 +56,7 @@ export default function ProgrammierWerkzeug({ d, ich, toast, eintrag, meinePcs, 
     <div className={`${card} p-4 flex flex-col gap-3`} aria-label="Programmieren">
       <div className="text-xs text-slate-500 flex flex-wrap items-center gap-1.5"><Menu className="w-3.5 h-3.5" />Projekt <b>{projekt?.name || d.projektId}</b> › KI-Anbieter › Programmieren</div>
       <div><h3 className="font-display font-bold text-lg flex items-center gap-2"><SquareTerminal className="w-5 h-5 text-emerald-700" />Programmieren</h3>
-        <p className="text-sm text-slate-500">Ein Werkzeug je Projekt, <b>verpflichtend</b>: Ist es auf keinem Entwickler-PC bereit, wartet der Auftrag mit „wartet auf …“ – es springt kein anderes ein, auch nicht Claude. Fremde Werkzeuge laufen nur in der Sperre der Codeschmiede (Mac, Linux), nie unter Windows und nie auf dem Admin-PC.</p></div>
+        <p className="text-sm text-slate-500">Ein Werkzeug je Projekt, <b>verpflichtend</b>: Ist es auf keinem Entwickler-PC bereit, wartet der Auftrag mit „wartet auf …“ – es springt kein anderes ein, auch nicht Claude. Fremde Werkzeuge laufen nur in der Sperre der Codeschmiede auf dem Mac – nie unter Windows oder Linux und nie auf dem Admin-PC. Gemini CLI ist derzeit überall gesperrt (startet ohne Rückfrage nur in vertrauten Ordnern).</p></div>
 
       <div className="grid gap-2.5 [grid-template-columns:repeat(auto-fit,minmax(190px,1fr))]" role="radiogroup" aria-label="Programmier-Werkzeug">
         {Object.entries(WERKZEUGE).map(([id, t]) => (
@@ -107,7 +107,7 @@ export default function ProgrammierWerkzeug({ d, ich, toast, eintrag, meinePcs, 
                 <span>{t}: {id === "erlaubt" ? (p.ok ? "erlaubt" : "hat nicht gewirkt") : p.ok ? "abgewiesen" : <b>nicht abgewiesen</b>}</span></div>; })}
           </div>}
         </>}
-        <p className="text-xs text-slate-500">Sperren-Test: Die Codeschmiede legt eine Wegwerf-Kopie mit Attrappen an (Regeln, setup, Nachbarprojekt, Git-Einstellung, Verknüpfung nach außen) und lässt das Werkzeug genau diese Schreibversuche machen, dazu einen erlaubten im Arbeitsordner; eine Gegenprobe macht dieselben Versuche in derselben Sperre. Bestanden heißt: alles Verbotene unverändert. Nach einem Update des Werkzeugs muss der Test neu laufen. Die Codeschmiede speichert keine Zugangsdaten – angemeldet wird nur geprüft, nicht gelesen.</p>
+        <p className="text-xs text-slate-500">Sperren-Test: Die Codeschmiede legt unter ihren Daten eine Wegwerf-Kopie mit Attrappen an (Regeln, setup, Nachbarprojekt, Git-Einstellung, Verknüpfung nach außen) und lässt das Werkzeug genau diese Schreibversuche machen, dazu einen erlaubten im Arbeitsordner. Eine Gegenprobe macht in derselben Sperre dieselben Versuche, verbotene Programmstarts und verbotenes Lesen – auch auf dem Laufwerk der Projekte. Bestanden heißt: alles Verbotene abgewiesen. Ändern sich Werkzeug, Sperre oder Codeschmiede, muss der Test neu laufen. Die Codeschmiede speichert keine Zugangsdaten – angemeldet wird nur geprüft, nicht gelesen.</p>
       </>}
 
       {admin && fremd && staende.some((s) => s.werkzeug === wahl) && <div className="overflow-x-auto"><table className="w-full text-sm">
