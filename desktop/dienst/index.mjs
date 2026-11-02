@@ -45,7 +45,7 @@ import { rm, rmdir, readdir, lstat, realpath } from "node:fs/promises";
 import { GLOBAL_ORDNER, GLOBAL_KENNUNG, GLOBAL_DATEI, GLOBAL_LIESMICH, globalVorlage, imGlobal } from "./lib/projektordner.mjs";
 import { kennungPasst, konfigLesen, ordnerStand, sicherOrdner, sicherSchreiben, sicherNeu, sicherLesen, sicherLoeschen, dateienSammeln, dateienKopieren, geruestAnlegen, altOrdner, dokuListe, projektregelnAusAgents, regelnVorlage } from "./lib/projektordner.mjs";
 import { konflikteFinden, konfliktKurz, konfliktNachricht, regelBlock, regelBlockText, PRUEF_SCHLUSS, regelwerkListe, regelwerkUnterschied, altName, SHA1 } from "./lib/regeln.mjs";
-import { setupNameOk, versionOrdner, releaseVersion, releaseDateien, zipDateien, setupLampe, SETUP_JE, SETUP_GESAMT } from "./lib/setup.mjs";
+import { setupNameOk, versionOrdner, releaseVersion, releaseWahl, tagImLive, releaseDateien, zipDateien, setupLampe, SETUP_JE, SETUP_GESAMT } from "./lib/setup.mjs";
 import { sicherungsName, freierName, uebersicht as sicherungenUebersicht, sicherungenLampe, aufbauPruefen, aufbauArtefakt, BUNDLE_MAX } from "./lib/sicherungen.mjs";
 import { testseiteEinrichten, lotsePruefen, Lotse } from "./lib/testseite.mjs";
 import { laufSperren, sperrListe, gefaehrlicheGitConfig, gefaehrlicheAttribute, gitdirOk, linksNachAussen } from "./lib/rechte.mjs";
@@ -1766,7 +1766,7 @@ async function station(a) {
     if (gemerkt) { pruefText = `${gemerkt.gepr_befund || ""}\nPRÜFUNG: GRÜN`; pruefKi = gemerkt.gepr_ki || "claude/opus"; await log(a.id, "info", `Stand ${sha.slice(0, 7)} wurde schon grün geprüft – keine neue Prüfung`); }
     // Verpflichtende Anbieter (0.13.1): genau die unter „KI-Anbieter › Unabhängige Prüfungen“ eingestellten, in dieser Reihenfolge – kein Rückfall
     // auf Claude, wenn Claude dort nicht steht. Ist keiner nutzbar, wartet die Station mit klarer Meldung (kein Fehlversuch).
-    const { reihe: pReihe } = await kiReihe(projekt.id, "pruefung");
+    const { reihe: pReihe, fehlt: pFehlt } = await kiReihe(projekt.id, "pruefung");
     let lauf = pruefText != null ? { text: pruefText, kosten: 0 } : null;
     const warteGruende = [];
     let textPrompt = null;
@@ -1806,7 +1806,7 @@ async function station(a) {
       }
     }
     if (!lauf) {
-      const text = wartetText(warteGruende);
+      const text = pFehlt || wartetText(warteGruende);
       await stationMelden(a, null, art, { ergebnis: "wartet", befund: text, naechster: new Date(Date.now() + 10 * 60 * 1000).toISOString(), ...behalten });
       await log(a.id, "info", `${art === "sicherheit" ? "Sicherheitsprüfung" : "Feature-Prüfung"} ${text}`);
       return;
@@ -1874,11 +1874,16 @@ async function holeFreieAnbieter() {
   return freieAnbieter;
 }
 let kiKopplung = {};                         // anbieter -> { gekoppelt }
+// Verpflichtende Anbieter (Nachprüfung 0.13.1, Punkt 1): Ist die Zuständigkeit nicht lesbar oder für diese Aufgabe nicht eingestellt, wird NICHT auf
+// den Standard (Claude) ausgewichen – die Reihe ist leer, die Aufgabe wartet mit „wartet“-Text. Ausnahme: Programmieren ist fest Claude Code (keine Einstellung).
 async function kiReihe(projektId, aufgabe) {
+  if (aufgabe === "bauen") return { reihe: reiheFuer("bauen", null), ab: 90, fehlt: null };
   try {
-    const { data } = await db.from("ws_ki_zustaendigkeit").select("reihe, weitergeben_ab").eq("projekt_id", projektId).eq("aufgabe", aufgabe).maybeSingle();
-    return { reihe: reiheFuer(aufgabe, data), ab: data?.weitergeben_ab ?? 90 };
-  } catch { return { reihe: reiheFuer(aufgabe, null), ab: 90 }; }
+    const { data, error } = await db.from("ws_ki_zustaendigkeit").select("reihe, weitergeben_ab").eq("projekt_id", projektId).eq("aufgabe", aufgabe).maybeSingle();
+    if (error) return { reihe: [], ab: 90, fehlt: "KI-Zuständigkeit nicht lesbar, wartet" };
+    if (!data) return { reihe: [], ab: 90, fehlt: zustaendigkeitFehlt(aufgabe) };
+    return { reihe: reiheFuer(aufgabe, data), ab: data.weitergeben_ab ?? 90, fehlt: null };
+  } catch { return { reihe: [], ab: 90, fehlt: "KI-Zuständigkeit nicht lesbar, wartet" }; }
 }
 // Projektwissen als TEXT für fremde Anbieter (Prüfung H1): AGENTS.md, Wissen, passende Dokumente und die Dateiliste – bereinigt, gekürzt.
 // Fremde Anbieter bekommen keinen Ordner, nur diesen Text.
@@ -1902,7 +1907,8 @@ async function dokuText(projekt, frage = "") {
   return text.slice(0, 90000);
 }
 async function kiAntwort(projekt, aufgabe, prompt, { claudeLesenIn = null, dokuLesen = false, frage = "", wunsch = null } = {}) {
-  const { reihe: r0, ab } = await kiReihe(projekt.id, aufgabe);
+  const { reihe: r0, ab, fehlt } = await kiReihe(projekt.id, aufgabe);
+  if (fehlt) throw new Error(fehlt);
   // KI-Wunsch der Person (Chat zur Kachel, 0041): nur ein Anbieter aus der Zuständigkeit kommt vor – sonst die normale Reihe
   const reihe = kiZuerst(r0, wunsch, kiKennung);
   const fehler = [];   // [{ anbieter, grund }] – für „wartet auf …“ (verpflichtende Anbieter, 0.13.1)
@@ -1940,6 +1946,9 @@ async function kiAntwort(projekt, aufgabe, prompt, { claudeLesenIn = null, dokuL
   }
   throw new Error(wartetText(fehler, (x) => ANBIETER[x]?.name || freieAnbieter[x]?.name || x));
 }
+/** „wartet“-Text, wenn für eine Aufgabe keine Zuständigkeit gespeichert ist (kein Ausweichen auf den Standard, Nachprüfung 0.13.1). */
+const AUFGABE_NAME = { chat: "Chat", konzept: "Konzept", design: "Design-Chat", pruefung: "Unabhängige Prüfungen", doku: "Dokumentation", texte: "Texte", bilder: "Bilder & Grafiken" };
+const zustaendigkeitFehlt = (aufgabe) => `KI-Zuständigkeit „${AUFGABE_NAME[aufgabe] || aufgabe}“ ist für dieses Projekt nicht eingestellt, wartet – bitte unter „KI-Anbieter“ speichern (kein Ausweichen)`;
 // Anfragen heute je Anbieter (für Anbieter ohne eigene Limit-Anzeige, Gerhard 23:38)
 const anfragen = {};
 function anfrageZaehlen(anbieter) {
@@ -2494,7 +2503,8 @@ async function sicherungenAblegen(projekt, { commit = null, dbLauf = null } = {}
       if (!st.isFile() || st.size > BUNDLE_MAX) teile.push("Repo-Stand zu groß für die Sicherung (über 2 GB) – nicht abgelegt");
       else {
         const name = freierName(sicherungsName("repo-live", stand, "bundle"), await sicherungenNamen(po));
-        await sicherNeu(po.wurzel, `sicherungen/${name}`, createReadStream(datei));
+        const st = createReadStream(datei);
+        try { await sicherNeu(po.wurzel, `sicherungen/${name}`, st); } finally { st.destroy(); }
         teile.push(`Live-Stand gesichert (${name})`);
       }
     }
@@ -2556,21 +2566,27 @@ async function setupPflegen(p, po) {
   setupZuletzt.set(p.id, Date.now());
   const repo = p.repo; if (!/^[A-Za-z0-9-]+\/[A-Za-z0-9._-]+$/.test(repo)) return;
   const tmp = await mkdtemp(path.join(os.tmpdir(), "cs-setup-"));
+  const stroeme = [];   // offene Lese-Ströme – im finally immer schließen (Windows löscht sonst den Temp-Ordner nicht)
+  const lesen = (datei) => { const st = createReadStream(datei); stroeme.push(st); return st; };
   try {
     // 1 Releases „programm-v<version>“ (Codeschmiede selbst, Programme mit Releases): neueste veröffentlichte Version
     if (p.technik_art === "programm" || p.id === "codeschmiede") {
-      const { stdout } = await ghGrenze("gh", ["api", `repos/${repo}/releases?per_page=10`, "--jq", "[.[] | select(.draft | not) | {tag: .tag_name, assets: [.assets[] | {id, name, size, state}]}]"]).catch(() => ({ stdout: "[]" }));
+      // Nur veröffentlichte Versionen: keine Entwürfe, keine Vorab-Versionen (Nachprüfung 0.13.1, Punkt 3)
+      const { stdout } = await ghGrenze("gh", ["api", `repos/${repo}/releases?per_page=10`, "--jq", "[.[] | select((.draft | not) and (.prerelease | not)) | {tag: .tag_name, draft, prerelease, assets: [.assets[] | {id, name, size, state}]}]"]).catch(() => ({ stdout: "[]" }));
       let rel = []; try { rel = JSON.parse(stdout || "[]"); } catch { rel = []; }
-      const r = (Array.isArray(rel) ? rel : []).find((x) => releaseVersion(x?.tag));
-      if (r) {
+      const r = releaseWahl(rel);
+      if (r && !(await lstat(path.join(await sicherOrdner(po.wurzel, "setup"), releaseVersion(r.tag))).catch(() => null))) {
         const ordner = releaseVersion(r.tag);
-        if (!(await lstat(path.join(await sicherOrdner(po.wurzel, "setup"), ordner)).catch(() => null))) {
+        // Der Tag-Stand muss im Live-Stand enthalten sein (GitHub compare live...<tag>: „behind“ oder „identical“), sonst nicht ablegen
+        const { stdout: cmp } = await ghGrenze("gh", ["api", `repos/${repo}/compare/live...${r.tag}`, "--jq", ".status"]).catch(() => ({ stdout: "" }));
+        if (!tagImLive(cmp)) melde("status", `Setup-Dateien ${p.name} ${ordner}: Release ist (noch) nicht im Live-Stand – nicht abgelegt`);
+        else {
           const { dateien, ausgelassen } = releaseDateien(r.assets);
           const geladen = [];
           for (const d of dateien) {
             const ziel = path.join(tmp, `r-${d.id}`);
             await ghZuDatei(["api", "-H", "Accept: application/octet-stream", `repos/${repo}/releases/assets/${d.id}`], ziel, Math.min(d.groesse + 1024, SETUP_JE));
-            geladen.push({ name: d.name, inhalt: createReadStream(ziel) });
+            geladen.push({ name: d.name, inhalt: lesen(ziel) });
           }
           if (geladen.length) { await setupAblegen(po, ordner, geladen); melde("status", `Setup-Dateien ${p.name} ${ordner} abgelegt (${geladen.length})${ausgelassen.length ? ` · ${ausgelassen.length} ausgelassen` : ""}`); }
         }
@@ -2598,7 +2614,10 @@ async function setupPflegen(p, po) {
     const eindeutig = alle.filter((d) => setupNameOk(d.name) && !namen.has(d.name) && namen.add(d.name));
     if (eindeutig.length) { const n = await setupAblegen(po, o.ordner, eindeutig); melde("status", `Setup-Dateien ${p.name} ${o.ordner}: ${n ? `${n} abgelegt` : "Ordner gibt es schon – nichts überschrieben"}`); }
     delete offen[p.id]; await setupOffenSchreiben(offen);
-  } finally { await rm(tmp, { recursive: true, force: true }).catch(() => {}); }
+  } finally {
+    for (const st of stroeme) st.destroy();
+    await rm(tmp, { recursive: true, force: true }).catch(() => {});
+  }
 }
 
 async function liveArbeit() {
@@ -2669,10 +2688,10 @@ async function pruefArbeit() {
     }
     // Verpflichtende Anbieter (0.13.1): Die Prüfung per Knopf liest das ganze Projekt – das kann nur Claude (fremde Anbieter bekommen nur Text).
     // Steht Claude nicht in „Unabhängige Prüfungen“, wird NICHT still Claude genommen, sondern klar gemeldet.
-    const { reihe: pReihe } = await kiReihe(projekt.id, "pruefung");
+    const { reihe: pReihe, fehlt: pFehlt } = await kiReihe(projekt.id, "pruefung");
     const c = pReihe.find((x) => x.anbieter === "claude");
     if (!c) {
-      const text = wartetText(pReihe.map((x) => ({ anbieter: x.anbieter, grund: "kann die Prüfung per Knopf nicht (liest das ganze Projekt – nur Claude); bitte Claude in „Unabhängige Prüfungen“ aufnehmen" })));
+      const text = pFehlt || wartetText(pReihe.map((x) => ({ anbieter: x.anbieter, grund: "kann die Prüfung per Knopf nicht (liest das ganze Projekt – nur Claude); bitte Claude in „Unabhängige Prüfungen“ aufnehmen" })));
       const { error: e0 } = await db.rpc("ws_pruefung_ergebnis", { p_pc: pcId, p_id: p.id, p_ergebnis: "fehler", p_befund: kuerzen(text, 8000), p_ki: null, p_commit: null, p_kosten: 0 });
       if (e0) throw e0;
       melde("status", "Werkstatt bereit");
@@ -2697,6 +2716,19 @@ async function pruefArbeit() {
 
 // ---------- Bestehendes Logo einlesen (Datenbank 0026) – eigene Werkstatt, eigenes Abo ----------
 // Claude liest nur das Bild in einem leeren Ordner (nur Lesen, --restricted) und liefert feste Formen; die Datenbank prüft sie nochmal.
+/** Anbieter fürs Logo-Einlesen aus der Zuständigkeit „Bilder“: { e } (Claude-Eintrag) oder { text } („wartet auf …“). */
+async function markeAnbieter(projektId) {
+  const { reihe, ab, fehlt } = await kiReihe(projektId, "bilder");
+  if (fehlt) return { text: fehlt };
+  const gruende = [];
+  for (const e of reihe) {
+    if (e.anbieter !== "claude") { gruende.push({ anbieter: e.anbieter, grund: "kann ein Logo-Bild in der Werkstatt nicht lesen (nur Claude liest Bilder)" }); continue; }
+    if (kiLimitBis.claude > Date.now()) { gruende.push({ anbieter: "claude", grund: `Limit voll bis ${bisText(kiLimitBis.claude)}` }); continue; }
+    if (aboEntscheidung(aboStand, { kleinAb: ab, pauseAb: ab, modell: e.modell || null }) === "pause") { gruende.push({ anbieter: "claude", grund: "Abo-Schwelle erreicht" }); continue; }
+    return { e };
+  }
+  return { text: wartetText(gruende) };
+}
 async function markeArbeit() {
   const { data, error } = await db.rpc("ws_marke_nehmen", { p_pc: pcId });
   if (error) { if (!/function .* does not exist|schema cache/i.test(error.message)) melde("fehler", ohneGeheimnisse(error.message)); return false; }
@@ -2709,10 +2741,19 @@ async function markeArbeit() {
     const datei = `logo.${bild.endung}`;
     await writeFile(path.join(tmp, datei), bild.daten, { flag: "wx" });
     const { data: projekt } = await db.from("ws_projekte").select("name").eq("id", v.projekt_id).single();
-    const roh = await claudeOhneWerkzeuge(markePrompt({ datei, projektName: projekt?.name || v.projekt_id, wunsch: v.wunsch }), { lesenIn: tmp, modell: "opus" });
+    // Verpflichtende Anbieter (Nachprüfung 0.13.1, Punkt 2): Logo-Einlesen über die Zuständigkeit „Bilder“. Das Bild liest in der Werkstatt nur
+    // Claude (nur Lesen im Bild-Ordner) – andere Anbieter bekommen nur Text; ist kein passender Anbieter nutzbar, wartet es mit Meldung.
+    const wahl = await markeAnbieter(v.projekt_id);
+    if (!wahl.e) {
+      const { error: ew } = await db.rpc("ws_marke_ergebnis", { p_pc: pcId, p_id: v.id, p_ergebnis: null, p_hinweis: kuerzen(wahl.text, 900), p_ki: null });
+      if (ew) throw ew;
+      return true;
+    }
+    const roh = await claudeOhneWerkzeuge(markePrompt({ datei, projektName: projekt?.name || v.projekt_id, wunsch: v.wunsch }), { lesenIn: tmp, modell: wahl.e.modell || "opus" });
+    anfrageZaehlen("claude");
     const a = markeAntwort(roh);
     const { error: e2 } = await db.rpc("ws_marke_ergebnis", { p_pc: pcId, p_id: v.id, p_ergebnis: a?.vektor || null,
-      p_hinweis: a ? (a.hinweis || "Nachgebaut") : "Der Nachbau hat nicht geklappt – bitte nochmal versuchen (evtl. mit einem Wunsch)", p_ki: "claude/opus" });
+      p_hinweis: a ? (a.hinweis || "Nachgebaut") : "Der Nachbau hat nicht geklappt – bitte nochmal versuchen (evtl. mit einem Wunsch)", p_ki: `claude/${wahl.e.modell || "opus"}` });
     if (e2) throw e2;
   } catch (e) {
     await db.rpc("ws_marke_ergebnis", { p_pc: pcId, p_id: v.id, p_ergebnis: null, p_hinweis: `Nicht geklappt: ${kuerzen(ohneGeheimnisse(e?.message || String(e)), 300)}`, p_ki: null }).catch(() => {});

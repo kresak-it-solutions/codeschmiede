@@ -21,6 +21,10 @@ export function versionOrdner(bezeichnung, commit = "") {
 }
 /** Release-Tag „programm-v1.2.3“ → „v1.2.3“ (sonst null). */
 export const releaseVersion = (tag) => (/^programm-v(\d{1,4}\.\d{1,4}\.\d{1,6})$/.exec(String(tag || ""))?.[1] ? `v${/^programm-v(.+)$/.exec(tag)[1]}` : null);
+/** Neuestes veröffentlichtes Release „programm-v…“: keine Entwürfe, keine Vorab-Versionen (auch wenn die Liste sie doch enthält). */
+export const releaseWahl = (liste) => (Array.isArray(liste) ? liste : []).find((x) => x && x.draft !== true && x.prerelease !== true && releaseVersion(x.tag)) || null;
+/** GitHub compare live...<tag>: nur „behind“ (Tag ist Vorfahre von live) oder „identical“ zählt als „im Live-Stand“. */
+export const tagImLive = (status) => ["behind", "identical"].includes(String(status || "").trim().replace(/^"|"$/g, ""));
 /**
  * Dateien eines Releases auswählen: nur hochgeladene Dateien mit erlaubtem Namen, je ≤ maxJe, zusammen ≤ maxGesamt. Rückgabe { dateien, ausgelassen }.
  */

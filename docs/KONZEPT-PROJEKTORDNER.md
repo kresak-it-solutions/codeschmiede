@@ -92,7 +92,16 @@ Regeln: Datum im Namen, **nie überschreiben** (`sicherNeu`: neue Datei über Hi
 Ordner `setup\<version>\` im Projektordner (gehört zum Gerüst, für die Werkstatt-KI gesperrt, „Im Explorer öffnen“ erlaubt). Nur die Werkstatt des Admins (`index.mjs` › `setupPflegen`, `lib/setup.mjs`):
 - **Programme (technik_art „programm“):** Nach jedem erfolgreichen Live-Schalten wird der Live-Commit vorgemerkt (`<Daten>\setup-offen.json`). Sobald der Ablauf „Programm bauen“ (`programm.yml`) für **genau diesen Commit** erfolgreich fertig ist (Prüfung alle 10 Minuten, höchstens einen Tag), lädt die Werkstatt dessen Artefakte `installation-*` als ZIP (`gh api …/artifacts/<id>/zip`, direkt in eine Datei mit Größengrenze) und entpackt nur einfache Dateien mit erwarteter Endung (`.exe`, `.msi`, `.dmg`, `.app.tar.gz`, `.AppImage`, `.deb`, jeweils auch `.sig`) – ohne Ordner, CRC geprüft, je ≤ 400 MB, zusammen ≤ 1 GB. Ordnername `v<version>_<stand>` (Version aus package.json) bzw. `stand_<stand>`.
 - **Releases „programm-v<version>“** (die Codeschmiede selbst, Programme mit Releases): die neueste veröffentlichte Version wird mit ihren erlaubten Dateien nach `setup\v<version>\` gelegt (`gh api …/releases/assets/<id>`, Größe aus der Schnittstelle, gleiche Grenzen).
+- Releases: nur veröffentlichte (keine Entwürfe, keine Vorab-Versionen) und nur, wenn der Tag im Live-Stand liegt (GitHub compare `live...<tag>` = „behind“ oder „identical“) – sonst Hinweis, nichts abgelegt.
+- Hinweis Speicher: Artefakt-ZIPs werden zum Entpacken ganz in den Speicher gelesen (zusammen ≤ 1 GB je Version, je Datei ≤ 400 MB); ein Entpacken direkt auf die Platte ist bewusst nicht gebaut.
 - Nur das eigene Repository des Projekts, **nie überschreiben** (gibt es den Versions-Ordner schon, wird nichts geladen; abgelegt wird über einen Hilfsordner und Umbenennen), **nichts automatisch löschen**. Lampe **„Setup-Dateien“** unter „Anbindungen“ (Zahl der Versionen, letzte Version, wartet auf den Bau).
+
+## Kurzanleitung (Handbuch, Stand 0.13.1)
+- **Projektregeln ändern:** `regeln\REGELN.md` im Projektordner bearbeiten → unter „Anbindungen“ erscheint „REGELN.md geändert – bestätigen“ → Text prüfen → „Diese Fassung bestätigen“ (nur Admin). Melden PCs andere Fassungen, steht dort „Auf PC X gilt dann keine Fassung, bis dort dieselbe Datei liegt.“
+- **Globale Regeln ändern:** `<Projekte-Ordner>\Regeln\CLAUDE.md` bearbeiten → „Regelwerk“ › „Globale Regeln“ → bestätigen (nur Admin). „Im Explorer öffnen“ öffnet den Ordner.
+- **Neue Regelwerk-Fassung:** „Anbindungen“ › „Neue Regelwerk-Fassung übernehmen“ → geänderte Dateien bzw. „Unterschied bei GitHub ansehen“ → „Übernehmen“.
+- **KI-Anbieter:** Je Aufgabe einmal unter „KI-Anbieter“ speichern. Nicht gespeicherte Aufgaben warten („nicht eingestellt, wartet“); ist kein eingestellter Anbieter nutzbar, steht „wartet auf …“ beim Auftrag, in der Station bzw. im Chat. Programmieren macht immer Claude Code; das Logo-Einlesen folgt der Zuständigkeit „Bilder“ (Bilder liest nur Claude).
+- **Sicherungen und Setup-Dateien:** liegen nach dem Live-Schalten in `sicherungen\` bzw. `setup\<version>\`; ältere bitte selbst aufräumen – die Codeschmiede löscht nichts.
 
 ## Nicht in diesem Schritt / offen
 - Seiten-Designer für jede Web-App (nächste Etappe).

@@ -168,7 +168,7 @@ Zusammengeführt wird nur auf Gerhards Wort (in der Codeschmiede: Knopf „Freig
 - **2026-10-23 14:11 – Alles fertig machen:** Keine Platzhalter mehr in der Codeschmiede; offene Menüpunkte werden gebaut (0.6.0).
 - **2026-10-23 14:14–15:00 – KI-Anbieter (Entwurf 1.2 freigegeben):** Beliebig viele KI-Anbieter (Claude, ChatGPT, Gemini …) mit dem
   eigenen Abo. Klären, Ausloten und Konzepte laufen über die eingestellten Anbieter (Vorschlag ChatGPT; **solange der Admin nichts
-  speichert, nur Claude**). Unabhängige Prüfungen durch fremde Anbieter (Entscheidung 14:27) sind **vorerst gesperrt** und nur Claude,
+  speichert, nur Claude** – seit 0.13.1 abgelöst: ohne gespeicherte Zuständigkeit wartet die Aufgabe, siehe 2026-11-02 10:00). Unabhängige Prüfungen durch fremde Anbieter (Entscheidung 14:27) sind **vorerst gesperrt** und nur Claude,
   bis fremde Programme in einer Betriebssystem-Sandbox laufen (unabhängige Prüfung 2026-10-23: sonst Lesezugriff auf den PC).
   **Bauen und Programmieren macht nur Claude – nie ein anderer Anbieter** (14:27). Je Aufgabe Anbieter **und Modell** in Reihenfolge frei
   wählbar (14:49); der nächste übernimmt bei vollem Limit oder ohne Kopplung. Zuständigkeiten stellt **nur der Admin** ein (14:59).

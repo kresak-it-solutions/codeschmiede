@@ -123,6 +123,8 @@ export default function AnbindungenKacheln({ projekt, d, admin, toast }) {
   const [busy, setBusy] = useState("");
   const web = !projekt.technik_art || ["web", "handy"].includes(projekt.technik_art);
   const pcName = (id) => (d.pcs || []).find((p) => p.id === id)?.name || "Werkstatt-PC";
+  // PCs, die eine ANDERE Fassung der REGELN.md melden – nach dem Bestätigen gilt dort keine (Nachprüfung 0.13.1, Punkt 5)
+  const andereVon = (sha) => [...new Set(regeln.zeilen.filter((z) => z.sha !== sha).map((z) => pcName(z.pc_id)))];
 
   // Projektordner: dieser PC (lokal) zuerst, sonst Meldung der Werkstatt-PCs
   const lokal = ort?.je?.[projekt.id];
@@ -180,6 +182,7 @@ export default function AnbindungenKacheln({ projekt, d, admin, toast }) {
           <span>Gemeldet von: {r.pcs.map(pcName).join(", ")}. Die Werkstatt nutzt nur die zuletzt von dir bestätigte Fassung{letzteFreigabe ? ` (zuletzt bestätigt ${new Date(letzteFreigabe).toLocaleString("de-AT", { dateStyle: "short", timeStyle: "short" })})` : " – bisher keine, es gelten die Projektregeln aus AGENTS.md"}. Prüfe den Text und bestätige ihn, wenn er von dir stammt.{r.konflikte > 0 ? ` Achtung: ${r.konflikte} Stelle(n) widersprechen der Sicherheit – dort gilt trotzdem die Sicherheitsregel.` : ""}</span>
           <details className="rounded-lg bg-white/70 dark:bg-slate-900/60 border border-amber-200 dark:border-amber-900"><summary className="cursor-pointer px-3 py-1.5 text-xs font-semibold">Text ansehen (Prüfsumme {r.sha.slice(0, 12)})</summary>
             <pre className="px-3 pb-3 text-xs whitespace-pre-wrap break-words max-h-80 overflow-auto font-mono text-slate-800 dark:text-slate-200">{r.text || ""}</pre></details>
+          {andereVon(r.sha).length > 0 && <span className="text-xs font-semibold">Hinweis: Auf {andereVon(r.sha).join(", ")} gilt dann keine Fassung, bis dort dieselbe Datei liegt.</span>}
           {admin ? <button type="button" className={`${btn} self-start`} disabled={!!busy} onClick={() => regelnBestaetigen(r.sha)}>{busy === `regeln-${r.sha}` ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}Diese Fassung bestätigen</button>
             : <span className="text-xs">Bestätigen kann nur der Admin.</span>}
         </div>))}

@@ -124,7 +124,8 @@ function Zeile({ id, titel, hinweis, eintrag, admin, onSpeichern, anbieter = ANB
   }
   return (
     <div className="border-t border-slate-100 dark:border-slate-800 p-3 grid gap-2 lg:grid-cols-[240px_minmax(0,1fr)_auto] items-start">
-      <div><div className="font-semibold text-sm flex items-center gap-1.5">{fest && <Lock className="w-3.5 h-3.5 text-slate-400" />}{titel}</div>{hinweis && <div className="text-xs text-slate-500">{hinweis}</div>}</div>
+      <div><div className="font-semibold text-sm flex items-center gap-1.5">{fest && <Lock className="w-3.5 h-3.5 text-slate-400" />}{titel}</div>{hinweis && <div className="text-xs text-slate-500">{hinweis}</div>}
+        {!eintrag && <div className="text-xs font-semibold text-amber-700 dark:text-amber-300">Noch nicht gespeichert – diese Aufgabe wartet, bis die Zuständigkeit gespeichert ist (kein Ausweichen).</div>}</div>
       <div className="flex flex-wrap items-center gap-1.5">
         {reihe.map((e, i) => {
           const a = anbieter[e.anbieter] || { name: e.anbieter, modelle: ["automatisch"] }; const eigenes = e.modell && !a.modelle.includes(e.modell);

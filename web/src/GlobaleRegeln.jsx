@@ -38,6 +38,8 @@ export default function GlobaleRegeln({ d, admin, toast }) {
   const pcName = (id) => (d.pcs || []).find((p) => p.id === id)?.name || "Werkstatt-PC";
   const offen = Object.values(z.zeilen.filter((x) => x.sha !== gilt).reduce((m, x) => { (m[x.sha] ||= { ...x, pcs: [] }).pcs.push(x.pc_id); return m; }, {}));
   const konflikte = z.zeilen.filter((x) => x.konflikte > 0);
+  // PCs, die eine ANDERE Fassung melden – nach dem Bestätigen gilt dort keine (Nachprüfung 0.13.1, Punkt 5)
+  const andereVon = (sha) => [...new Set(z.zeilen.filter((x) => x.sha !== sha).map((x) => pcName(x.pc_id)))];
   const neben = z.zeilen.filter((x) => x.neben);
   const lauf = async (schluessel, f, ok) => { setBusy(schluessel); try { await f(); if (ok) toast(ok); } catch (e) { toast(fehler(e)); } finally { setBusy(""); } };
   const rpc = async (name, args) => { const { error } = await supabase.rpc(name, args); if (error) throw error; };
@@ -70,6 +72,7 @@ export default function GlobaleRegeln({ d, admin, toast }) {
           <span>Gemeldet von: {r.pcs.map(pcName).join(", ")}. Es gilt nur die zuletzt von dir bestätigte Fassung{gilt ? ` (zuletzt bestätigt ${zeit(z.frei[0].am)})` : " – bisher keine, es gelten keine globalen Regeln"}.{r.konflikte > 0 ? ` Achtung: ${r.konflikte} Stelle(n) widersprechen der Sicherheit – dort gilt trotzdem die Sicherheitsregel.` : ""}</span>
           <details className="rounded-lg bg-white/70 dark:bg-slate-900/60 border border-amber-200 dark:border-amber-900"><summary className="cursor-pointer px-3 py-1.5 text-xs font-semibold">Text ansehen (Prüfsumme {r.sha.slice(0, 12)})</summary>
             <pre className="px-3 pb-3 text-xs whitespace-pre-wrap break-words max-h-80 overflow-auto font-mono text-slate-800 dark:text-slate-200">{r.text || ""}</pre></details>
+          {andereVon(r.sha).length > 0 && <span className="text-xs font-semibold">Hinweis: Auf {andereVon(r.sha).join(", ")} gilt dann keine Fassung, bis dort dieselbe Datei liegt.</span>}
           {admin ? <button type="button" className={`${btn} self-start`} disabled={!!busy} onClick={() => lauf(`b-${r.sha}`, () => rpc("ws_regeln_global_bestaetigen", { p_sha: r.sha }), "Globale Regeln bestätigt – ab dem nächsten Auftrag, Chat und jeder Prüfung gilt diese Fassung")}>
             {busy === `b-${r.sha}` ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}Diese Fassung bestätigen</button>
             : <span className="text-xs">Bestätigen kann nur der Admin.</span>}
