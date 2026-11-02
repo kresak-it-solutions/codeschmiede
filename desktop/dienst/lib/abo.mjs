@@ -18,29 +18,47 @@ const prozent = (o) => {
   return p == null ? null : Math.max(0, Math.min(100, Math.round(p * 10) / 10));
 };
 
+// Modell-eigene Wochenfenster, wie Claude Code sie meldet: seven_day_<modell> bzw. sevenDay<Modell> (z. B. seven_day_opus, sevenDayFable).
+// Nur was gemeldet wird – kein Raten (Gerhard 02.11.2026 10:00, Abo „Ultra“): der Name kommt aus dem Schlüssel.
+const MODELL_FENSTER = /^(?:seven_day|sevenDay|weekly)[_-]?([A-Za-z][A-Za-z0-9]{1,30})$/;
+function modellFenster(fenster) {
+  const r = [];
+  for (const [k, v] of Object.entries(fenster || {})) {
+    const m = MODELL_FENSTER.exec(k); if (!m || !v || typeof v !== "object") continue;
+    const p = prozent(v); if (p == null) continue;
+    r.push({ modell: m[1].replace(/^[_-]/, "").toLowerCase().slice(0, 30), prozent: p, reset: zeit(v.resets_at ?? v.resetsAt) });
+    if (r.length >= 5) break;
+  }
+  return r;
+}
+/** Ein vollständiger Satz Fenster (rate_limits bzw. unifiedWindows): 5 Std., Woche, modell-eigene Wochen; meldet er kein 5-Stunden-Fenster,
+ *  hat das Konto keines (z. B. Claude „Ultra“) → fuenf_std_kein. */
+function fensterSatz(fe, { reset = (x) => x?.resets_at ?? x?.resetsAt } = {}) {
+  const f = fe.five_hour || fe.fiveHour; const w = fe.seven_day || fe.sevenDay;
+  const modelle = modellFenster(fe);
+  const r = { fuenf_std_prozent: prozent(f), fuenf_std_reset: zeit(reset(f)), woche_prozent: prozent(w), woche_reset: zeit(reset(w)) };
+  if (r.fuenf_std_prozent == null && r.woche_prozent == null && !modelle.length) return null;
+  if (modelle.length) r.woche_modelle = modelle;
+  // „kein 5-Stunden-Limit“ nur, wenn Claude Code einen Satz mit Wochenfenster meldet und der Schlüssel five_hour ganz fehlt bzw. leer ist
+  if (r.fuenf_std_prozent == null && (r.woche_prozent != null || modelle.length) && (f == null)) { r.fuenf_std_kein = true; r.fuenf_std_reset = null; }
+  else if (r.fuenf_std_prozent != null) r.fuenf_std_kein = false;
+  return r;
+}
+
 // Sucht in einem beliebigen Objekt nach Angaben zum 5-Stunden- und Wochenfenster
 export function findeAboLimits(obj, tiefe = 0) {
   if (!obj || typeof obj !== "object" || tiefe > 6) return null;
   const rl = obj.rate_limits || obj.rateLimits;
-  if (rl && typeof rl === "object") {
-    const f = rl.five_hour || rl.fiveHour; const w = rl.seven_day || rl.sevenDay;
-    const r = {
-      fuenf_std_prozent: prozent(f), fuenf_std_reset: zeit(f?.resets_at ?? f?.resetsAt),
-      woche_prozent: prozent(w), woche_reset: zeit(w?.resets_at ?? w?.resetsAt),
-    };
-    if (r.fuenf_std_prozent != null || r.woche_prozent != null) return r;
-  }
+  if (rl && typeof rl === "object") { const r = fensterSatz(rl); if (r) return r; }
   // Neuere Claude-Code-Versionen: rate_limit_info.unifiedWindows = { five_hour: { utilization 0–1, resetsAt }, seven_day: {…} }
   // (Gerhard 2026-10-23 23:38 „Abo-Limits liefern keine Werte“ – dieses Feld wurde bisher nicht gelesen)
   const uw = obj.unifiedWindows || obj.unified_windows;
-  if (uw && typeof uw === "object") {
-    const f = uw.five_hour || uw.fiveHour; const w = uw.seven_day || uw.sevenDay;
-    const r = { fuenf_std_prozent: prozent(f), fuenf_std_reset: zeit(f?.resetsAt ?? f?.resets_at), woche_prozent: prozent(w), woche_reset: zeit(w?.resetsAt ?? w?.resets_at) };
-    if (r.fuenf_std_prozent != null || r.woche_prozent != null) return r;
-  }
+  if (uw && typeof uw === "object") { const r = fensterSatz(uw, { reset: (x) => x?.resetsAt ?? x?.resets_at }); if (r) return r; }
   // Einzelne Meldung zu einem Fenster (z. B. { rateLimitType: "five_hour", utilization, resetsAt })
   const typ = String(obj.rateLimitType || obj.rate_limit_type || obj.window || "").toLowerCase();
   if (/five|5h|session/.test(typ) && prozent(obj) != null) return { fuenf_std_prozent: prozent(obj), fuenf_std_reset: zeit(obj.resetsAt ?? obj.resets_at) };
+  const mt = MODELL_FENSTER.exec(String(obj.rateLimitType || obj.rate_limit_type || ""));
+  if (mt && prozent(obj) != null) return { woche_modelle: [{ modell: mt[1].replace(/^[_-]/, "").toLowerCase().slice(0, 30), prozent: prozent(obj), reset: zeit(obj.resetsAt ?? obj.resets_at) }] };
   if (/seven|week|7d/.test(typ) && prozent(obj) != null) return { woche_prozent: prozent(obj), woche_reset: zeit(obj.resetsAt ?? obj.resets_at) };
   for (const v of Object.values(obj)) {
     if (v && typeof v === "object") { const r = findeAboLimits(v, tiefe + 1); if (r) return r; }
@@ -49,11 +67,15 @@ export function findeAboLimits(obj, tiefe = 0) {
 }
 
 // Was darf die Werkstatt bei diesem Stand? „frei“, „klein“ (eine Modellstufe niedriger) oder „pause“ (keinen neuen Auftrag)
-export function aboEntscheidung(limits, { kleinAb = 75, pauseAb = 95 } = {}) {
+// Kein 5-Stunden-Fenster gemeldet (fuenf_std_kein) → zählt nicht. Modell-eigene Wochenfenster zählen nur, wenn das Modell bekannt ist und zum
+// gemeldeten Namen passt (modell = z. B. „opus“, „sonnet“, „fable“ – kein Raten).
+export function aboEntscheidung(limits, { kleinAb = 75, pauseAb = 95, modell = null } = {}) {
   if (!limits) return "frei";
   const jetzt = Date.now();
   const gilt = (p, reset) => (p == null ? null : reset && Date.parse(reset) < jetzt ? 0 : p);
-  const hoechster = Math.max(gilt(limits.fuenf_std_prozent, limits.fuenf_std_reset) ?? 0, gilt(limits.woche_prozent, limits.woche_reset) ?? 0);
+  const m = typeof modell === "string" ? modell.toLowerCase() : null;
+  const modellWerte = m ? (Array.isArray(limits.woche_modelle) ? limits.woche_modelle : []).filter((x) => x && typeof x.modell === "string" && (m === x.modell || m.includes(x.modell))).map((x) => gilt(x.prozent, x.reset) ?? 0) : [];
+  const hoechster = Math.max(limits.fuenf_std_kein ? 0 : gilt(limits.fuenf_std_prozent, limits.fuenf_std_reset) ?? 0, gilt(limits.woche_prozent, limits.woche_reset) ?? 0, ...modellWerte);
   if (hoechster >= pauseAb) return "pause";
   if (hoechster >= kleinAb) return "klein";
   return "frei";

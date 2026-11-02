@@ -10,6 +10,8 @@
 --   * Globale Regeln der ganzen Codeschmiede (Gerhard 02.11.2026 09:50/09:54/09:55): <basis>\Regeln\CLAUDE.md – gleicher Schutz wie die
 --     REGELN.md der Projekte: Werkstatt meldet Prüfsumme und Text je PC (ws_regeln_global_melden), nur der Admin bestätigt bzw. widerruft, es gilt
 --     nur die neueste Bestätigung. Projekt-Kennung „regeln“ gesperrt (der Ordner „Regeln“ liegt neben den Projektordnern).
+--   * Abo-Limits (Claude „Ultra“, Gerhard 02.11.2026 10:00): fuenf_std_kein (Claude Code meldet kein 5-Stunden-Fenster) und woche_modelle
+--     (modell-eigene Wochenfenster wie gemeldet, z. B. Fable) in ws_abo_limits – nur eigene Zeile, Form geprüft.
 -- Mehrfach ausführbar. Reihenfolge 0001 → … → 0056.
 begin;
 
@@ -209,5 +211,23 @@ begin
 end $$;
 revoke execute on function public.ws_regeln_global_widerrufen(text) from public, anon;
 grant execute on function public.ws_regeln_global_widerrufen(text) to authenticated;
+
+-- ---------- Abo-Limits: kein 5-Stunden-Fenster, modell-eigene Wochenfenster ----------
+alter table public.ws_abo_limits add column if not exists fuenf_std_kein boolean;
+alter table public.ws_abo_limits add column if not exists woche_modelle jsonb;
+create or replace function public.ws_woche_modelle_ok(w jsonb) returns boolean
+language sql immutable set search_path = public as $$
+  select w is null or (jsonb_typeof(w) = 'array' and jsonb_array_length(w) <= 5 and not exists (
+    select 1 from jsonb_array_elements(w) e
+     where jsonb_typeof(e) <> 'object'
+        or exists (select 1 from jsonb_object_keys(e) k where k not in ('modell','prozent','reset'))
+        or coalesce(e ->> 'modell', '') !~ '^[a-z][a-z0-9]{1,29}$'
+        or (case when jsonb_typeof(e -> 'prozent') = 'number' then (e ->> 'prozent')::numeric not between 0 and 100 else true end)
+        or (e ? 'reset' and jsonb_typeof(e -> 'reset') not in ('string','null'))
+        or (jsonb_typeof(e -> 'reset') = 'string' and char_length(e ->> 'reset') > 40)))
+$$;
+alter table public.ws_abo_limits drop constraint if exists ws_abo_limits_woche_modelle_check;
+alter table public.ws_abo_limits add constraint ws_abo_limits_woche_modelle_check check (public.ws_woche_modelle_ok(woche_modelle));
+grant insert (fuenf_std_kein, woche_modelle), update (fuenf_std_kein, woche_modelle) on public.ws_abo_limits to authenticated;
 
 commit;

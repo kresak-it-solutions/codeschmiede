@@ -234,11 +234,13 @@ async function lebenszeichen(an = true) {
 
 // ---------- Abo-Limits ----------
 let aboStand = null;   // letzter bekannter Stand { fuenf_std_prozent, fuenf_std_reset, woche_prozent, woche_reset }
-const ABO_FELDER = ["fuenf_std_prozent", "fuenf_std_reset", "woche_prozent", "woche_reset"];
+// fuenf_std_kein: Claude Code meldet kein 5-Stunden-Fenster (z. B. Abo „Ultra“); woche_modelle: modell-eigene Wochenfenster (0.13.1, Datenbank 0056)
+const ABO_FELDER = ["fuenf_std_prozent", "fuenf_std_reset", "woche_prozent", "woche_reset", "fuenf_std_kein", "woche_modelle"];
 // Nur die vier Wertefelder schreiben (Prüfung 0.10.0 Befund 1: sonst lehnt die Datenbank Spalten ohne Schreibrecht ab). true = gespeichert.
 async function aboMelden(r, quelle = "werkstatt") {
   if (!r) return false;
   const neu = Object.fromEntries(ABO_FELDER.filter((k) => r[k] != null).map((k) => [k, r[k]]));
+  if (r.fuenf_std_kein === true) { neu.fuenf_std_prozent = null; neu.fuenf_std_reset = null; }   // altes 5-Stunden-Fenster nicht stehen lassen
   aboStand = { ...(aboStand || {}), ...neu };
   const zeile = Object.fromEntries(ABO_FELDER.filter((k) => aboStand[k] !== undefined).map((k) => [k, aboStand[k]]));
   const { error } = await db.from("ws_abo_limits").upsert({ benutzer_id: cfg.user_id, ...zeile, quelle, aktualisiert: new Date().toISOString() });
@@ -1909,7 +1911,7 @@ async function kiAntwort(projekt, aufgabe, prompt, { claudeLesenIn = null, dokuL
     if (kiLimitBis[e.anbieter] && kiLimitBis[e.anbieter] > Date.now()) { fehler.push({ anbieter: e.anbieter, grund: "Limit voll" }); continue; }
     try {
       if (e.anbieter === "claude") {
-        if (aboEntscheidung(aboStand, { kleinAb: ab, pauseAb: ab }) === "pause" && reihe.length > 1) { fehler.push({ anbieter: "claude", grund: "Abo-Schwelle erreicht" }); continue; }
+        if (aboEntscheidung(aboStand, { kleinAb: ab, pauseAb: ab, modell: e.modell || null }) === "pause" && reihe.length > 1) { fehler.push({ anbieter: "claude", grund: "Abo-Schwelle erreicht" }); continue; }
         const roh = await claudeOhneWerkzeuge(prompt, { lesenIn: claudeLesenIn, modell: e.modell || "sonnet" }); anfrageZaehlen("claude");
         return { roh, ki: kiKennung(e) };
       }

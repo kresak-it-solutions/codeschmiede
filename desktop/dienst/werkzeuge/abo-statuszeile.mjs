@@ -21,5 +21,7 @@ process.stdin.on("end", () => {
   }
   const p = (w) => (w?.used_percentage != null ? `${Math.round(w.used_percentage)} %` : "–");
   const modell = j.model?.display_name || "";
-  process.stdout.write(rl ? `${modell} · Abo 5 Std.: ${p(rl.five_hour)} · Woche: ${p(rl.seven_day)}` : modell);
+  // Abo „Ultra“ (0.13.1): ohne 5-Stunden-Fenster „kein Limit“; modell-eigene Wochenfenster (seven_day_<modell>), wie gemeldet
+  const extra = rl ? Object.entries(rl).filter(([k, w]) => /^seven_day_[a-z0-9]+$/i.test(k) && w?.used_percentage != null).map(([k, w]) => ` · ${k.slice(10)}: ${p(w)}`).join("") : "";
+  process.stdout.write(rl ? `${modell} · Abo 5 Std.: ${rl.five_hour ? p(rl.five_hour) : "kein Limit"} · Woche: ${p(rl.seven_day)}${extra}` : modell);
 });

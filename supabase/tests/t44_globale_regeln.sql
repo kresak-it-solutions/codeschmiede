@@ -56,3 +56,12 @@ reset role; select count(*) protokoll from ws_protokoll where was like 'regeln_g
 \echo [14] Nochmal widerrufen -> FEHLER
 :ADM
 select ws_regeln_global_widerrufen(encode(sha256(convert_to(:'T2','UTF8')),'hex'));
+
+\echo [15] Abo-Limits: kein 5-Stunden-Fenster und modell-eigenes Wochenfenster (eigene Zeile) -> OK (t, fable)
+:ADM
+insert into ws_abo_limits(benutzer_id, woche_prozent, fuenf_std_kein, woche_modelle, quelle) values (auth.uid(), 40, true, '[{"modell":"fable","prozent":80,"reset":null}]', 'werkstatt')
+  on conflict (benutzer_id) do update set woche_prozent = excluded.woche_prozent, fuenf_std_kein = excluded.fuenf_std_kein, woche_modelle = excluded.woche_modelle;
+select fuenf_std_kein, woche_modelle -> 0 ->> 'modell' modell from ws_abo_limits where benutzer_id = auth.uid();
+\echo [16] Ungültige Form (fremder Schlüssel, Prozent als Text) -> FEHLER, FEHLER
+update ws_abo_limits set woche_modelle = '[{"modell":"fable","prozent":80,"befehl":"x"}]' where benutzer_id = auth.uid();
+update ws_abo_limits set woche_modelle = '[{"modell":"fable","prozent":"viel"}]' where benutzer_id = auth.uid();
