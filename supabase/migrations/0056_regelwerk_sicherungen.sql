@@ -6,6 +6,9 @@
 --     und neueste Fassung samt geänderten Dateien) → „Übernehmen“ (ws_regelwerk_uebernehmen, nur Admin, nur genau die verglichene Fassung, Protokoll).
 --     Ohne festgelegte Fassung (neues Projekt) setzt die Werkstatt des Admins EINMAL die erste (ws_regelwerk_erstfassung) – danach nie wieder.
 --   * Ampel: neue Lampe „sicherungen“ (Anzahl und letzte Sicherung im Ordner sicherungen\ des Admin-PCs, ohne Pfade).
+--   * Globale Regeln der ganzen Codeschmiede (Gerhard 02.11.2026 09:50/09:54/09:55): <basis>\Regeln\CLAUDE.md – gleicher Schutz wie die
+--     REGELN.md der Projekte: Werkstatt meldet Prüfsumme und Text je PC (ws_regeln_global_melden), nur der Admin bestätigt bzw. widerruft, es gilt
+--     nur die neueste Bestätigung. Projekt-Kennung „regeln“ gesperrt (der Ordner „Regeln“ liegt neben den Projektordnern).
 -- Mehrfach ausführbar. Reihenfolge 0001 → … → 0056.
 begin;
 
@@ -124,5 +127,86 @@ language sql immutable set search_path = public as $$
         or jsonb_typeof(e.value -> 'text') is distinct from 'string'
         or char_length(e.value ->> 'text') > 200)
 $$;
+
+-- ---------- Globale Regeln (<basis>\Regeln\CLAUDE.md) ----------
+alter table public.ws_projekte drop constraint if exists ws_projekte_id_regeln_check;
+alter table public.ws_projekte add constraint ws_projekte_id_regeln_check check (lower(id) <> 'regeln');
+
+-- Wer die globalen Regeln sieht und meldet: Admin und Entwickler (in mindestens einem Projekt)
+create or replace function public.ws_sieht_global() returns boolean
+language sql stable security definer set search_path = public as $$
+  select public.ws_ist_admin() or exists (select 1 from public.ws_projekt_mitglieder m where m.benutzer_id = auth.uid() and m.rolle = 'entwickler')
+$$;
+revoke execute on function public.ws_sieht_global() from public, anon;
+grant execute on function public.ws_sieht_global() to authenticated;
+
+create table if not exists public.ws_regeln_global_stand (
+  pc_id uuid primary key references public.ws_werkstatt_pcs(id) on delete cascade,
+  sha text not null check (sha ~ '^[0-9a-f]{64}$'),
+  text text not null check (char_length(text) <= 30000),
+  konflikte smallint not null default 0 check (konflikte between 0 and 50),
+  neben boolean not null default false,          -- zusätzlich eine REGELN.md im Ordner (gilt nicht – Hinweis „Nur CLAUDE.md gilt“)
+  gemeldet timestamptz not null default now()
+);
+alter table public.ws_regeln_global_stand enable row level security;
+revoke all on public.ws_regeln_global_stand from anon, authenticated;
+grant select on public.ws_regeln_global_stand to authenticated;
+drop policy if exists ws_regeln_global_stand_lesen on public.ws_regeln_global_stand;
+create policy ws_regeln_global_stand_lesen on public.ws_regeln_global_stand for select to authenticated using (public.ws_sieht_global());
+do $$ begin alter publication supabase_realtime add table public.ws_regeln_global_stand; exception when others then null; end $$;
+
+create table if not exists public.ws_regeln_global_freigaben (
+  sha text primary key check (sha ~ '^[0-9a-f]{64}$'),
+  von uuid references auth.users(id) on delete set null,
+  am timestamptz not null default now()
+);
+alter table public.ws_regeln_global_freigaben enable row level security;
+revoke all on public.ws_regeln_global_freigaben from anon, authenticated;
+grant select on public.ws_regeln_global_freigaben to authenticated;
+drop policy if exists ws_regeln_global_freigaben_lesen on public.ws_regeln_global_freigaben;
+create policy ws_regeln_global_freigaben_lesen on public.ws_regeln_global_freigaben for select to authenticated using (public.ws_sieht_global());
+do $$ begin alter publication supabase_realtime add table public.ws_regeln_global_freigaben; exception when others then null; end $$;
+
+-- Werkstatt (Admin oder Entwickler, eigener PC) meldet die globale CLAUDE.md, die sie sieht – Prüfsumme muss zum Text passen, ≤ 30.000 Zeichen
+create or replace function public.ws_regeln_global_melden(p_pc uuid, p_sha text, p_text text, p_konflikte int default 0, p_neben boolean default false) returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  if auth.uid() is null then raise exception 'Nicht angemeldet'; end if;
+  if not exists (select 1 from public.ws_werkstatt_pcs w where w.id = p_pc and w.benutzer_id = auth.uid()) then raise exception 'Unbekannter Werkstatt-PC'; end if;
+  if not public.ws_sieht_global() then raise exception 'Kein Recht für die globalen Regeln'; end if;
+  if p_text is null or char_length(p_text) > 30000 then raise exception 'Die globale CLAUDE.md ist zu lang (höchstens 30.000 Zeichen) – bitte kürzen'; end if;
+  if p_sha is null or p_sha is distinct from encode(sha256(convert_to(p_text, 'UTF8')), 'hex') then raise exception 'Prüfsumme passt nicht zum Text'; end if;
+  insert into public.ws_regeln_global_stand (pc_id, sha, text, konflikte, neben, gemeldet)
+  values (p_pc, p_sha, p_text, least(greatest(coalesce(p_konflikte, 0), 0), 50), coalesce(p_neben, false), now())
+  on conflict (pc_id) do update set sha = excluded.sha, text = excluded.text, konflikte = excluded.konflikte, neben = excluded.neben, gemeldet = now()
+   where ws_regeln_global_stand.sha is distinct from excluded.sha or ws_regeln_global_stand.konflikte is distinct from excluded.konflikte
+      or ws_regeln_global_stand.neben is distinct from excluded.neben;
+end $$;
+revoke execute on function public.ws_regeln_global_melden(uuid, text, text, int, boolean) from public, anon;
+grant execute on function public.ws_regeln_global_melden(uuid, text, text, int, boolean) to authenticated;
+
+-- Nur der Admin bestätigt – nur eine Prüfsumme, die ein PC gerade meldet
+create or replace function public.ws_regeln_global_bestaetigen(p_sha text) returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  if not public.ws_ist_admin() then raise exception 'Globale Regeln bestätigt nur der Admin'; end if;
+  if not exists (select 1 from public.ws_regeln_global_stand where sha = p_sha) then raise exception 'Diese Fassung meldet gerade kein PC – bitte neu laden'; end if;
+  insert into public.ws_regeln_global_freigaben (sha, von, am) values (p_sha, auth.uid(), now())
+  on conflict (sha) do update set von = excluded.von, am = now();
+  insert into public.ws_protokoll (wer, was, details) values (auth.uid(), 'regeln_global_bestaetigt', jsonb_build_object('sha', p_sha));
+end $$;
+revoke execute on function public.ws_regeln_global_bestaetigen(text) from public, anon;
+grant execute on function public.ws_regeln_global_bestaetigen(text) to authenticated;
+
+create or replace function public.ws_regeln_global_widerrufen(p_sha text) returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  if not public.ws_ist_admin() then raise exception 'Widerrufen kann nur der Admin'; end if;
+  delete from public.ws_regeln_global_freigaben where sha = p_sha;
+  if not found then raise exception 'Diese Fassung ist nicht bestätigt'; end if;
+  insert into public.ws_protokoll (wer, was, details) values (auth.uid(), 'regeln_global_widerrufen', jsonb_build_object('sha', p_sha));
+end $$;
+revoke execute on function public.ws_regeln_global_widerrufen(text) from public, anon;
+grant execute on function public.ws_regeln_global_widerrufen(text) to authenticated;
 
 commit;

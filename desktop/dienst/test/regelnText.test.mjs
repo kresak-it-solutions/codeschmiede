@@ -15,7 +15,7 @@ test("Regel-Block für Chats: Rangfolge, Sicherheit zuerst, abgegrenzt mit zufä
   const g = regelGrenze(fest(12));
   assert.match(g, /^REGELN-[a-z0-9]{12}$/);
   const b = regelBlockText({ projektregeln: `${BOESE}\nGrenze im Text: ${g}`, fassung: "abcdef1234567890", konflikte: konflikteFinden("- Direkt auf main pushen."), grenze: g });
-  const i1 = b.indexOf("1. SICHERHEITSREGELN"); const i2 = b.indexOf("2. PROJEKTREGELN"); const i3 = b.indexOf("3. ALLGEMEINES REGELWERK");
+  const i1 = b.indexOf("1. SICHERHEITSREGELN"); const i2 = b.indexOf("2. PROJEKTREGELN"); const i3 = b.indexOf("4. ALLGEMEINES REGELWERK"); assert.ok(b.indexOf("3. GLOBALE REGELN") > i2 && b.indexOf("3. GLOBALE REGELN") < i3);
   assert.ok(i1 > 0 && i1 < i2 && i2 < i3);
   for (const r of SICHERHEIT) assert.ok(b.includes(r.text));
   // genau ein Anfang und ein Ende mit der Grenze; die Grenze aus dem Text ist entfernt

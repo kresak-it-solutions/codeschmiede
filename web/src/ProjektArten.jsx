@@ -50,7 +50,8 @@ export function NeuesProjektAssistent({ toast, onClose, onFertig, projekte = [] 
   useEscape(onClose);   // nur der oberste Dialog (Review N2)
   const autoKennung = name.trim().toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40);
   const id = kennung || autoKennung;
-  const datenOk = /^[a-z0-9][a-z0-9-]{1,39}$/.test(id) && !!name.trim() && (!repo || /^[A-Za-z0-9-]+\/[A-Za-z0-9._-]+$/.test(repo.trim()));
+  // „regeln“ ist der Ordner der globalen Regeln im Projekte-Ordner (0.13.1) – keine Projekt-Kennung
+  const datenOk = /^[a-z0-9][a-z0-9-]{1,39}$/.test(id) && id !== "regeln" && !/^(con|prn|aux|nul|com[0-9]|lpt[0-9])$/.test(id) && !!name.trim() && (!repo || /^[A-Za-z0-9-]+\/[A-Za-z0-9._-]+$/.test(repo.trim()));
   const zeigeDesignArt = technik !== "werkzeug";
   const los = async () => {
     setBusy(true);

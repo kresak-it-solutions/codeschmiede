@@ -78,10 +78,17 @@ export async function allesAusser(bereich, ordner, { plattform = process.platfor
  * Kennungsdatei, keine-hooks, andere auftrag-/pruef-/lese-Ordner) und im Daten-Ordner der Werkstatt alles außer dem eigenen Arbeitsordner
  * (gilt auch für Aufträge, die noch in der alten Kopie im Daten-Ordner laufen).
  */
-export async function sperrListe({ ordner, wurzel = null, datenOrdner = null, plattform = process.platform, lesen = readdir }) {
+// global = Ordner der globalen Regeln <basis>/Regeln (0.13.1): immer ganz gesperrt. Unter Windows (und macOS) unterscheiden Pfade nicht nach
+// Groß/Klein – die Muster-Prüfung von Claude Code vergleicht unter Windows ohne Groß/Klein, unter POSIX wird zusätzlich die kleingeschriebene
+// Form „regeln“ gesperrt (falls das Dateisystem Groß/Klein nicht unterscheidet).
+export async function sperrListe({ ordner, wurzel = null, datenOrdner = null, global = null, plattform = process.platform, lesen = readdir }) {
+  const P = pfadModul(plattform);
+  const g = global ? [{ pfad: P.resolve(global), ordner: true }, ...(plattform !== "win32" && P.basename(global) !== P.basename(global).toLowerCase()
+    ? [{ pfad: P.join(P.dirname(P.resolve(global)), P.basename(global).toLowerCase()), ordner: true }] : [])] : [];
   return [
     ...(wurzel ? await allesAusser(wurzel, ordner, { plattform, lesen, feste: [...GESCHUETZT, ".codeschmiede-projekt.json", "LIESMICH.md", "code.neu", "code-arbeit"] }) : []),
     ...(datenOrdner ? await allesAusser(datenOrdner, ordner, { plattform, lesen }) : []),
+    ...g,
   ];
 }
 

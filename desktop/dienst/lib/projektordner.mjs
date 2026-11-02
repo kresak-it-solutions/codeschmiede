@@ -10,7 +10,11 @@ import path from "node:path";
 export const KENNUNG = /^[a-z0-9][a-z0-9-]{1,39}$/;
 // Kennungen werden Ordnernamen: reservierte Namen von Windows sind verboten (Prüfung 02.11.2026, N4; auch Datenbank 0055 und Programm)
 const WINDOWS_NAME = /^(con|prn|aux|nul|com[0-9]|lpt[0-9])$/;
-export const kennungOk = (k) => typeof k === "string" && KENNUNG.test(k) && !WINDOWS_NAME.test(k);
+// „regeln“: <basis>/Regeln ist der Ordner der globalen Regeln (0.13.1, Gerhard 02.11.2026 09:54; Windows unterscheidet nicht nach Groß/Klein)
+export const kennungOk = (k) => typeof k === "string" && KENNUNG.test(k) && !WINDOWS_NAME.test(k) && k !== "regeln";
+/** Ordner der globalen Regeln der ganzen Codeschmiede: <basis>/Regeln (legt nur das Programm an), Kennung in der Kennungsdatei „_regeln“. */
+export const GLOBAL_ORDNER = "Regeln";
+export const GLOBAL_KENNUNG = "_regeln";
 /** Kennungsdatei im Projektordner (legt nur das Programm an): { kennung, id } – muss zur lokalen Einstellung passen. */
 export const KENNUNGS_DATEI = ".codeschmiede-projekt.json";
 export const KONFIG_DATEI = "projektordner.json";
@@ -30,9 +34,10 @@ export function pfadOk(t, plattform = process.platform) {
 
 /** Inhalt von projektordner.json prüfen. Ungültige Einträge fallen weg (nie raten). */
 export function konfigPruefen(roh, plattform = process.platform) {
-  const k = { basis: null, projekte: new Map() };
+  const k = { basis: null, projekte: new Map(), globalKennzeichen: null };
   if (!roh || typeof roh !== "object" || Array.isArray(roh)) return k;
   if (pfadOk(roh.basis, plattform)) k.basis = roh.basis;
+  k.globalKennzeichen = typeof roh.global_kennzeichen === "string" && /^[0-9a-f]{32}$/.test(roh.global_kennzeichen) ? roh.global_kennzeichen : null;
   const p = roh.projekte && typeof roh.projekte === "object" && !Array.isArray(roh.projekte) ? roh.projekte : {};
   for (const [id, e] of Object.entries(p).slice(0, 500)) {
     if (!kennungOk(id) || !e || typeof e !== "object" || !pfadOk(e.pfad, plattform)) continue;
@@ -253,3 +258,22 @@ export function regelnVorlage({ projektName = "", ausAgents = "", leer = false, 
     "## Fachliches\n- Erst prüfen, ob eine Anweisung Sinn macht, alle Details erfragen, dann bauen.\n\n" +
     "## Abläufe\n- Sichtbare Neuerungen zuerst als klickbarer Entwurf.\n- Handbuch und Änderungsprotokoll (docs/CHANGELOG.md) bei jeder Änderung mitziehen.\n";
 }
+
+/** Liegt p im Ordner der globalen Regeln <basis>/Regeln (oder ist er es)? Groß/Klein egal (Windows, macOS). */
+export function imGlobal(p, basis, plattform = process.platform) {
+  if (!p || !basis) return false;
+  const P = plattform === "win32" ? path.win32 : path.posix;
+  const a = P.resolve(p).toLowerCase(); const g = P.resolve(basis, GLOBAL_ORDNER).toLowerCase();
+  return a === g || a.startsWith(g + P.sep);
+}
+/** Globale Regeldatei im Ordner Regeln (Gerhard 02.11.2026 09:55): CLAUDE.md. Eine zusätzliche REGELN.md dort gilt NICHT (Hinweis). */
+export const GLOBAL_DATEI = "CLAUDE.md";
+/** Startinhalt der globalen CLAUDE.md (Datei vorlagen/globale-regeln.md, ersetzbar) – nur, wenn die Datei fehlt; nie überschreiben. */
+export async function globalVorlage({ lesen = readFile } = {}) {
+  return String(await lesen(new URL("../vorlagen/globale-regeln.md", import.meta.url), "utf8"));
+}
+export const GLOBAL_LIESMICH = "# Globale Regeln der Codeschmiede\n\nCLAUDE.md in diesem Ordner gilt für ALLE Projekte – zusätzlich zu den Projektregeln (regeln/REGELN.md im jeweiligen Projektordner).\n\n" +
+  "Rangfolge überall (Aufträge, alle Chats, Prüfungen, auch andere KI-Anbieter): 1 Sicherheit der Codeschmiede (fest) › 2 Projektregeln › 3 diese globalen Regeln › 4 allgemeines Regelwerk.\n\n" +
+  "Eine geänderte CLAUDE.md gilt erst, wenn der Admin sie in der Codeschmiede unter „Regelwerk“ › „Globale Regeln“ bestätigt hat (bis dahin gilt die zuletzt bestätigte Fassung).\n" +
+  "Die Werkstatt-KI darf in diesem Ordner nichts ändern. Keine Zugangsdaten, Passwörter oder Personendaten hineinschreiben. Höchstens 30.000 Zeichen. Eine zusätzliche REGELN.md in diesem Ordner gilt nicht – nur CLAUDE.md.\n" +
+  "Die Kennungsdatei .codeschmiede-projekt.json nicht löschen oder kopieren.\n";

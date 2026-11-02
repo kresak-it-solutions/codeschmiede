@@ -37,6 +37,42 @@ pub struct Konfig {
     pub basis: Option<String>,
     #[serde(default)]
     pub projekte: BTreeMap<String, Eintrag>,
+    /// Kennzeichen des Ordners für die globalen Regeln <basis>/Regeln (0.13.1) – steht auch in dessen Kennungsdatei
+    #[serde(default)]
+    pub global_kennzeichen: Option<String>,
+}
+
+/// Ordner für die globalen Regeln der ganzen Codeschmiede (0.13.1, Entscheidung Gerhard 02.11.2026 09:50/09:54): <basis>/Regeln
+/// (z. B. D:\Codeschmiede\Regeln\REGELN.md, daneben die Projektordner). Die Kennung „regeln“ ist darum als Projekt-Kennung gesperrt
+/// (Windows unterscheidet nicht nach Groß/Klein) – kein Projekt kann diesen Ordner belegen.
+pub(crate) const GLOBAL: &str = "Regeln";
+/// Kennung in der Kennungsdatei des Ordners (keine gültige Projekt-Kennung)
+pub(crate) const GLOBAL_KENNUNG: &str = "_regeln";
+
+/// <basis>/Regeln anlegen (nur echter Ordner, keine Verknüpfung) und die Kennungsdatei sichern. Gibt das Kennzeichen zurück.
+fn global_anlegen(basis: &Path) -> Result<String, String> {
+    if !echter_ordner(basis) {
+        return Err("Festplatte fehlt – der Projekte-Ordner ist gerade nicht erreichbar.".into());
+    }
+    let g = basis.join(GLOBAL);
+    match std::fs::symlink_metadata(&g) {
+        Ok(m) if m.is_dir() && !m.file_type().is_symlink() => {}
+        Ok(_) => return Err("An der Stelle von „Regeln“ liegt eine Datei oder Verknüpfung – bitte prüfen.".into()),
+        Err(_) => std::fs::create_dir(&g).map_err(|e| format!("Ordner „Regeln“ konnte nicht angelegt werden: {e}"))?,
+    }
+    kennung_sichern(&g, GLOBAL_KENNUNG)
+}
+
+/// Liegt p im Ordner der globalen Regeln (oder ist er es)? Solche Ordner dürfen kein Projektordner sein (Schreibsperre der Werkstatt).
+pub(crate) fn im_global(p: &Path, basis: Option<&str>) -> bool {
+    match basis {
+        Some(b) => {
+            let g = Path::new(b).join(GLOBAL);
+            let (a, z) = (p.to_string_lossy().to_lowercase(), g.to_string_lossy().to_lowercase());
+            a == z || a.starts_with(&format!("{z}{}", std::path::MAIN_SEPARATOR)) || a.starts_with(&format!("{z}/"))
+        }
+        None => false,
+    }
 }
 
 /// Projekt-Kennung wie in der Datenbank: 2–40 Zeichen, a–z, 0–9 und „-“, vorn kein „-“.
@@ -46,6 +82,7 @@ pub(crate) fn kennung_ok(k: &str) -> bool {
         && (b[0].is_ascii_lowercase() || b[0].is_ascii_digit())
         && b.iter().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || *c == b'-')
         && !windows_name(k)
+        && k != "regeln"   // <basis>/Regeln ist der Ordner der globalen Regeln (0.13.1)
 }
 
 /// Reservierte Namen von Windows (werden zu Ordnernamen, N4): con, prn, aux, nul, com0–9, lpt0–9
@@ -217,6 +254,9 @@ pub struct Stand {
     basis: Option<String>,
     basis_da: bool,
     projekte: Vec<ProjektStand>,
+    /// Ordner der globalen Regeln: angelegt und Kennungsdatei passt / REGELN.md vorhanden
+    global_da: bool,
+    global_regeln: bool,
 }
 
 /// Stand der Projektordner auf diesem PC (für Assistent, Verwaltung und Anbindungen). Nicht verknüpfte Projekte zeigen den Vorschlag <basis>\<kennung>.
@@ -248,7 +288,12 @@ pub async fn ws_ordner_stand(app: tauri::AppHandle, projekte: Vec<String>) -> Re
             }
         })
         .collect();
-    Ok(Stand { basis: basis.as_deref().map(kurz), basis_da, projekte: liste })
+    let g = basis.as_ref().map(|b| Path::new(b).join(GLOBAL));
+    let global_da = g.as_deref().map(echter_ordner).unwrap_or(false)
+        && g.as_deref().and_then(kennung_lesen).map(|(kk, i)| kk == GLOBAL_KENNUNG && Some(i) == k.global_kennzeichen.clone()).unwrap_or(false);
+    // Die globale Regeldatei ist Regeln/CLAUDE.md (Gerhard 02.11.2026 09:55)
+    let global_regeln = global_da && g.map(|p| p.join("CLAUDE.md").is_file()).unwrap_or(false);
+    Ok(Stand { basis: basis.as_deref().map(kurz), basis_da, projekte: liste, global_da, global_regeln })
 }
 
 /// Basis-Ordner (Projekte-Ordner auf der externen Festplatte) einmal je PC festlegen. Gibt den Pfad zurück (None = abgebrochen).
@@ -260,6 +305,8 @@ pub async fn ws_ordner_basis_waehlen(app: tauri::AppHandle) -> Result<Option<Str
     let mut k = laden(&app);
     k.version = 1;
     k.basis = Some(t.clone());
+    // Ordner der globalen Regeln gleich mit anlegen (0.13.1); scheitert das, bleibt der Projekte-Ordner trotzdem festgelegt
+    k.global_kennzeichen = global_anlegen(&p).ok();
     speichern(&app, &k)?;
     Ok(Some(kurz(&t)))
 }
@@ -268,6 +315,19 @@ pub async fn ws_ordner_basis_waehlen(app: tauri::AppHandle) -> Result<Option<Str
 /// über die Auswahl. regeln_von legt fest, woher die erste REGELN.md kommt (vorlage, leer oder Kennung eines anderen Projekts).
 #[tauri::command]
 pub async fn ws_ordner_verknuepfen(app: tauri::AppHandle, projekt: String, eigener: bool, regeln_von: Option<String>) -> Result<Option<String>, String> {
+    // „_regeln“: Ordner der globalen Regeln per Klick anlegen – immer <basis>/Regeln, nie ein gewählter Ordner
+    if projekt == GLOBAL_KENNUNG {
+        if eigener || regeln_von.is_some() {
+            return Err("Der Ordner der globalen Regeln liegt immer im Projekte-Ordner".into());
+        }
+        let b = laden(&app).basis.filter(|b| pfad_text_ok(b)).ok_or("Zuerst den Projekte-Ordner auf der Festplatte festlegen („Ordner wählen …“).")?;
+        let kennzeichen = global_anlegen(Path::new(&b))?;
+        let _sperre = SPERRE.lock().map_err(|_| "Gesperrt".to_string())?;
+        let mut k = laden(&app);
+        k.global_kennzeichen = Some(kennzeichen);
+        speichern(&app, &k)?;
+        return Ok(Some(kurz(&Path::new(&b).join(GLOBAL).to_string_lossy())));
+    }
     if !kennung_ok(&projekt) {
         return Err("Ungültige Projekt-Kennung".into());
     }
@@ -299,6 +359,9 @@ pub async fn ws_ordner_verknuepfen(app: tauri::AppHandle, projekt: String, eigen
     if !pfad_text_ok(&t) || ordner_ungeeignet(&pfad).is_some() {
         return Err(ordner_ungeeignet(&pfad).unwrap_or("Ungültiger Pfad").into());
     }
+    if im_global(&pfad, laden(&app).basis.as_deref()) {
+        return Err("Im Ordner „Regeln“ (globale Regeln) darf kein Projektordner liegen – bitte einen anderen wählen.".into());
+    }
     let kennzeichen = kennung_sichern(&pfad, &projekt)?;
     let _sperre = SPERRE.lock().map_err(|_| "Gesperrt".to_string())?;
     let mut k = laden(&app);
@@ -315,6 +378,16 @@ const UNTERORDNER: &[&str] = &["code", "regeln", "konzept", "doku", "material", 
 /// Verknüpften Projektordner (oder einen festen Unterordner) im Explorer bzw. Finder öffnen – nie einen beliebigen Pfad.
 #[tauri::command]
 pub fn ws_ordner_oeffnen(app: tauri::AppHandle, projekt: String, unterordner: Option<String>) -> Result<(), String> {
+    if projekt == GLOBAL_KENNUNG {
+        // Ordner der globalen Regeln: nur <basis>/Regeln mit passender Kennungsdatei, ohne Unterordner
+        let k = laden(&app);
+        let b = k.basis.filter(|b| pfad_text_ok(b)).ok_or("Zuerst den Projekte-Ordner auf der Festplatte festlegen.")?;
+        let g = Path::new(&b).join(GLOBAL);
+        if unterordner.is_some() || !echter_ordner(&g) || kennung_lesen(&g).map(|(kk, i)| kk != GLOBAL_KENNUNG || Some(i) != k.global_kennzeichen).unwrap_or(true) {
+            return Err("Der Ordner der globalen Regeln ist nicht erreichbar – Festplatte angesteckt? Sonst „Ordner anlegen“.".into());
+        }
+        return app.opener().open_path(g.to_string_lossy().to_string(), None::<&str>).map_err(|e| e.to_string());
+    }
     if !kennung_ok(&projekt) {
         return Err("Ungültige Projekt-Kennung".into());
     }
@@ -355,6 +428,9 @@ mod tests {
             assert!(!kennung_ok(n), "{n}");
         }
         assert!(kennung_ok("com") && kennung_ok("console") && kennung_ok("lpt10"));
+        // Ordner der globalen Regeln ist nie eine Projekt-Kennung (0.13.1)
+        assert!(!kennung_ok(GLOBAL) && !kennung_ok("regeln") && !kennung_ok(GLOBAL_KENNUNG) && !regeln_von_ok("regeln"));
+        assert!(kennung_ok("regeln-x") && kennung_ok("meine-regeln"));
         assert!(regeln_von_ok("vorlage") && regeln_von_ok("leer") && regeln_von_ok("trainer-to-go"));
         assert!(!regeln_von_ok("../boese") && !regeln_von_ok(""));
     }
@@ -392,6 +468,20 @@ mod tests {
         }
         assert_eq!(kurz("E:\\Projekte"), "E:\\Projekte");
         assert_eq!(kurz("E:\\Daten\\Projekte\\trainer-to-go"), "E:\\…\\trainer-to-go");
+    }
+
+    #[test]
+    fn global_ordner() {
+        let b = if cfg!(windows) { "E:\\Projekte" } else { "/Volumes/Platte/Projekte" };
+        let g = Path::new(b).join(GLOBAL);
+        assert!(im_global(&g, Some(b)));
+        assert!(im_global(&g.join("x"), Some(b)));
+        assert!(!im_global(&Path::new(b).join("codeschmiede"), Some(b)));
+        assert!(!im_global(&Path::new(b).join("Regeln2"), Some(b)));
+        assert!(im_global(&Path::new(b).join("regeln").join("x"), Some(b)));   // Groß/Klein egal (Windows)
+        assert!(!im_global(&g, None));
+        let k: Konfig = serde_json::from_str(r#"{"basis":"/p","projekte":{},"global_kennzeichen":"0123456789abcdef0123456789abcdef"}"#).unwrap();
+        assert_eq!(k.global_kennzeichen.as_deref(), Some("0123456789abcdef0123456789abcdef"));
     }
 
     #[test]
