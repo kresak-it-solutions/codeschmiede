@@ -34,6 +34,13 @@ language sql immutable set search_path = public as $$
   select case p_werkzeug when 'codex' then '0.166.0' when 'gemini-cli' then '0.64.0' when 'opencode' then '2.2.5' end
 $$;
 revoke execute on function public.ws_werkzeug_soll_version(text) from public, anon;
+-- Wo ein Werkzeug sicher gesperrt werden kann (gleiche Regel wie sperrbar() im Dienst): Gemini CLI nirgends (Ordner-Vertrauen, B2),
+-- Windows und Linux nie (keine bzw. keine ausreichende Sperre, B5). Meldet ein PC kein Betriebssystem, entscheidet der Dienst.
+create or replace function public.ws_werkzeug_erlaubt(p_werkzeug text, p_plattform text) returns boolean
+language sql immutable set search_path = public as $$
+  select p_werkzeug in ('codex', 'opencode') and coalesce(p_plattform, '') not in ('win32', 'linux')
+$$;
+revoke execute on function public.ws_werkzeug_erlaubt(text, text) from public, anon;
 -- Die 17 Prüfpunkte des Sperren-Tests (Schreiben, harter Link, Programmstarts, Lesen) – jede Kennung höchstens einmal (Sicherheitsprüfung B7)
 create or replace function public.ws_werkzeug_punkte_ok(p jsonb) returns boolean
 language sql immutable set search_path = public as $$
@@ -91,6 +98,10 @@ begin
   end loop;
   hw := nullif(left(v ->> 'hinweis', 300), '');
   if concat(hw, v ->> 'sperre_grund') ~ '(\\|/Users/|/home/|/Volumes/|[A-Za-z]:/)' then raise exception 'Hinweis ohne Pfade'; end if;
+  -- Gemini CLI und Windows/Linux (wenn gemeldet): nie sperrbar, nie „bestanden“ (Nachprüfung, Punkt 4)
+  if not public.ws_werkzeug_erlaubt(p_werkzeug, w.faehigkeiten ->> 'plattform')
+     and (coalesce((v ->> 'sperrbar')::boolean, false) or v ->> 'test' = 'bestanden') then
+    raise exception 'Dieses Werkzeug ist auf diesem PC gesperrt (Gemini CLI überall, Windows und Linux nie)'; end if;
   -- Der Admin-PC programmiert nie mit fremden Werkzeugen (kein Projekt-Code auf dem Admin-PC)
   if w.admin_pc and (coalesce((v ->> 'installiert')::boolean, false) or coalesce((v ->> 'sperrbar')::boolean, false) or v ->> 'test' = 'bestanden') then
     raise exception 'Der Admin-PC programmiert nie mit fremden Werkzeugen'; end if;
@@ -147,9 +158,11 @@ begin
   if not exists (select 1 from public.ws_projekte where id = p_projekt) then raise exception 'Unbekanntes Projekt'; end if;
   if p_werkzeug is null or p_werkzeug not in ('claude-code', 'codex', 'gemini-cli', 'opencode') then raise exception 'Unbekanntes Werkzeug'; end if;
   if not public.ws_werkzeug_modell_ok(p_werkzeug, m) then raise exception 'Ungültiges Modell für dieses Werkzeug'; end if;
+  if p_werkzeug = 'gemini-cli' then raise exception 'Gemini CLI ist gesperrt (läuft ohne Rückfrage nur in vertrauten Ordnern)'; end if;
   if p_werkzeug <> 'claude-code' and not exists (
     select 1 from public.ws_werkzeug_stand s join public.ws_werkstatt_pcs w on w.id = s.pc_id join public.ws_benutzer b on b.id = w.benutzer_id
      where s.werkzeug = p_werkzeug and not w.admin_pc and s.sperrbar and s.installiert and s.test = 'bestanden'
+       and public.ws_werkzeug_erlaubt(p_werkzeug, w.faehigkeiten ->> 'plattform')
        and s.test_version = s.version and s.version = public.ws_werkzeug_soll_version(p_werkzeug) and b.aktiv
        and (b.rolle = 'admin' or exists (select 1 from public.ws_projekt_mitglieder pm where pm.projekt_id = p_projekt and pm.benutzer_id = w.benutzer_id and pm.rolle = 'entwickler')))
   then raise exception 'Speichern geht erst, wenn der Sperren-Test für dieses Werkzeug auf mindestens einem Entwickler-PC bestanden ist'; end if;

@@ -35,7 +35,7 @@ import { bildAusDataUrl, markePrompt, markeAntwort } from "./lib/marke.mjs";
 import { ANBIETER, reiheFuer, wartetText, istLimit, kiKennung, codexFrage, geminiFrage, kopplungPruefen, anmeldungStarten, sandboxArt, freiFrage, freiPruefen, codexLimits } from "./lib/ki.mjs";
 import { prText } from "./lib/ersatz.mjs";
 import { WERKZEUGE, FREMDE, werkzeugOk, werkzeugName, sperrbar, dateiGesperrt, statusPfade, projektKonfigFunde, werkzeugVorspann } from "./lib/werkzeuge.mjs";
-import { installieren as werkzeugInstallieren, installiertPruefen, angemeldetPruefen, laufOrdner, werkzeugStarten, sperrenTest, sperrNachweis, nachweisGleich } from "./lib/werkzeugLauf.mjs";
+import { installieren as werkzeugInstallieren, installiertPruefen, installationUnveraendert, angemeldetPruefen, laufOrdner, werkzeugStarten, sperrenTest, sperrNachweis, nachweisGleich } from "./lib/werkzeugLauf.mjs";
 import { imFenster } from "./lib/einrichten.mjs";
 import { ampelPruefen, sandboxStarten, testlaufStarten, sandboxPfad } from "./lib/anbindungen.mjs";
 import { zweigStand, codeBaum, codeDatei, handSchreiben } from "./lib/code.mjs";
@@ -1621,6 +1621,8 @@ async function werkzeugAktion(id, aktion) {
     } else if (aktion === "test") {
       const s = await werkzeugStandHolen(id, { frisch: true });
       if (!s.installiert || !s.angemeldet) { await werkzeugMelden(id, { hinweis: "Für den Sperren-Test muss das Werkzeug installiert und angemeldet sein" }); return; }
+      const unv = await installationUnveraendert(id, { daten: cfg.daten_ordner });
+      if (!unv.ok) { await werkzeugMelden(id, { hinweis: unv.grund }); return; }
       await werkzeugMelden(id, { test: "laeuft", hinweis: "Sperren-Test läuft (Wegwerf-Kopie) …" });
       melde("status", `Sperren-Test für ${name} läuft`);
       const r = await sperrenTest({ werkzeug: id, prog: s.prog, daten: cfg.daten_ordner, projekte: (await poKonfigHolen()).basis || null, schuetzen: nurFuerMich });
@@ -1666,6 +1668,9 @@ async function werkzeugBau({ auftrag, projekt, ordner, zweig, prompt, signal, we
   const b = await werkzeugBereit(werkzeug, { frisch: true });
   if (!b.ok) return { art: "warten", text: `wartet auf ${name}: ${b.grund}` };
   const s = werkzeugLokal[werkzeug];
+  // Direkt vor dem Start: ganzer Installationsordner ohne Zwischenspeicher gegen die gemerkte Prüfsumme
+  const unv = await installationUnveraendert(werkzeug, { daten: cfg.daten_ordner });
+  if (!unv.ok) { delete werkzeugLokal[werkzeug]; return { art: "warten", text: `wartet auf ${name}: ${unv.grund}` }; }
   const lauf = await laufOrdner(cfg.daten_ordner, Number(auftrag.id) || 0, nurFuerMich);
   let erg;
   delete werkzeugLogZaehler[auftrag.id];

@@ -3,6 +3,6 @@
 
 /** PR-Text aus fremdem Text: keine Erwähnungen/Verweise, als Codeblock (Prüfung 0.8.6 Hinweis). */
 export function prText(text) {
-  const t = String(text || "").replace(/```/g, "ˋˋˋ").replace(/@/g, "@​").replace(/#(\d)/g, "#​$1").slice(0, 3000);
+  const t = String(text || "").replace(/```/g, "ˋˋˋ").replace(/@/g, "@\u200b").replace(/#(\d)/g, "#\u200b$1").slice(0, 3000);
   return "```text\n" + t + "\n```";
 }

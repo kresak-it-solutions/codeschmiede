@@ -11,6 +11,11 @@ test("PR-Text: keine Erwähnungen, keine Verweise, als Codeblock", () => {
   const t = ersatz.prText("Fixes #12 @gerhard ``` boom");
   assert.ok(!t.includes("#12") && !t.includes("@gerhard") && t.startsWith("```text"));
   assert.deepEqual(Object.keys(ersatz), ["prText"]);
+  assert.ok(t.includes("@\u200b"), "Erwähnung mit unsichtbarem Trenner entschärft");
+});
+test("Keine unsichtbaren Zeichen im Quelltext von lib/ersatz.mjs (als Escape geschrieben)", async () => {
+  const q = await readFile(new URL("../lib/ersatz.mjs", import.meta.url), "utf8");
+  assert.ok(!/[\u200b-\u200f\u2060\ufeff]/.test(q)); assert.ok(q.includes("\\u200b"));
 });
 test("Kein Rest des Ersatz-Baus in irgendeiner Datei des Dienstes", async () => {
   const basis = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");

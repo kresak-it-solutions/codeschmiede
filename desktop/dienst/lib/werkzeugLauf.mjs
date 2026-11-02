@@ -3,7 +3,7 @@
 // Argument-Listen mit shell:false. Konzept: docs/KONZEPT-WERKZEUGE.md.
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync, realpathSync, readdirSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, writeFile, rm, rename, copyFile, appendFile, lstat, readdir, symlink, stat } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile, rm, rename, copyFile, appendFile, lstat, readdir, symlink, stat, readlink } from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
@@ -97,7 +97,7 @@ export async function installieren(id, { daten, plattform = process.platform, ru
     const r = await run(process.execPath, [npm, "ci", "--ignore-scripts", "--no-audit", "--no-fund", "--omit=dev", "--no-update-notifier", `--registry=${REGISTRY}`, `--userconfig=${leer}`, `--globalconfig=${leerGlobal}`],
       { cwd: tmp, env: minimaleUmgebung({ npm_config_cache: path.join(daten, "werkzeuge", ".npm-cache") }), minuten: 15 });
     if (r.code !== 0) throw new Error(`Installation fehlgeschlagen: ${String(r.err || r.aus).trim().split(/\r?\n/).slice(-3).join(" ").slice(0, 300)}`);
-    await rm(leer, { force: true });
+    await rm(leer, { force: true }); await rm(leerGlobal, { force: true });
     const pj = JSON.parse(await readFile(path.join(tmp, "node_modules", ...w.paket.split("/"), "package.json"), "utf8"));
     if (pj.version !== w.version) throw new Error(`Falsche Version installiert (${String(pj.version).slice(0, 20)})`);
     // Lock-Datei nach der Installation = mitgelieferte (B8); Prüfsumme des Programms merken (vor jedem Lauf verglichen)
@@ -105,7 +105,9 @@ export async function installieren(id, { daten, plattform = process.platform, ru
     if (JSON.stringify(nach.packages) !== JSON.stringify(lock.packages)) throw new Error("Lock-Datei wurde bei der Installation verändert – abgebrochen");
     const prog = programmIn(id, tmp); if (!prog) throw new Error("Programm des Werkzeugs nicht gefunden");
     const datei = prog.vorne[0] || prog.befehl;
-    await writeFile(path.join(tmp, PRUEFSUMME), JSON.stringify({ programm: path.relative(tmp, datei), sha256: await dateiSha(datei), lock: sha(JSON.stringify(lock.packages)) }), { mode: 0o600 });
+    // Prüfsumme des GANZEN Installationsordners (Pfad + sha256 je Datei, Verknüpfungen nicht gefolgt) – vor jedem Start ohne Zwischenspeicher verglichen
+    const ordnerSha = (await ordnerManifest(tmp)).sha;
+    await writeFile(path.join(tmp, PRUEFSUMME), JSON.stringify({ programm: path.relative(tmp, datei), sha256: await dateiSha(datei, { frisch: true }), ordner: ordnerSha, lock: sha(JSON.stringify(lock.packages)) }), { mode: 0o600 });
     await rm(ziel, { recursive: true, force: true });
     await rename(tmp, ziel);
   } catch (e) { await rm(tmp, { recursive: true, force: true }).catch(() => {}); throw e; }
@@ -114,10 +116,10 @@ export async function installieren(id, { daten, plattform = process.platform, ru
 
 export const PRUEFSUMME = ".codeschmiede-pruefsumme.json";
 const shaCache = new Map();   // Pfad -> { groesse, zeit, sha }
-/** sha256 einer Datei (zwischengespeichert nach Größe und Änderungszeit). */
-export async function dateiSha(datei) {
+/** sha256 einer Datei (für die Lampen zwischengespeichert nach Größe und Änderungszeit; frisch = immer neu lesen). */
+export async function dateiSha(datei, { frisch = false } = {}) {
   const st = await stat(datei);
-  const c = shaCache.get(datei); if (c && c.groesse === st.size && c.zeit === st.mtimeMs) return c.sha;
+  const c = shaCache.get(datei); if (!frisch && c && c.groesse === st.size && c.zeit === st.mtimeMs) return c.sha;
   const h = createHash("sha256");
   await new Promise((ok, fehl) => createReadStream(datei).on("data", (d) => h.update(d)).on("end", ok).on("error", fehl));
   const wert = h.digest("hex"); shaCache.set(datei, { groesse: st.size, zeit: st.mtimeMs, sha: wert });
@@ -140,9 +142,43 @@ export async function installiertPruefen(id, { daten, mitgeliefert = lockQuelle(
     const prog = programmIn(id, dir);
     const datei = prog ? prog.vorne[0] || prog.befehl : null;
     if (!datei || path.relative(dir, datei) !== ps.programm || (await dateiSha(datei)) !== ps.sha256) return { ok: false, version: w.version, grund: "Programm verändert (Prüfsumme) – bitte neu installieren" };
-    return { ok: true, version: w.version, dir, prog, programmSha: ps.sha256 };
+    if (!ps.ordner) return { ok: false, version: w.version, grund: "Installation ohne Ordner-Prüfsumme (ältere Fassung) – bitte neu installieren" };
+    return { ok: true, version: w.version, dir, prog, programmSha: `${ps.sha256}:${ps.ordner}` };
   } catch { return { ok: false, version: null }; }
 }
+/**
+ * Prüfsumme des ganzen Installationsordners ohne Zwischenspeicher: sortierte Liste aus Art, Pfad und sha256 (Dateien) bzw. Ziel (Verknüpfungen,
+ * nicht gefolgt); die eigene Prüfsummen-Datei zählt nicht. Liefert { sha, anzahl }.
+ */
+export async function ordnerManifest(dir, { max = 300000 } = {}) {
+  const zeilen = [];
+  const geh = async (o, rel) => {
+    for (const e of (await readdir(o, { withFileTypes: true })).sort((a, b) => (a.name < b.name ? -1 : 1))) {
+      const r = rel ? `${rel}/${e.name}` : e.name; const v = path.join(o, e.name);
+      if (!rel && e.name === PRUEFSUMME) continue;
+      if (zeilen.length > max) throw new Error("Installationsordner zu groß");
+      const l = await lstat(v);
+      if (l.isSymbolicLink()) zeilen.push(`l\t${r}\t${await readlink(v)}`);
+      else if (l.isDirectory()) { zeilen.push(`d\t${r}`); await geh(v, r); }
+      else if (l.isFile()) zeilen.push(`f\t${r}\t${(l.mode & 0o111) ? "x" : "-"}\t${await dateiSha(v, { frisch: true })}`);
+      else zeilen.push(`?\t${r}`);
+    }
+  };
+  await geh(dir, "");
+  zeilen.sort();
+  return { sha: sha(zeilen.join("\n")), anzahl: zeilen.length };
+}
+/** Direkt vor dem Start (Bau-Lauf, Sperren-Test): ist die Installation genau die gemerkte? { ok, grund }. */
+export async function installationUnveraendert(id, { daten }) {
+  try {
+    const dir = installOrdner(daten, id);
+    const ps = JSON.parse(await readFile(path.join(dir, PRUEFSUMME), "utf8"));
+    const m = await ordnerManifest(dir);
+    if (!ps.ordner || m.sha !== ps.ordner) return { ok: false, grund: INSTALLATION_VERAENDERT };
+    return { ok: true, ordner: m.sha };
+  } catch { return { ok: false, grund: INSTALLATION_VERAENDERT }; }
+}
+export const INSTALLATION_VERAENDERT = "Installation verändert – bitte neu installieren und Sperren-Test wiederholen";
 let csVersion = null;
 /**
  * Nachweis, an den ein Sperren-Test gebunden ist (B4): Werkzeug-Version, Prüfsumme der Sperre und Einstellungen, Prüfsumme des Programms,

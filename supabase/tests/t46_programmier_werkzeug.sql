@@ -40,9 +40,9 @@ select werkzeug, installiert, angemeldet, version, test from ws_werkzeug_stand;
 \echo [6] Meldung für einen fremden PC -> FEHLER
 select ws_werkzeug_melden('00000000-0000-0000-0000-0000000000a1','codex','{"installiert":false}');
 \echo [7] „bestanden“ mit anderer Version -> FEHLER; mit einem roten Punkt -> FEHLER; mit doppelter Kennung -> FEHLER; unbekannter Schlüssel -> FEHLER; Hinweis mit Pfad -> FEHLER; Soll-Version vom PC -> FEHLER
-select ws_werkzeug_melden('00000000-0000-0000-0000-0000000000d1','gemini-cli',('{"installiert":true,"version":"0.64.0","sperrbar":true,"test":"bestanden","test_version":"0.63.0","test_punkte":'||:OK17||'}')::jsonb);
-select ws_werkzeug_melden('00000000-0000-0000-0000-0000000000d1','gemini-cli','{"installiert":true,"version":"0.64.0","sperrbar":true,"test":"bestanden","test_version":"0.64.0","test_punkte":[{"id":"erlaubt","ok":true},{"id":"regeln","ok":false},{"id":"setup","ok":true},{"id":"nachbar","ok":true},{"id":"projektregeln","ok":true},{"id":"git","ok":true},{"id":"link","ok":true},{"id":"daten","ok":true},{"id":"hart","ok":true},{"id":"start_env","ok":true},{"id":"start_git","ok":true},{"id":"start_python","ok":true},{"id":"start_osascript","ok":true},{"id":"start_skript","ok":true},{"id":"lesen_ssh","ok":true},{"id":"lesen_zugang","ok":true},{"id":"lesen_projekte","ok":true}]}');
-select ws_werkzeug_melden('00000000-0000-0000-0000-0000000000d1','gemini-cli','{"installiert":true,"version":"0.64.0","sperrbar":true,"test":"bestanden","test_version":"0.64.0","test_punkte":[{"id":"erlaubt","ok":true},{"id":"regeln","ok":true},{"id":"setup","ok":true},{"id":"nachbar","ok":true},{"id":"projektregeln","ok":true},{"id":"git","ok":true},{"id":"link","ok":true},{"id":"daten","ok":true},{"id":"hart","ok":true},{"id":"start_env","ok":true},{"id":"start_git","ok":true},{"id":"start_python","ok":true},{"id":"start_osascript","ok":true},{"id":"start_skript","ok":true},{"id":"lesen_ssh","ok":true},{"id":"lesen_zugang","ok":true},{"id":"regeln","ok":true}]}');
+select ws_werkzeug_melden('00000000-0000-0000-0000-0000000000d1','opencode',('{"installiert":true,"version":"2.2.5","sperrbar":true,"test":"bestanden","test_version":"2.2.4","test_punkte":'||:OK17||'}')::jsonb);
+select ws_werkzeug_melden('00000000-0000-0000-0000-0000000000d1','opencode','{"installiert":true,"version":"2.2.5","sperrbar":true,"test":"bestanden","test_version":"2.2.5","test_punkte":[{"id":"erlaubt","ok":true},{"id":"regeln","ok":false},{"id":"setup","ok":true},{"id":"nachbar","ok":true},{"id":"projektregeln","ok":true},{"id":"git","ok":true},{"id":"link","ok":true},{"id":"daten","ok":true},{"id":"hart","ok":true},{"id":"start_env","ok":true},{"id":"start_git","ok":true},{"id":"start_python","ok":true},{"id":"start_osascript","ok":true},{"id":"start_skript","ok":true},{"id":"lesen_ssh","ok":true},{"id":"lesen_zugang","ok":true},{"id":"lesen_projekte","ok":true}]}');
+select ws_werkzeug_melden('00000000-0000-0000-0000-0000000000d1','opencode','{"installiert":true,"version":"2.2.5","sperrbar":true,"test":"bestanden","test_version":"2.2.5","test_punkte":[{"id":"erlaubt","ok":true},{"id":"regeln","ok":true},{"id":"setup","ok":true},{"id":"nachbar","ok":true},{"id":"projektregeln","ok":true},{"id":"git","ok":true},{"id":"link","ok":true},{"id":"daten","ok":true},{"id":"hart","ok":true},{"id":"start_env","ok":true},{"id":"start_git","ok":true},{"id":"start_python","ok":true},{"id":"start_osascript","ok":true},{"id":"start_skript","ok":true},{"id":"lesen_ssh","ok":true},{"id":"lesen_zugang","ok":true},{"id":"regeln","ok":true}]}');
 select ws_werkzeug_melden('00000000-0000-0000-0000-0000000000d1','gemini-cli','{"auth_datei":"…"}');
 select ws_werkzeug_melden('00000000-0000-0000-0000-0000000000d1','gemini-cli','{"hinweis":"Fehler in /Users/gerhard/x"}');
 select ws_werkzeug_melden('00000000-0000-0000-0000-0000000000d1','gemini-cli','{"installiert":true,"version":"9.9.9","soll_version":"9.9.9"}');
@@ -130,9 +130,32 @@ set role authenticated;
 :ADM
 select ws_auftraege_werkzeug_schutz();
 reset role;
+\echo [30] Gemini CLI: „bestanden“ mit richtiger Version und allen Punkten -> FEHLER; „sperrbar“ -> FEHLER; nur „installiert“ melden -> OK
+set role authenticated;
+:DEV
+select ws_werkzeug_melden('00000000-0000-0000-0000-0000000000d1','gemini-cli',('{"installiert":true,"angemeldet":true,"version":"0.64.0","sperrbar":true,"test":"bestanden","test_version":"0.64.0","test_punkte":'||:OK17||'}')::jsonb);
+select ws_werkzeug_melden('00000000-0000-0000-0000-0000000000d1','gemini-cli','{"installiert":true,"sperrbar":true}');
+select ws_werkzeug_melden('00000000-0000-0000-0000-0000000000d1','gemini-cli','{"installiert":true,"sperrbar":false,"sperre_grund":"Gemini CLI gesperrt"}') \g /dev/null
+\echo [31] Admin speichert Gemini CLI -> FEHLER (gesperrt)
+:ADM
+select ws_werkzeug_setzen('vereinsheft','gemini-cli',null);
+\echo [32] PC meldet Linux: Codex „bestanden“ -> FEHLER; danach Speichern von Codex für trainer-to-go -> FEHLER (kein erlaubter Entwickler-PC mehr)
+:DEV
+update ws_werkstatt_pcs set faehigkeiten = '{"plattform":"linux"}' where id = '00000000-0000-0000-0000-0000000000d1';
+select ws_werkzeug_melden('00000000-0000-0000-0000-0000000000d1','codex',('{"installiert":true,"angemeldet":true,"version":"0.166.0","sperrbar":true,"test":"bestanden","test_version":"0.166.0","test_punkte":'||:OK17||'}')::jsonb);
+:ADM
+select ws_werkzeug_setzen('trainer-to-go','codex',null);
+\echo [33] Wieder macOS: Codex „bestanden“ -> OK, Speichern für trainer-to-go -> OK (codex)
+:DEV
+update ws_werkstatt_pcs set faehigkeiten = '{"plattform":"darwin"}' where id = '00000000-0000-0000-0000-0000000000d1';
+select ws_werkzeug_melden('00000000-0000-0000-0000-0000000000d1','codex',('{"installiert":true,"angemeldet":true,"version":"0.166.0","sperrbar":true,"test":"bestanden","test_version":"0.166.0","test_punkte":'||:OK17||'}')::jsonb) \g /dev/null
+:ADM
+select ws_werkzeug_setzen('trainer-to-go','codex',null) \g /dev/null
+select werkzeug from ws_ki_zustaendigkeit where projekt_id = 'trainer-to-go' and aufgabe = 'bauen';
+reset role;
 \echo [28] Erneutes Einspielen von 0057 ändert nichts an der Wahl -> (Werte wie vorher, siehe [29])
 \ir ../migrations/0057_programmier_werkzeug.sql
 \set QUIET 1
-\echo [29] Nach dem Einspielen: trainer-to-go/bauen = claude-code, Auftrag 9001 = codex, Stand-Zeilen 3
+\echo [29] Nach dem Einspielen: trainer-to-go/bauen = codex (aus [33]), Auftrag 9001 = codex, Stand-Zeilen 4
 select (select werkzeug from ws_ki_zustaendigkeit where projekt_id = 'trainer-to-go' and aufgabe = 'bauen') projekt,
        (select werkzeug from ws_auftraege where id = 9001) auftrag, (select count(*) from ws_werkzeug_stand) staende;

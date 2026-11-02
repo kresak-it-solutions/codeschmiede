@@ -11,7 +11,7 @@ import { realpathSync, existsSync } from "node:fs";
 import { WERKZEUGE, FREMDE, sperrbar, modellOk, dateiGesperrt, statusPfade, projektKonfigFunde, codexKonfig, codexArgs, geminiEinstellungen, geminiArgs,
   opencodeKonfig, opencodeArgs, werkzeugUmgebung, laufPlan, codexVerbrauch, geminiAuswerten, opencodeAuswerten, werkzeugVorspann } from "../lib/werkzeuge.mjs";
 import { werkzeugSandbox, WERKZEUG_PROGRAMME, opencodeAnmeldungBereinigen, anmeldungBereinigen } from "../lib/sandbox.mjs";
-import { lockPruefen, programmIn, testAufbauen, testAuswerten, stand, sperrenTest, TEST_PUNKTE, testPrompt, GEGENPROBE, installieren, installiertPruefen, installOrdner, PRUEFSUMME, sperrNachweis, nachweisGleich, lockQuelle } from "../lib/werkzeugLauf.mjs";
+import { lockPruefen, programmIn, testAufbauen, testAuswerten, stand, sperrenTest, TEST_PUNKTE, testPrompt, GEGENPROBE, installieren, installiertPruefen, installOrdner, PRUEFSUMME, sperrNachweis, nachweisGleich, lockQuelle, installationUnveraendert, ordnerManifest, INSTALLATION_VERAENDERT } from "../lib/werkzeugLauf.mjs";
 
 const tmp = (p) => mkdtemp(path.join(os.tmpdir(), p));
 const echt = (p) => realpathSync(p);
@@ -381,8 +381,28 @@ test("Installation: npm ci ohne Skripte mit leerer user- und globalconfig; danac
     await installieren("codex", { daten, plattform: "darwin", run });
     for (const a of ["ci", "--ignore-scripts"]) assert.ok(aufruf.includes(a), a);
     assert.ok(aufruf.some((a) => a.startsWith("--userconfig=")) && aufruf.some((a) => a.startsWith("--globalconfig=")) && aufruf.includes("--registry=https://registry.npmjs.org/"));
+    const uc = aufruf.find((a) => a.startsWith("--userconfig=")).slice(13); const gc = aufruf.find((a) => a.startsWith("--globalconfig=")).slice(15);
+    assert.notEqual(uc, gc, "zwei getrennte leere Dateien (npm lehnt dieselbe doppelt ab)");
     const ok = await installiertPruefen("codex", { daten });
-    assert.equal(ok.ok, true); assert.match(ok.programmSha, /^[0-9a-f]{64}$/);
+    assert.equal(ok.ok, true); assert.match(ok.programmSha, /^[0-9a-f]{64}:[0-9a-f]{64}$/);
+    // Ganzer Ordner direkt vor dem Start (ohne Zwischenspeicher): unverändert → ok; zusätzliche Datei oder Verknüpfung → wartet
+    const dir = installOrdner(daten, "codex");
+    assert.equal((await installationUnveraendert("codex", { daten })).ok, true);
+    assert.ok(!existsSync(path.join(dir, ".npmrc-leer-benutzer")) && !existsSync(path.join(dir, ".npmrc-leer-global")), "leere npm-Konfiguration aufgeräumt");
+    await writeFile(path.join(dir, "node_modules", "neu.js"), "x");
+    const u = await installationUnveraendert("codex", { daten }); assert.equal(u.ok, false); assert.equal(u.grund, INSTALLATION_VERAENDERT);
+    await rm(path.join(dir, "node_modules", "neu.js"));
+    assert.equal((await installationUnveraendert("codex", { daten })).ok, true);
+    await symlink("/etc", path.join(dir, "node_modules", "verweis"));
+    assert.equal((await installationUnveraendert("codex", { daten })).ok, false, "Verknüpfung zählt (nicht gefolgt)");
+    await rm(path.join(dir, "node_modules", "verweis"));
+    // gleiche Größe und Zeit, anderer Inhalt: ohne Zwischenspeicher trotzdem erkannt
+    const f = path.join(dir, "node_modules", "@openai", "codex", "package.json"); const alt = await readFile(f, "utf8");
+    const { utimes, stat: st } = await import("node:fs/promises"); const t0 = await st(f);
+    await writeFile(f, alt.replace("0.166.0", "0.166.9")); await utimes(f, t0.atime, t0.mtime);
+    assert.equal((await installationUnveraendert("codex", { daten })).ok, false);
+    await writeFile(f, alt); await utimes(f, t0.atime, t0.mtime);
+    assert.equal((await ordnerManifest(dir)).anzahl > 3, true);
     // Programm verändert → nicht mehr in Ordnung
     await writeFile(path.join(installOrdner(daten, "codex"), "node_modules", "@openai", "codex", "bin", "codex.js"), "// anders");
     assert.equal((await installiertPruefen("codex", { daten })).ok, false);
