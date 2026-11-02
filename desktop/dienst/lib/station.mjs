@@ -21,6 +21,7 @@ export function stationFaellig(p, jetzt = Date.now()) {
   if (!p) return true;
   if (p.ergebnis === "angehalten") return false;
   if (p.ergebnis === "laeuft") return !(jetzt - Date.parse(p.zeit) < STATION_HAENGT_MIN * 60 * 1000);
-  if (p.ergebnis === "fehler" && p.naechster) return !(Date.parse(p.naechster) > jetzt);
+  // „wartet“ mit Zeitpunkt: verpflichtender KI-Anbieter gerade nicht nutzbar (0.13.1) – kein Fehlversuch, nächster Versuch ab „naechster“
+  if ((p.ergebnis === "fehler" || p.ergebnis === "wartet") && p.naechster) return !(Date.parse(p.naechster) > jetzt);
   return true;
 }

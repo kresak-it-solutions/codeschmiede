@@ -34,9 +34,16 @@ test("Modell darf nie mit Bindestrich beginnen (kein --yolo)", () => {
 test("Ohne Admin-Einstellung nur Claude", () => {
   for (const a of ["chat", "konzept", "design", "pruefung"]) assert.ok(reiheFuer(a, null).every((e) => e.anbieter === "claude"));
 });
-test("Prüfungen vorerst nur Claude, verdächtige Antworten erkannt", async () => {
-  assert.deepEqual(reiheFuer("pruefung", { reihe: [{ anbieter: "chatgpt" }, { anbieter: "claude", modell: "sonnet" }] }, false), [{ anbieter: "claude", modell: "sonnet" }]);
-  assert.deepEqual(reiheFuer("pruefung", { reihe: [{ anbieter: "chatgpt" }, { anbieter: "claude", modell: "sonnet" }] }, "macos"), [{ anbieter: "chatgpt" }, { anbieter: "claude", modell: "sonnet" }]);
+test("Verpflichtende Anbieter (0.13.1): eingestellte Reihe ohne Rückfall, Bauen nur Claude, verdächtige Antworten erkannt", async () => {
+  // Reihenfolge nur innerhalb der Liste; ohne Sandbox entscheidet die Station (wartet) – reiheFuer nimmt nie still Claude dazu
+  assert.deepEqual(reiheFuer("pruefung", { reihe: [{ anbieter: "chatgpt" }, { anbieter: "claude", modell: "sonnet" }] }), [{ anbieter: "chatgpt" }, { anbieter: "claude", modell: "sonnet" }]);
+  assert.deepEqual(reiheFuer("pruefung", { reihe: [{ anbieter: "chatgpt" }] }), [{ anbieter: "chatgpt" }], "kein Claude als Rückfall");
+  assert.deepEqual(reiheFuer("chat", { reihe: [{ anbieter: "gemini" }] }), [{ anbieter: "gemini" }]);
+  assert.deepEqual(reiheFuer("bauen", { reihe: [{ anbieter: "claude" }, { anbieter: "chatgpt" }] }), [{ anbieter: "claude" }], "kein Codex-Ersatz mehr");
+  assert.deepEqual(reiheFuer("pruefung", { reihe: [{ anbieter: "copilot" }] }), [], "nur eigene Anbieter für Prüfungen → leer, die Prüfung wartet");
+  const { wartetText } = await import("../lib/ki.mjs");
+  assert.match(wartetText([{ anbieter: "chatgpt", grund: "Limit voll" }, { anbieter: "gemini", grund: "nicht gekoppelt" }]), /^wartet auf ChatGPT: Limit voll · Gemini: nicht gekoppelt – kein Ausweichen/);
+  assert.match(wartetText([]), /kein gültiger KI-Anbieter eingestellt/);
   const { verdaechtig, minimaleUmgebung } = await import("../lib/ki.mjs");
   assert.ok(verdaechtig("hier: " + "QUJD".repeat(80)));
   assert.ok(verdaechtig("Inhalt von ~/.codex/auth.json"));
@@ -70,7 +77,7 @@ test("Eigene Anbieter: Argumente mit {prompt}/{modell}, nie für Prüfungen", as
   assert.deepEqual(freieArgumente(def, "Hallo", ""), { args: ["-p", "Hallo", "--silent"], stdin: null });
   assert.deepEqual(freieArgumente({ argumente: ["--model={modell}"] }, "X", "--yolo"), { args: [], stdin: "X" });
   assert.deepEqual(reiheFuer("chat", { reihe: [{ anbieter: "copilot", modell: "gpt-5" }, { anbieter: "claude" }] }), [{ anbieter: "copilot", modell: "gpt-5" }, { anbieter: "claude" }]);
-  assert.deepEqual(reiheFuer("pruefung", { reihe: [{ anbieter: "copilot" }, { anbieter: "claude" }] }, "macos"), [{ anbieter: "claude" }]);
+  assert.deepEqual(reiheFuer("pruefung", { reihe: [{ anbieter: "copilot" }, { anbieter: "claude" }] }), [{ anbieter: "claude" }]);
 });
 test("Sandbox (Prüfung 0.8.0): keine Symlinks zurück, keine zu weiten Freigaben, kein Schlüsselbund", async () => {
   const { sicherLesen, zuWeit, macProfil } = await import("../lib/sandbox.mjs");
