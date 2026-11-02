@@ -248,9 +248,9 @@ dem Klick „Verstanden, Vorschau anzeigen“ und zeigen dauerhaft „hier nicht
 - **Modellwahl:** Text-Auftrag oder kleine Änderung → kleines Modell; normale Funktion → mittleres; Datenbank, Rechte, Login, Migration,
   Ausbau oder Risiko HOCH → großes Modell; Fehlschlag → eine Stufe höher. Gewähltes Modell steht am Auftrag.
 - **Abo-Limits:** Claude Code meldet den Stand (5-Stunden-Fenster, Woche, Rücksetzzeit) im Lauf bzw. über die optionale Statuszeile
-  Seit 0.13.1 (Abo „Ultra“): Meldet Claude Code kein 5-Stunden-Fenster, steht dort „kein Limit“; modell-eigene Wochenfenster (z. B. Fable) werden angezeigt und für genau dieses Modell berücksichtigt – nur was gemeldet wird. KI-Anbieter je Aufgabe sind seit 0.13.1 verpflichtend (kein Ausweichen, „wartet auf …“), Programmieren nur Claude Code.
   (`werkzeuge/abo-statuszeile.mjs`, schreibt `~/.codeschmiede/abo.json`). Werkstatt speichert ihn in `ws_abo_limits` (live für alle im Projekt).
   Ab `abo_klein_ab_prozent` (Standard 75) eine Modellstufe kleiner, ab `abo_pause_ab_prozent` (95) keine neuen Aufträge bis zur Rücksetzung.
+  Seit 0.13.1 (Abo „Ultra“): Meldet Claude Code kein 5-Stunden-Fenster, steht dort „kein Limit“; modell-eigene Wochenfenster (z. B. Fable) werden angezeigt und für genau dieses Modell berücksichtigt – nur was gemeldet wird. KI-Anbieter je Aufgabe sind seit 0.13.1 verpflichtend (kein Ausweichen, „wartet auf …“), Programmieren nur Claude Code.
   Rechnerischer Wert jedes Laufs → `ws_verbrauch` (nur Information, keine Extrakosten).
 - Live-Log (Lesen, Ändern mit Ausschnitt, Befehle, Tests) ohne Geheimnisse; Erlaubnis-Anfragen für Befehle außerhalb der freigegebenen Liste;
   Rückfrage beendet den Lauf mit `RÜCKFRAGE:` und setzt beim Antworten fort; Ergebnis: Pull Request → Stand „Freigabe“.
