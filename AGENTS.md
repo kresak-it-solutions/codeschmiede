@@ -40,6 +40,10 @@ Zusammengeführt wird nur auf Gerhards Wort (in der Codeschmiede: Knopf „Freig
 - Werkstatt arbeitet nur im Arbeitsordner des Auftrags (eigener Zweig), nie direkt auf `main`; heikle Befehle brauchen Erlaubnis im Programm.
 
 ## Neue Anweisungen
+- **2026-11-01 22:18/22:38 – App-Designer wie der Design-Entwurf 2.0 (alles freigegeben, keine Rückfragen):** Der App-Designer zeigt die Masken
+  des Entwurfs 2.0 mit Leiste (Rolle · PC/Handy · Hell/Dunkel · Bausteine zeigen · Begründung), Seiten je Rolle, Inspektor und Token-Reglern;
+  Quelle ist das Projekt selbst (Design-System-Paket, kein Abschreiben). Zweiter Reiter „Echte App (Testfassung)“. Die Codeschmiede bleibt
+  smaragdgrün, gezeigt wird das Design der App. Rechte der App nie lockern. `docs/KONZEPT.md` › App-Designer 3.0.
 - **2026-11-01 22:18/22:38 – Befunde Sicherheit, Logik, Bedienung umsetzen (`docs/BEFUNDE-2026-11-01.md`, alles freigegeben, keine Rückfragen):**
   Sicherheit (0.10.1): Auf **keinem** PC der Codeschmiede läuft mehr Projekt-Code (auch nicht auf Entwickler-PCs) – Bauen und Tests nur in GitHub/Cloudflare;
   der Bau-Lauf liest nur im Arbeitsordner (Lese-Sperren auch hier), Websuche und Änderungen an Bau-/Test-Einstellungen fragen; `.npmrc`, Lock-Dateien

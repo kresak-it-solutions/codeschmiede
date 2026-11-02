@@ -2,10 +2,20 @@
 # script-src nur eigene Dateien (kein fremdes oder eingeschleustes Skript), Verbindungen nur zur Codeschmiede-Datenbank, zu GitHub (Änderungsprotokoll)
 # und zu den Testseiten von Codeschmiede und Trainer to go (version.json), Vorschau-Rahmen nur Trainer to go (Review M2: kein *.pages.dev). „ipc:“/„ipc.localhost“ = Brücke zum Programm.
 # Neues Projekt mit eigener Testseite/App-Adresse → hier in connect-src und frame-src eintragen (sonst bleibt seine Live-Vorschau leer).
+# frame-src 'self': nur für den Rahmen des Design-Entwurfs (/entwurf-rahmen/, App-Designer 3.0) – der läuft immer mit sandbox="allow-scripts"
+# (eigene, leere Herkunft) und hat unten eine eigene, enge CSP.
 # Die Werkstatt darf diese Datei nicht ändern (desktop/dienst/index.mjs › VERBOTEN).
 /*
-  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://mvzlbpijdvsjnemubofy.supabase.co; font-src 'self' data:; connect-src 'self' https://mvzlbpijdvsjnemubofy.supabase.co wss://mvzlbpijdvsjnemubofy.supabase.co https://raw.githubusercontent.com https://codeschmiede.pages.dev https://*.codeschmiede.pages.dev https://trainer-to-go.pages.dev https://*.trainer-to-go.pages.dev https://codeschmiede-updates.pages.dev ipc: http://ipc.localhost; frame-src https://trainer-to-go.pages.dev https://*.trainer-to-go.pages.dev https://trainer-to-go.at https://*.trainer-to-go.at; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://mvzlbpijdvsjnemubofy.supabase.co; font-src 'self' data:; connect-src 'self' https://mvzlbpijdvsjnemubofy.supabase.co wss://mvzlbpijdvsjnemubofy.supabase.co https://raw.githubusercontent.com https://codeschmiede.pages.dev https://*.codeschmiede.pages.dev https://trainer-to-go.pages.dev https://*.trainer-to-go.pages.dev https://codeschmiede-updates.pages.dev ipc: http://ipc.localhost; frame-src 'self' https://trainer-to-go.pages.dev https://*.trainer-to-go.pages.dev https://trainer-to-go.at https://*.trainer-to-go.at; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
   X-Content-Type-Options: nosniff
   Referrer-Policy: strict-origin-when-cross-origin
   Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=()
   X-Frame-Options: DENY
+
+# App-Designer 3.0: Rahmen für den eingebetteten Design-Entwurf eines Projekts. Er führt die eingebetteten Skripte des Entwurfs aus
+# (darum 'unsafe-inline'), darf aber nichts nachladen und nirgends verbinden; einbetten nur durch die Codeschmiede selbst.
+/entwurf-rahmen/*
+  ! Content-Security-Policy
+  ! X-Frame-Options
+  Content-Security-Policy: default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; font-src data: blob:; img-src data:; connect-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'
+  X-Frame-Options: SAMEORIGIN
