@@ -11,6 +11,9 @@
 import { createClient } from "npm:@supabase/supabase-js@2.45.4";
 import { sendPushNotification } from "npm:@mmmike/web-push@1.3.0/send";   // wie Trainer to go (base44/shared/webPush.ts)
 
+// Nur bekannte Push-Dienste (gleiche Liste wie ws_push_dienst_ok in Datenbank 0053) – Review #60: auch hier prüfen
+const DIENST = /^https:\/\/(fcm\.googleapis\.com|android\.googleapis\.com|updates\.push\.services\.mozilla\.com|push\.services\.mozilla\.com|web\.push\.apple\.com|[a-z0-9-]+\.push\.apple\.com|[a-z0-9.-]+\.notify\.windows\.com)(:443)?\//i;
+const warte = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const SUBJECT = "https://codeschmiede.pages.dev";   // Kontakt für die Push-Dienste (VAPID „sub“), ohne E-Mail-Adresse
 const MAX_JE_LAUF = 50;
 const kopf = { "Content-Type": "application/json", "Cache-Control": "no-store", "Access-Control-Allow-Origin": "https://codeschmiede.pages.dev" };
@@ -25,19 +28,27 @@ Deno.serve(async (req) => {
     if (!url.searchParams.has("schluessel")) return antwort({ ok: true });
     return publicKey ? antwort({ publicKey }) : antwort({ fehler: "Noch kein VAPID-Schlüssel – Ablauf „Web-Push-Schlüssel erzeugen“ starten" }, 503);
   }
-  if (req.method !== "POST") return antwort({ fehler: "Nur GET oder POST" }, 405);
-  if (!publicKey || !privateKey) return antwort({ fehler: "VAPID-Schlüssel fehlt" }, 503);
+  if (req.method !== "POST") return antwort({ ok: false }, 405);
+  if (!publicKey || !privateKey) return antwort({ ok: false }, 503);
 
   const db = createClient(Deno.env.get("SUPABASE_URL") || "", Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "", { auth: { persistSession: false } });
+  // Bremse (Review #60): höchstens ein Lauf je 2 s – sonst warten und einmal neu versuchen (dann läuft ein anderer Lauf nach unserem Eintrag)
+  for (let versuch = 0; ; versuch++) {
+    const { data: sek, error: eb } = await db.rpc("ws_push_bremse");
+    if (eb) return antwort({ ok: false }, 500);
+    if (Number(sek) === 0) break;
+    if (versuch > 0) return antwort({ ok: true });
+    await warte(Math.min(2100, Math.ceil(Number(sek) * 1000) + 50));
+  }
   const { data: zeilen, error } = await db.rpc("ws_push_abholen", { p_max: MAX_JE_LAUF });
-  if (error) return antwort({ fehler: "Warteschlange nicht lesbar" }, 500);   // Fehlertext der Datenbank nicht nach außen geben
+  if (error) return antwort({ ok: false }, 500);   // Fehlertext der Datenbank nicht nach außen geben
   const vapid = { publicKey, privateKey, subject: SUBJECT };
-  let gesamt = 0;
   for (const z of (zeilen || []) as Array<{ id: number; titel: string; text: string; url: string; tag: string; abos: Array<{ endpoint: string; p256dh: string; auth: string }> }>) {
     const nutzlast = { title: z.titel, body: z.text, url: z.url, tag: z.tag };
     const ok: string[] = []; const weg: string[] = []; const kaputt: string[] = [];
     let fehler = "";
     for (const a of z.abos || []) {
+      if (typeof a.endpoint !== "string" || !DIENST.test(a.endpoint)) { weg.push(String(a.endpoint)); continue; }   // unbekannter Dienst: Abo entfernen
       try {
         const zugestellt = await sendPushNotification({ endpoint: a.endpoint, keys: { p256dh: a.p256dh, auth: a.auth } }, nutzlast, vapid);
         if (zugestellt) ok.push(a.endpoint); else weg.push(a.endpoint);   // false = Gerät abgemeldet (404/410)
@@ -47,8 +58,7 @@ Deno.serve(async (req) => {
         else { kaputt.push(a.endpoint); fehler = `Push-Dienst antwortet ${st || "nicht"}`; }   // keine Adresse, kein Text ins Protokoll
       }
     }
-    gesamt += ok.length;
     await db.rpc("ws_push_ergebnis", { p_id: z.id, p_gesendet: ok.length, p_fehler: fehler || null, p_ok: ok, p_weg: weg, p_kaputt: kaputt });
   }
-  return antwort({ ok: true, zeilen: (zeilen || []).length, gesendet: gesamt });
+  return antwort({ ok: true });   // Review #60: keine Zahlen nach außen
 });
