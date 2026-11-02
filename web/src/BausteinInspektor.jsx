@@ -10,12 +10,13 @@ import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useStat
 import { Search, Shapes, Bot, PenLine, Loader2, CircleCheck, CircleAlert, TriangleAlert, RotateCcw, Send, Check, X, Sparkles, ShieldCheck, ExternalLink, Layers, Link2, MousePointerClick, Contrast } from "lucide-react";
 import { supabase } from "./supabase";
 import { useKiName } from "./kiName";
-import { useAutoHoehe } from "./autoHoehe";
 import { Markdown } from "./Markdown";
 import { useVerzeichnis } from "./verzeichnis";
 import { GRUPPEN, GROESSEN, ZUSTAENDE, SEITE, KATALOG, bausteinVon, bausteinWerteBereinigen, bausteineBereinigen, mitStandard, nurAbweichung } from "./bausteinKatalog";
 import { pruefeBaustein, zusammenfassung, verhaeltnis, SOLL } from "./kontrast";
 import { useBestaetigen } from "./bausteine/grund";
+import { ChatRahmen, ChatKopf, ChatVerlauf, ChatNachricht, ChatWartet, ChatEingabe } from "./bausteine/chat";
+import { Laden } from "./bausteine/zustand";
 const SymbolWahl = lazy(() => import("./SymbolWahl"));
 const SymbolZeichen = lazy(() => import("./SymbolWahl").then((m) => ({ default: m.SymbolZeichen })));
 
@@ -265,7 +266,7 @@ function Bearbeiten({ b, bs, darf, dunkel, projekt, onFreigabe }) {
       <section aria-label="Verwendet in" className="flex flex-col gap-1">
         <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1"><Link2 className="w-3.5 h-3.5" aria-hidden="true" />Verwendet in …</h4>
         {!b.quelle ? <p className="text-xs text-slate-500">Nur in der Galerie (noch kein zentraler Baustein).</p>
-          : !verz ? <Loader2 className="w-4 h-4 animate-spin text-emerald-700" /> : !quelle ? <p className="text-xs text-slate-500">Im Baustein-Verzeichnis nicht gefunden ({b.quelle}).</p>
+          : !verz ? <Laden zeilen={2} klein /> : !quelle ? <p className="text-xs text-slate-500">Im Baustein-Verzeichnis nicht gefunden ({b.quelle}).</p>
           : <><p className="text-xs">{quelle.verwendet} Stellen · <span className="font-mono">{quelle.datei}</span></p>
             <ul className="text-xs font-mono text-slate-500 max-h-24 overflow-auto">{(quelle.stellen || []).slice(0, 12).map((s) => <li key={s} className="truncate" title={s}>{s}</li>)}{quelle.verwendet > 12 && <li>… und weitere</li>}</ul></>}
       </section>
@@ -287,8 +288,8 @@ function Bearbeiten({ b, bs, darf, dunkel, projekt, onFreigabe }) {
 // Die KI darf als übernehmbaren Vorschlag NUR die Werte dieses Bausteins ändern (Werkstatt und Datenbank prüfen das Schema).
 const IDEEN = ["Besser lesbar machen", "Passend zur Hauptfarbe", "Freundlicher, runder", "Gut fürs Handy draußen", "Dunkelmodus abstimmen"];
 function BausteinChat({ b, bs, d, ich, projekt, darf, toast, ki }) {
-  const [text, setText] = useState(""); const feld = useRef(null); useAutoHoehe(feld, text);
-  const [liste, setListe] = useState([]); const [sende, setSende] = useState(false); const ende = useRef(null);
+  const [text, setText] = useState("");
+  const [liste, setListe] = useState([]); const [sende, setSende] = useState(false);
   const praefix = `[Baustein ${b.id}]`;
   const holen = useCallback(async () => {
     const { data } = await supabase.from("ws_design_chat").select("*").eq("projekt_id", projekt.id).is("entwurf_id", null).order("id", { ascending: false }).limit(200);
@@ -300,7 +301,6 @@ function BausteinChat({ b, bs, d, ich, projekt, darf, toast, ki }) {
     const ch = supabase.channel(`cs-baustein-chat-${projekt.id}-${b.id}`).on("postgres_changes", { event: "*", schema: "public", table: "ws_design_chat" }, holen).subscribe();
     return () => { supabase.removeChannel(ch); };
   }, [holen, projekt.id, b.id]);
-  useEffect(() => { ende.current?.scrollIntoView({ block: "end" }); }, [liste.length]);
   const voll = mitStandard(b.id, bs.alle[b.id], bs.stand.akzent);
   const werkstattAn = d.pcs.some((p) => p.benutzer_id === ich.id && p.an);
   const wartet = liste.some((m) => !m.frage_id && m.von === ich.id && ["offen", "laeuft"].includes(m.stand));
@@ -328,34 +328,24 @@ function BausteinChat({ b, bs, d, ich, projekt, darf, toast, ki }) {
   };
   const fragen = Object.fromEntries(liste.filter((m) => !m.frage_id).map((m) => [m.id, m]));
   return (
-    <div className="flex flex-col flex-1 min-h-0">
-      <div className="flex-1 overflow-auto p-3 space-y-2.5 text-sm">
-        {!liste.length && <p className="text-slate-500">Frag {ki.name} zu „{b.name}“. {ki.name} kennt die aktuellen Werte und schlägt nur Werte dieses Bausteins vor – übernommen wird nur, was du anklickst.</p>}
+    <ChatRahmen className="flex-1" label={`Chat zu ${b.name}`}>
+      <ChatKopf bezug={{ art: "baustein", name: b.name }} />
+      <ChatVerlauf anzahl={liste.length}>
+        {!liste.length && <p className="text-sm text-slate-500">Frag {ki.name} zu „{b.name}“. {ki.name} kennt die aktuellen Werte und schlägt nur Werte dieses Bausteins vor – übernommen wird nur, was du anklickst.</p>}
         {liste.map((m) => m.frage_id ? (
-          <div key={m.id} className="rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 p-2.5 max-w-[95%]">
-            <div className="text-xs font-bold text-slate-500 flex items-center gap-1"><Bot className="w-3.5 h-3.5" />{ki.von(m.ki)}</div>
+          <ChatNachricht key={m.id} seite="ki" kopf={ki.von(m.ki)}>
             <Markdown text={m.text} klein />
             {m.werte?.bausteine?.[b.id] && <VorschlagBaustein b={b} voll={voll} w={m.werte.bausteine[b.id]} m={m} kann={fragen[m.frage_id]?.von === ich.id && darf} onEntscheid={(e) => entscheide(m, e)} />}
-          </div>
+          </ChatNachricht>
         ) : (
-          <div key={m.id} className="ml-auto rounded-xl bg-emerald-50 dark:bg-emerald-950/50 p-2.5 max-w-[90%]">
-            <div className="text-xs font-bold text-slate-500">{m.von === ich.id ? "Du" : d.benutzer.find((u) => u.id === m.von)?.name || "Mitglied"} · {fmt(m.erstellt)}</div>
+          <ChatNachricht key={m.id} seite="ich" ton={m.stand === "fehler" ? "fehler" : undefined} kopf={<>{m.von === ich.id ? "Du" : d.benutzer.find((u) => u.id === m.von)?.name || "Mitglied"} · {fmt(m.erstellt)}</>}>
             <Markdown text={String(m.text).slice(praefix.length).trim()} klein />
-            {m.stand === "fehler" && <p className="text-xs text-red-600 mt-1">Nicht beantwortet</p>}
-          </div>))}
-        {wartet && <div className="flex items-center gap-2 text-slate-500">{werkstattAn ? <><Loader2 className="w-4 h-4 animate-spin" />{ki.name} denkt nach … (über deine Werkstatt)</> : <span className="text-amber-700 dark:text-amber-400">Deine Werkstatt ist aus – schalte sie oben ein.</span>}</div>}
-        <div ref={ende} />
-      </div>
-      {darf ? (
-        <form className="border-t border-slate-200 dark:border-slate-800 p-2.5 space-y-2" onSubmit={(e) => { e.preventDefault(); schicke(); }}>
-          <div className="flex flex-wrap gap-1">{IDEEN.map((i) => <button key={i} type="button" disabled={sende} onClick={() => schicke(i)} className="text-xs rounded-full border border-slate-300 dark:border-slate-700 px-2 py-0.5 hover:bg-slate-50 dark:hover:bg-slate-800">{i}</button>)}</div>
-          <div className="flex gap-1.5">
-            <textarea ref={feld} value={text} onChange={(e) => setText(e.target.value)} rows={3} maxLength={3000} placeholder={`Was soll sich an „${b.name}“ ändern?`} className={`${input} resize-none`}
-              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); schicke(); } }} />
-            <button className={`${btn} self-end`} disabled={sende || !text.trim()} title="Senden"><Send className="w-4 h-4" /></button>
-          </div>
-        </form>) : <p className="border-t border-slate-200 dark:border-slate-800 p-3 text-xs text-slate-500">Mitlesen möglich – fragen dürfen Entwickler mit Design-Recht.</p>}
-    </div>);
+          </ChatNachricht>))}
+        {wartet && <ChatWartet an={werkstattAn} ki={ki.name} text={`${ki.name} denkt nach … (über deine Werkstatt)`} aus="Deine Werkstatt ist aus – schalte sie oben ein." />}
+      </ChatVerlauf>
+      <ChatEingabe value={text} onChange={setText} busy={sende} aktionen={{ besprechen: () => schicke() }} maxLength={3000} platzhalter={`Was soll sich an „${b.name}“ ändern?`}
+        gesperrt={darf ? null : "Mitlesen möglich – fragen dürfen Entwickler mit Design-Recht."} ideen={IDEEN} onIdee={(i) => schicke(i)} />
+    </ChatRahmen>);
 }
 
 function VorschlagBaustein({ b, voll, w, m, kann, onEntscheid }) {

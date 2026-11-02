@@ -9,10 +9,14 @@ export function useWerkstattDaten(me, projektId) {
   const leer = { projekte: [], mitglieder: [], bereiche: [], gruppen: [], features: [], auftraege: [], aufbau: [], benutzer: [], rechte: [], pcs: [], verbrauch: [], gesamt: 0, einstellungen: null, abo: [] };
   const [d, setD] = useState(leer);
   const [laden, setLaden] = useState(true);
+  const [ladeFehler, setLadeFehler] = useState(null); const [geladen, setGeladen] = useState(false);   // Befund B9: Fehler beim Laden sichtbar mit „Erneut versuchen“
   // Befund B8 (01.11.2026): echter Zustand des Realtime-Kanals statt immer „Live synchronisiert“
   const [live, setLive] = useState("verbindet");
   const timer = useRef(null);
   const holen = useCallback(async () => {
+    try { await holenRoh(); setLadeFehler(null); setGeladen(true); } catch (e) { setLadeFehler(e); } finally { setLaden(false); }
+  }, [projektId]); // eslint-disable-line react-hooks/exhaustive-deps
+  const holenRoh = async () => {
     const [pj, mg, u, r, p, e, vm, vg, ab] = await Promise.all([
       supabase.from("ws_projekte").select("*").eq("archiviert", false).order("name"),
       supabase.from("ws_projekt_mitglieder").select("*"),
@@ -24,6 +28,7 @@ export function useWerkstattDaten(me, projektId) {
       supabase.rpc("ws_verbrauch_gesamt_monat"),
       supabase.from("ws_abo_limits").select("*"),
     ]);
+    if (pj.error) throw pj.error;
     // Gewähltes Projekt nur, wenn es (noch) da und nicht archiviert ist – sonst das erste
     const pid = (projektId && (pj.data || []).some((x) => x.id === projektId)) ? projektId : pj.data?.[0]?.id;
     let b = [], g = [], f = [], a = [], erl = [], auf = [];
@@ -50,8 +55,7 @@ export function useWerkstattDaten(me, projektId) {
     }
     setD({ projekte: pj.data || [], mitglieder: mg.data || [], bereiche: b, gruppen: g, features: f, auftraege: a, erlaubnisse: erl, aufbau: auf, benutzer: u.data || [], rechte: r.data || [],
       pcs: p.data || [], einstellungen: e.data || null, verbrauch: vm.data || [], gesamt: Number(vg.data || 0), abo: ab.data || [], projektId: pid });
-    setLaden(false);
-  }, [projektId]);
+  };
   useEffect(() => {
     if (!me) return undefined;
     setLaden(true); holen();
@@ -67,7 +71,7 @@ export function useWerkstattDaten(me, projektId) {
     });
     return () => { aufgeraeumt = true; supabase.removeChannel(ch); clearTimeout(timer.current); };
   }, [me, holen, projektId]);
-  return { ...d, laden, holen, live };
+  return { ...d, laden, holen, live, ladeFehler, geladen };
 }
 
 export function useAuftragDetails(ids) {

@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { supabase } from "./supabase";
 import { pruefeBaustein, zusammenfassung, verhaeltnis, kontrast, lesbarMachen, istHex, SOLL } from "./kontrast";
+import { Laden } from "./bausteine/zustand";
 const SymbolWahl = lazy(() => import("./SymbolWahl"));
 const SymbolZeichen = lazy(() => import("./SymbolWahl").then((m) => ({ default: m.SymbolZeichen })));
 
@@ -319,7 +320,7 @@ export default function BausteinAssistent({ projekt, d, toast, werte, dunkel = f
           ) : (
             <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]" aria-label="Bauen lassen">
               <div className="flex flex-col gap-3">
-                <h4 className="font-display font-bold text-[17px]">4 · Als Auftrag bauen lassen</h4>
+                <h4 className="font-display font-bold text-[17px]">4 · Als Auftrag</h4>
                 <p className="text-sm text-slate-600 dark:text-slate-300 flex items-start gap-2"><Hammer className="w-4 h-4 shrink-0 mt-0.5 text-emerald-700" aria-hidden="true" />Ein neuer Baustein ist neuer Code: Claude baut ihn als Auftrag in der Design-Gruppe, mit Prüfungen und deiner Freigabe. Erst danach ist er in der App verfügbar.</p>
                 <dl className="text-sm grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1">
                   <dt className="text-slate-500">Name</dt><dd className="font-semibold break-words">{w.name}</dd>
@@ -330,7 +331,7 @@ export default function BausteinAssistent({ projekt, d, toast, werte, dunkel = f
                 </dl>
                 {!g && <p className="text-sm text-red-700 dark:text-red-300">Der App-Designer ist für dieses Projekt noch nicht eingerichtet.</p>}
                 <div className="flex flex-wrap gap-2 items-center">
-                  <button type="button" className={btn} disabled={busy || !g || w.name.trim().length < 2} onClick={bauen}>{busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}Als Auftrag bauen lassen</button>
+                  <button type="button" className={btn} disabled={busy || !g || w.name.trim().length < 2} onClick={bauen}>{busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Hammer className="w-4 h-4" />}Als Auftrag</button>
                   <span className="text-xs text-slate-500 flex items-center gap-1"><ShieldCheck className="w-3.5 h-3.5" aria-hidden="true" />Freigabe → Sicherheitsprüfung → Zusammenführen → Testfassung → live</span>
                 </div>
                 <BausteinAuftraege d={d} projekt={projekt} />
@@ -364,7 +365,7 @@ export const standText = (s) => STAND[s]?.[0] || s;
 export function BausteinAuftraege({ d, projekt, nur = null, offen = false, max = 6 }) {
   const liste = d.auftraege.filter((a) => istDesignAuftrag(a, projekt) && (nur == null || a.id === nur) && (!offen || !["wissen", "erledigt"].includes(a.stand)))
     .sort((a, b) => b.id - a.id).slice(0, max);
-  if (!liste.length) return nur == null ? <p className="text-xs text-slate-500">Noch keine neuen Bausteine als Auftrag.</p> : <p className="text-xs text-slate-500 inline-flex items-center gap-1"><Loader2 className="w-3.5 h-3.5 animate-spin" />Auftrag wird geladen …</p>;
+  if (!liste.length) return nur == null ? <p className="text-xs text-slate-500">Noch keine neuen Bausteine als Auftrag.</p> : <Laden zeilen={1} klein text="Auftrag wird geladen" />;
   return (
     <ul className="flex flex-col gap-1 w-full text-left" aria-label="Aufträge für neue Bausteine">{liste.map((a) => { const [t, c] = STAND[a.stand] || [a.stand, "amber"]; return (
       <li key={a.id} className="flex items-center gap-2 text-xs rounded-lg border border-slate-200 dark:border-slate-800 px-2 py-1.5">

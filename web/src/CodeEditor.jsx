@@ -6,6 +6,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Code2, FileText, Lock, Loader2, Search, GitPullRequest, X, RefreshCw, Info, Check, FolderOpen } from "lucide-react";
 import { supabase } from "./supabase";
 import { useEscape, useFokusfalle } from "./bausteine/grund";
+import { Laden } from "./bausteine/zustand";
 
 const fehler = (e) => (e?.message || "Unbekannter Fehler").replace(/^.*?ERROR:\s*/, "");
 const btn = "inline-flex items-center justify-center gap-2 h-10 px-4 rounded-xl bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 text-white font-display font-bold tracking-wide transition";
@@ -124,7 +125,7 @@ export default function CodeEditor({ d, ich, toast, onAuftrag }) {
           <div className="p-2 border-b border-slate-200 dark:border-slate-800 relative"><Search className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
             <input className={`${input} pl-8 py-1.5 text-sm`} placeholder="Datei suchen …" aria-label="Datei suchen" value={q} onChange={(e) => setQ(e.target.value)} /></div>
           <div className="flex-1 overflow-auto p-1.5 text-sm">
-            {laedt && <p className="p-3 text-slate-500 flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" />Werkstatt liest den Zweig …</p>}
+            {laedt && <Laden zeilen={6} klein text="Werkstatt liest den Zweig" />}
             {baumFehler && <p className="p-3 text-red-700 dark:text-red-300 text-xs">{baumFehler}</p>}
             {!laedt && liste.map((x, i) => {
               const o = ordnerVon(x.p); const neuOrdner = i === 0 || ordnerVon(liste[i - 1].p) !== o;
@@ -150,7 +151,7 @@ export default function CodeEditor({ d, ich, toast, onAuftrag }) {
               </span>))}
           </div>
           {!aktiv ? <div className="flex-1 grid place-items-center text-sm text-slate-500 p-6 text-center">Links eine Datei wählen.</div>
-            : datei?.laedt ? <div className="flex-1 grid place-items-center text-sm text-slate-500"><span className="flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" />Datei wird gelesen …</span></div>
+            : datei?.laedt ? <Laden art="text" zeilen={10} className="flex-1" text="Datei wird gelesen" />
             : datei?.fehler ? <div className="flex-1 p-4 text-sm text-red-700 dark:text-red-300">{datei.fehler}</div>
             : datei?.inhalt == null ? <div className="flex-1 p-4 text-sm text-slate-500 flex items-start gap-2"><Info className="w-4 h-4 mt-0.5" />{datei?.hinweis || "Kein Inhalt"}</div>
             : (<div className="flex-1 min-h-[360px] grid grid-cols-[52px_minmax(0,1fr)] bg-slate-50 dark:bg-[#0a1613] font-mono text-[13px] leading-5">

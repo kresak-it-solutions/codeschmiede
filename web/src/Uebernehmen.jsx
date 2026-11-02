@@ -8,6 +8,7 @@
 import React, { Suspense, lazy } from "react";
 import { CheckCheck, Hammer, Zap, Palette, Send, FlaskConical, Rocket, Info, ExternalLink } from "lucide-react";
 import { BausteinAuftraege, istDesignAuftrag } from "./BausteinAssistent";
+import { Laden } from "./bausteine/zustand";
 const SeitenModus = lazy(() => import("./SeitenModus"));
 
 const card = "rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900";
@@ -40,7 +41,7 @@ export default function Uebernehmen({ projekt, d, ich, werte, dunkel, darf, toas
 
       <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="min-w-0 flex flex-col gap-2">
-          <Suspense fallback={<p className="text-sm text-slate-500 p-4">Lädt …</p>}>
+          <Suspense fallback={<Laden zeilen={4} />}>
             <SeitenModus key="uebernehmen" tab="freigabe" titel="Wirkt sofort nach Freigabe (Design-Paket)" kompakt projekt={projekt} d={d} ich={ich} werte={werte} dunkel={dunkel} darf={darf} toast={toast} onFreigabeOffen={onFreigabeOffen} />
           </Suspense>
         </div>

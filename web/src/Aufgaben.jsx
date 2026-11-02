@@ -7,10 +7,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ClipboardList, Plus, Loader2, Save, Trash2, Send, X, Paperclip, Link2, FileText, CalendarDays, ImageIcon, Download, ExternalLink,
-  MessageSquare, Undo2, Info, User, ShieldAlert,
-} from "lucide-react";
+  MessageSquare, Undo2, Info, User, ShieldAlert, Hammer, ListTodo } from "lucide-react";
 import { supabase } from "./supabase";
 import { isDesktop, tauri } from "./desktop";
+import { Laden, Leerzustand, Fehlerzustand } from "./bausteine/zustand";
 
 const btn = "inline-flex items-center justify-center gap-1.5 h-9 px-3 rounded-lg bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 text-white text-sm font-semibold transition";
 const ghost = "inline-flex items-center justify-center gap-1.5 h-9 px-3 rounded-lg border border-slate-300 dark:border-slate-700 text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-50 transition";
@@ -158,7 +158,7 @@ export function AnhangListe({ anhaenge, toast, onEntfernen, klein }) {
 
 // ---------- Daten ----------
 function useAufgabenDaten(projektId) {
-  const [d, setD] = useState({ aufgaben: null, anhaenge: [], sendungen: [], fehlt: false });
+  const [d, setD] = useState({ aufgaben: null, anhaenge: [], sendungen: [], fehlt: false, ladeFehler: null });
   const timer = useRef(null);
   const holen = useCallback(async () => {
     const [a, b, c] = await Promise.all([
@@ -166,7 +166,11 @@ function useAufgabenDaten(projektId) {
       supabase.from("ws_aufgabe_anhaenge").select("*").eq("projekt_id", projektId).eq("fertig", true).order("id").limit(5000),
       supabase.from("ws_aufgabe_sendungen").select("id, aufgabe_id, gruppe_id, feature_id, von, erstellt, auftrag_id, als_auftrag_am, zurueckgezogen").eq("projekt_id", projektId).order("id").limit(5000),
     ]);
-    setD({ aufgaben: a.data || [], anhaenge: b.data || [], sendungen: c.data || [], fehlt: !!a.error });
+    // Fehlende Tabelle (42P01) = Datenbank 0042 fehlt; jeder andere Fehler = Fehlerzustand mit „Erneut versuchen“ (Befund B9)
+    const fehlt = a.error?.code === "42P01" || /does not exist/i.test(a.error?.message || "");
+    const ladeFehler = !fehlt ? (a.error || b.error || c.error || null) : null;
+    if (ladeFehler) { setD((alt) => ({ ...alt, ladeFehler })); return; }
+    setD({ aufgaben: a.data || [], anhaenge: b.data || [], sendungen: c.data || [], fehlt, ladeFehler: null });
   }, [projektId]);
   useEffect(() => {
     holen();
@@ -222,7 +226,7 @@ export default function Aufgaben({ d, ich, toast, onOeffneChat }) {
   const ziel = (s) => (s.feature_id ? `Feature · ${d.features.find((f) => f.id === s.feature_id)?.name || s.feature_id}` : `Gruppe · ${d.gruppen.find((g) => g.id === s.gruppe_id)?.name || s.gruppe_id}`);
 
   if (daten.fehlt) return <div className={`${card} p-6 text-sm text-slate-500 flex items-center gap-2`}><Info className="w-5 h-5" />Die Aufgaben brauchen die Datenbank 0042 (supabase/migrations/0042_aufgaben.sql). Bitte einspielen.</div>;
-  if (daten.aufgaben === null) return <p className="text-sm text-slate-500 flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" />Lädt …</p>;
+  if (daten.aufgaben === null) return daten.ladeFehler ? <Fehlerzustand titel="Die Aufgaben konnten nicht geladen werden" fehler={daten.ladeFehler} onErneut={daten.holen} /> : <Laden zeilen={5} text="Aufgaben werden geladen" />;
 
   const zahl = (s) => daten.aufgaben.filter((a) => s === "alle" || a.status === s).length;
   const sicht = daten.aufgaben
@@ -253,7 +257,9 @@ export default function Aufgaben({ d, ich, toast, onOeffneChat }) {
 
       <div className="grid gap-4 grid-cols-[minmax(0,1fr)] lg:grid-cols-[minmax(0,1fr)_minmax(0,520px)] items-start">
         <ul className="flex flex-col gap-2" aria-label="Liste der Aufgaben">
-          {!sicht.length && <li className={`${card} p-6 text-sm text-slate-500 text-center`}>{daten.aufgaben.length ? "Keine Aufgaben in dieser Ansicht." : "Noch keine Aufgaben. Mit „Neue Aufgabe“ hältst du fest, was geändert werden soll – mit Screenshots, Dateien und Links."}</li>}
+          {!sicht.length && <li className={card}>{daten.aufgaben.length
+            ? <Leerzustand klein Symbol={ListTodo} titel="Keine Aufgaben in dieser Ansicht" text="Filter oben ändern, um die übrigen zu sehen." aktion={filter !== "alle" || wer !== "alle" ? { text: "Alle zeigen", onClick: () => { setFilter("alle"); setWer("alle"); } } : null} />
+            : <Leerzustand Symbol={ListTodo} titel="Noch keine Aufgaben" text="Halte fest, was geändert werden soll – mit Screenshots, Dateien und Links." aktion={kann ? { text: "Neue Aufgabe", Symbol: Plus, onClick: () => setSel("neu") } : null} />}</li>}
           {sicht.map((a) => {
             const an = daten.anhaenge.filter((x) => x.aufgabe_id === a.id); const nb = an.filter((x) => x.art === "bild").length;
             const letzte = [...daten.sendungen].reverse().find((s) => s.aufgabe_id === a.id && !s.zurueckgezogen);
@@ -506,7 +512,7 @@ export function AufgabenImChat({ g, f, d, ich, kannAuftrag, toast }) {
       {s.links?.length > 0 && <div className="flex flex-col gap-1">{s.links.map((l, i) => <SichererLink key={i} titel={l.titel} url={l.url} />)}</div>}
       <AnhangListe anhaenge={anh.filter((x) => (s.anhaenge || []).includes(x.id))} toast={toast} klein />
       <div className="flex flex-wrap gap-2 items-center">
-        {kannAuftrag ? <button type="button" className={btn} disabled={busy === s.id} onClick={() => alsAuftrag(s)}>{busy === s.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}Als Auftrag</button>
+        {kannAuftrag ? <button type="button" className={btn} disabled={busy === s.id} onClick={() => alsAuftrag(s)}>{busy === s.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Hammer className="w-4 h-4" />}Als Auftrag</button>
           : <span className="text-xs text-slate-500">Einen Auftrag daraus macht, wer in diesem Bereich Aufträge geben darf.</span>}
         {kannBearbeiten && <button type="button" className={ghost} onClick={() => zurueck(s)}><Undo2 className="w-4 h-4" />Zurückziehen</button>}
         <span className="text-xs text-slate-500">Anhänge gehen mit dem Auftrag an die Werkstatt (nur als Daten).</span>

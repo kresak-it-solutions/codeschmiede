@@ -5,6 +5,7 @@ import { isDesktop, tauri } from "./desktop";
 import { designFreigabeStand } from "./designFrage";
 import { kiAnzeigename } from "./kiName";
 import { useBestaetigen, useFokusfalle } from "./bausteine/grund";
+import { Laden } from "./bausteine/zustand";
 
 // Einrichtungs-Assistent (Gerhard 2026-10-22/23: „Anleitung, wie man Claude und die anderen Produkte koppeln muss“, Assistent mit Prüfung,
 // beim ersten Start und jederzeit, Statusleiste; 14:27: ChatGPT-Kopplung im Assistenten erklären). Prüft jeden Schritt echt auf diesem PC.
@@ -113,7 +114,7 @@ export default function Einrichtung({ ich, d, toast, onClose }) {
         </ul>
         <p className="text-xs text-slate-500">Passwörter gibst du nur in den offiziellen Programmen bzw. im Browser ein – die Codeschmiede sieht sie nie.</p>
       </div>) },
-    { titel: "Programm & Werkzeuge", icon: Monitor, inhalt: !st ? <Loader2 className="w-5 h-5 animate-spin text-emerald-700" /> : !st.desk ? (
+    { titel: "Programm & Werkzeuge", icon: Monitor, inhalt: !st ? <Laden zeilen={2} klein text="Programm wird geprüft" /> : !st.desk ? (
       <div className="flex flex-col gap-2 text-sm"><p>Du bist im Browser. Die Werkstatt läuft nur im Programm <b>Codeschmiede</b> für {mac ? "Mac" : "Windows"}.</p>
         <a className={btn} href="https://github.com/kresak-it-solutions/codeschmiede/releases/latest" target="_blank" rel="noopener noreferrer"><ExternalLink className="w-4 h-4" />Programm herunterladen</a>
         <p className="text-xs text-slate-500">Installieren, öffnen, anmelden – der Assistent startet dann im Programm von selbst.</p></div>) : (

@@ -3,6 +3,7 @@ import { kiFarbe } from "./kiFarbe";
 import { Cpu, Loader2, Save, ArrowUp, ArrowDown, Plus, X, RefreshCw, Lock, CircleCheck, CircleAlert, Copy, History, PlugZap, Globe, SquareTerminal, Check } from "lucide-react";
 import { supabase } from "./supabase";
 import { useFokusfalle } from "./bausteine/grund";
+import { Laden } from "./bausteine/zustand";
 
 // KI-Anbieter (Entwurf 1.2, freigegeben von Gerhard 2026-10-23 15:00): Wer übernimmt was – Anbieter und Modell je Aufgabe.
 // Zuständigkeiten stellt nur der Admin ein (14:59). Bauen ist fest Claude (14:27). Jede Person koppelt ihre Anbieter auf dem eigenen PC.
@@ -211,7 +212,7 @@ export function KiProtokoll() {
       setListe([...(c.data || []).map((x) => ({ ...x, wo: `Chat · ${x.ort}` })), ...(dz.data || []).map((x) => ({ ...x, wo: "Design-Chat" }))].sort((a, b) => Date.parse(b.erstellt) - Date.parse(a.erstellt)));
     })();
   }, []);
-  if (!liste) return <Loader2 className="w-5 h-5 animate-spin text-emerald-700" />;
+  if (!liste) return <Laden zeilen={4} klein text="KI-Protokoll wird geladen" />;
   if (!liste.length) return <p className="text-sm text-slate-500">Noch keine Antworten mit Vermerk (ab Programm 0.7.0).</p>;
   return (
     <div className="overflow-x-auto"><table className="w-full text-sm">
@@ -311,7 +312,7 @@ export default function KiAnbieter({ d, ich, toast }) {
       <div className={`${card} overflow-hidden`}>
         <div className="px-3 py-2 bg-slate-50 dark:bg-slate-950 flex flex-wrap items-center gap-2"><h3 className="font-display font-bold">Zuständigkeiten</h3><span className="text-xs text-slate-500">{admin ? "Nur du als Admin stellst das ein." : "Stellt der Admin ein."}</span></div>
         {zust?.fehlt ? <p className="p-4 text-sm text-amber-700 dark:text-amber-300">Die Datenbank-Erweiterung 0012 (KI-Anbieter) ist noch nicht eingespielt.</p>
-          : !zust ? <div className="p-4"><Loader2 className="w-5 h-5 animate-spin text-emerald-700" /></div>
+          : !zust ? <Laden zeilen={4} text="Zuständigkeiten werden geladen" />
           : AUFGABEN.map(([id, titel, hinweis]) => <Zeile key={id} id={id} titel={titel} hinweis={hinweis} eintrag={zust[id]} admin={admin} onSpeichern={speichern} anbieter={liste} />)}
         <p className="px-3 py-2 text-xs text-slate-500 border-t border-slate-100 dark:border-slate-800">Solange hier nichts gespeichert ist, antwortet nur Claude. Andere Anbieter bekommen Dokumentation und Dateiliste als Text und starten in einem leeren Ordner mit minimaler Umgebung; sie ändern nichts. <b>Restrisiko:</b> Ihre eingebauten Werkzeuge könnten technisch Dateien des PCs lesen – Antworten mit verdächtigem Inhalt werden verworfen. Prüfen und Bauen macht deshalb nur Claude. „Automatisch“ = Standardmodell des Anbieters.</p>
       </div>

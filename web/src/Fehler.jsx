@@ -1,9 +1,10 @@
 // Fehler-Meldungen aus den Apps (Entwurf 1.0, freigegeben von Gerhard 2026-10-24 16:22, Datenbank 0035).
 // Gleiche Fehler zusammengefasst und gezählt, nur Technik (bereinigt in der App und in der Datenbank). „Als Auftrag“, „Erledigt“, „Ignorieren“.
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Loader2, Send, Check, EyeOff, RotateCcw, ExternalLink, KeyRound, Copy } from "lucide-react";
+import { AlertTriangle, Loader2, Send, Check, EyeOff, RotateCcw, ExternalLink, KeyRound, Copy, Hammer } from "lucide-react";
 import { supabase } from "./supabase";
 import { useFokusfalle } from "./bausteine/grund";
+import { Laden, Leerzustand, Fehlerzustand } from "./bausteine/zustand";
 
 const fehler = (e) => (e?.message || "Unbekannter Fehler").replace(/^.*?ERROR:\s*/, "");
 const btn = "inline-flex items-center justify-center gap-1.5 h-9 px-3 rounded-lg bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 text-white text-sm font-semibold transition";
@@ -13,17 +14,18 @@ const input = "w-full rounded-lg border border-slate-300 dark:border-slate-700 b
 const wann = (t) => (t ? new Date(t).toLocaleString("de-AT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "–");
 const GERAET = { handy: "Handy", tablet: "Tablet", pc: "PC", unbekannt: "?" };
 
-export default function Fehler({ d, ich, toast, onAuftrag }) {
+export default function Fehler({ d, ich, toast, onAuftrag, onAnbindungen }) {
   const fokusfalle = useFokusfalle();   // Fokus bleibt im Dialog (Befund B2)
   const projekt = d.projekte.find((p) => p.id === d.projektId);
   const rolle = ich.rolle === "admin" ? "admin" : d.mitglieder.find((m) => m.projekt_id === d.projektId && m.benutzer_id === ich.id)?.rolle;
   const darf = rolle === "admin" || rolle === "entwickler";
   const gruppen = useMemo(() => d.gruppen.filter((g) => rolle === "admin" || (rolle === "entwickler" && d.rechte.some((r) => r.benutzer_id === ich.id && r.bereich_id === g.bereich_id && r.auftraege))), [d.gruppen, d.rechte, rolle, ich.id]);
-  const [liste, setListe] = useState(null); const [filter, setFilter] = useState("offen"); const [busy, setBusy] = useState(0);
+  const [liste, setListe] = useState(null); const [filter, setFilter] = useState("offen"); const [busy, setBusy] = useState(0); const [ladeFehler, setLadeFehler] = useState(null);
   const [wahl, setWahl] = useState(null); const [gid, setGid] = useState("");
   const laden = useCallback(async () => {
-    const { data } = await supabase.from("ws_fehler").select("*").eq("projekt_id", d.projektId).order("zuletzt", { ascending: false }).limit(300);
-    setListe(data || []);
+    const { data, error } = await supabase.from("ws_fehler").select("*").eq("projekt_id", d.projektId).order("zuletzt", { ascending: false }).limit(300);
+    if (error) { setLadeFehler(error); return; }
+    setLadeFehler(null); setListe(data || []);
   }, [d.projektId]);
   useEffect(() => {
     laden();
@@ -53,8 +55,10 @@ export default function Fehler({ d, ich, toast, onAuftrag }) {
         </div>
       </div>
       <p className="text-sm text-slate-500">Abstürze aus der Live- und Testfassung – nur Technik, keine Personendaten. Gleiche Fehler werden zusammengefasst. Nach 30 Tagen ohne neue Meldung wird gelöscht.</p>
-      {liste === null ? <p className="text-sm text-slate-500 flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" />Lädt …</p>
-        : !sicht.length ? <p className={`${card} p-4 text-sm text-slate-500`}>{liste.length ? "Nichts in dieser Ansicht." : "Noch keine Fehler gemeldet. Ist der Melder eingerichtet? → „Anbindungen“ › Fehler-Meldungen."}</p>
+      {ladeFehler && <Fehlerzustand titel={liste ? "Neu laden hat nicht geklappt – du siehst den letzten Stand" : "Die Fehler-Meldungen konnten nicht geladen werden"} fehler={ladeFehler} onErneut={laden} klein={!!liste} />}
+      {liste === null ? (!ladeFehler && <Laden zeilen={4} text="Fehler-Meldungen werden geladen" />)
+        : !sicht.length ? <div className={card}>{liste.length ? <Leerzustand klein Symbol={Check} titel="Nichts in dieser Ansicht" text="Mit dem Filter oben siehst du die übrigen Meldungen." aktion={filter !== "alle" ? { text: "Alle zeigen", onClick: () => setFilter("alle") } : null} />
+            : <Leerzustand Symbol={Check} titel="Noch keine Fehler gemeldet" text="Ist der Melder eingerichtet? Unter „Anbindungen“ › Fehler-Meldungen steht, wie die App Fehler meldet." aktion={onAnbindungen ? { text: "Zu den Anbindungen", onClick: onAnbindungen } : null} />}</div>
         : <ul className="flex flex-col gap-2">
             {sicht.map((f) => (
               <li key={f.id} className={`${card} p-3 grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1.5 ${f.stand === "offen" && f.neu ? "border-l-4 border-l-amber-500" : f.stand === "auftrag" ? "border-l-4 border-l-emerald-600" : ""}`}>
@@ -78,7 +82,7 @@ export default function Fehler({ d, ich, toast, onAuftrag }) {
                 <div className="text-right font-display text-2xl leading-none">{f.anzahl}<span className="block text-xs font-body text-slate-500">mal</span></div>
                 {darf && <div className="col-span-2 flex flex-wrap gap-1.5">
                   {f.stand === "offen" && <>
-                    <button type="button" className={btn} disabled={!!busy || !gruppen.length} onClick={() => setWahl(f)}><Send className="w-4 h-4" />Als Auftrag</button>
+                    <button type="button" className={btn} disabled={!!busy || !gruppen.length} onClick={() => setWahl(f)}><Hammer className="w-4 h-4" />Als Auftrag</button>
                     <button type="button" className={ghost} disabled={!!busy} onClick={() => stand(f, "erledigt")}><Check className="w-4 h-4" />Erledigt</button>
                     <button type="button" className={ghost} disabled={!!busy} onClick={() => stand(f, "ignoriert")}><EyeOff className="w-4 h-4" />Ignorieren</button></>}
                   {f.stand === "auftrag" && <><button type="button" className={ghost} onClick={onAuftrag}><ExternalLink className="w-4 h-4" />Zur Zentrale</button>
