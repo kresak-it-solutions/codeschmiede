@@ -95,14 +95,33 @@ select ws_bildschirmfoto_melden('00000000-0000-0000-0000-0000000000a2', (select 
 select ws_bildschirmfoto_melden('00000000-0000-0000-0000-0000000000a1', (select id from foto), '00000000-0000-0000-0000-00000000000a/trainer-to-go/11111111-1111-1111-1111-111111111111.png', 1000, 800, 600) \g /dev/null
 select stand, ergebnis -> 'bild' ->> 'breite' breite from ws_projekt_aktionen where id = (select id from foto);
 
-\echo [10] In den Chat: Nachricht ohne das Foto -> FEHLER; mit dem Foto als Anhang -> OK (chat_id gesetzt); zweimal -> FEHLER
-insert into ws_claude_chat(projekt_id, ort, text) values ('trainer-to-go','konzept','Ohne Foto');
-select ws_bildschirmfoto_gesendet((select id from foto), (select max(id) from ws_claude_chat where text = 'Ohne Foto'));
-insert into ws_claude_chat(projekt_id, ort, text, anhaenge) values ('trainer-to-go','konzept','Bildschirmfoto aus der Windows-Sandbox',
-  '[{"pfad":"00000000-0000-0000-0000-00000000000a/trainer-to-go/11111111-1111-1111-1111-111111111111.png","name":"bildschirmfoto.png","typ":"image/png","groesse":1000}]');
-select ws_bildschirmfoto_gesendet((select id from foto), (select max(id) from ws_claude_chat where text like 'Bildschirmfoto%')) \g /dev/null
-select chat_id is not null verknuepft from ws_projekt_aktionen where id = (select id from foto);
-select ws_bildschirmfoto_gesendet((select id from foto), (select max(id) from ws_claude_chat where text like 'Bildschirmfoto%'));
+\echo [10] In den Chat (eine Funktion, atomar): Entwickler -> FEHLER; Zusatz über 2000 Zeichen -> FEHLER; richtig -> 1 Nachricht mit genau 1 Anhang, verknüpft; zweimal -> FEHLER, weiter 1 Nachricht
+:DEV
+select ws_bildschirmfoto_senden((select id from foto), null);
+:ADM
+select ws_bildschirmfoto_senden((select id from foto), repeat('x', 2001));
+select ws_bildschirmfoto_senden((select id from foto), E'Knopf reagiert nicht\u202e\u0007') > 0 gesendet;
+select count(*) nachrichten, min(jsonb_array_length(anhaenge)) anhaenge, bool_and(text like 'Bildschirmfoto aus der Windows-Sandbox zu Feature „%“ (F-080), Stand main. Bitte ansehen.%Knopf reagiert nicht%') text_ok,
+       bool_and(text !~ '[\u202e\u0007]') ohne_steuerzeichen from ws_claude_chat where anhaenge is not null;
+select chat_id = (select max(id) from ws_claude_chat) verknuepft from ws_projekt_aktionen where id = (select id from foto);
+select ws_bildschirmfoto_senden((select id from foto), null);
+select count(*) nachrichten_danach from ws_claude_chat where anhaenge is not null;
+\echo [10a] Bild im Speicher weg -> FEHLER; unbestätigtes Foto älter als 24 Std. -> Datei in die Lösch-Warteschlange, Ergebnis „verfallen“; bestätigtes bleibt
+reset role;
+insert into ws_projekt_aktionen(projekt_id, art, stand, ziel_pc, pc, von, ergebnis, geaendert) values
+ ('trainer-to-go','bildschirmfoto','fertig','00000000-0000-0000-0000-0000000000a1','00000000-0000-0000-0000-0000000000a1','00000000-0000-0000-0000-00000000000a',
+  '{"bild":{"pfad":"00000000-0000-0000-0000-00000000000a/trainer-to-go/33333333-3333-3333-3333-333333333333.png","groesse":5,"breite":1,"hoehe":1}}', now() - interval '25 hours');
+create temp table alt as select max(id) id from ws_projekt_aktionen where ergebnis -> 'bild' ->> 'pfad' like '%3333%'; grant select on alt to authenticated;
+set role authenticated;
+:ADM
+select ws_bildschirmfoto_senden((select id from alt), null);
+select ws_code_aufraeumen() \g /dev/null
+reset role;
+select count(*) in_warteschlange from ws_chat_dateien_weg where pfad like '%3333%';
+select ergebnis ->> 'verfallen' verfallen, ergebnis ? 'bild' bild_noch_da from ws_projekt_aktionen where id = (select id from alt);
+select ergebnis ? 'bild' bestaetigtes_bleibt from ws_projekt_aktionen where id = (select id from foto);
+set role authenticated;
+:ADM
 \echo [10b] Entwickler sieht keine Aktionen (0)
 :DEV
 select count(*) dev_aktionen from ws_projekt_aktionen;
@@ -148,11 +167,11 @@ select count(*) admin_sieht_seiten from storage.objects where bucket_id = 'ws-vo
 \echo [14] Ampel-Lampe „dokument“ -> t; unbekannte Lampe -> f
 select ws_anbindungen_ok('{"dokument":{"stand":"gruen","text":"Seiten-Vorschau bereit"}}'), ws_anbindungen_ok('{"konsole":{"stand":"gruen","text":"x"}}');
 
-\echo [15] anon darf keine der neuen Funktionen ausführen -> f (10x)
+\echo [15] anon darf keine der neuen Funktionen ausführen -> f (11x)
 reset role;
 select p.proname, has_function_privilege('anon', p.oid, 'execute') from pg_proc p
  where p.proname in ('ws_projekt_programm_technik_setzen','ws_aktion_eingaben_ok','ws_projekt_aktion_anfordern','ws_projekt_aktion_nehmen','ws_projekt_aktion_lebt',
-   'ws_bildschirmfoto_melden','ws_bildschirmfoto_gesendet','ws_aktion_ergebnis_ok','ws_aktion_ergebnis_melden','ws_vorschau_datei_ok')
+   'ws_bildschirmfoto_melden','ws_bildschirmfoto_senden','ws_bildschirmfotos_aufraeumen','ws_aktion_ergebnis_ok','ws_aktion_ergebnis_melden','ws_vorschau_datei_ok')
  order by p.proname;
 \echo [16] SECURITY-DEFINER-Funktionen ohne festen search_path -> 0; nur eine Fassung je Funktion (anfordern 1, nehmen 1)
 select count(*) ohne_search_path from pg_proc p where p.prosecdef and p.pronamespace = 'public'::regnamespace
