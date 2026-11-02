@@ -14,7 +14,7 @@ import { ProjektordnerSchritt, ProjektordnerKarte, RegelnRangfolge } from "./Pro
 import AnbindungenKacheln from "./AnbindungenKacheln";
 import { TECHNIK_EMPFEHLUNG, ZIELE, ZIEL_REIHE, zieleAusArt, zieleVon } from "./bausteine/arbeitsplatz";
 
-// Ziele mehrfach wählen (0.16.0, Entwurf „Arbeitsplatz für alle Arten“): Web, Handy (PWA), Windows, Mac, Cloud-Lauf, PDF
+// Ziele mehrfach wählen (0.15.0, Entwurf „Arbeitsplatz für alle Arten“): Web, Handy (PWA), Windows, Mac, Cloud-Lauf, PDF
 function ZieleWahl({ ziele, onChange, name = "cs-ziele" }) {
   const umschalten = (z) => { const n = ziele.includes(z) ? ziele.filter((x) => x !== z) : [...ziele, z]; if (n.length) onChange(ZIEL_REIHE.filter((x) => n.includes(x))); };
   return (

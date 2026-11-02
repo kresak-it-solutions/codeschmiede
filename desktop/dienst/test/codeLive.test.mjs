@@ -8,7 +8,7 @@ import { mkdtemp, mkdir, writeFile, rm, symlink, link, cp, access, readFile, ope
 import path from "node:path";
 import os from "node:os";
 import { diffSammeln, diffAufbereiten, numstatLesen, neuAusStatus, neueDateiLesen, geheimDatei, GRENZEN, GitVerdaechtig, sicherheitsArgs, filterNamen,
-  umbenennungenLesen, blobSha, echterPfadOk, arbeitsordnerPruefen } from "../lib/codeLive.mjs";
+  umbenennungenLesen, blobSha, echterPfadOk, arbeitsordnerPruefen, codeLiveUmgebung, zeilenAehnlich, lsTreeEintraege, NULL_GERAET } from "../lib/codeLive.mjs";
 
 const sh = promisify(execFile);
 const git = async (cwd, ...a) => (await sh("git", ["-c", "core.fsmonitor=false", ...a], { cwd, env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" }, maxBuffer: 20 * 1024 * 1024 })).stdout.trim();
@@ -272,5 +272,53 @@ test("Echter Pfad nach dem Öffnen: unter der Wurzel ok, sonst ausgeblendet", as
       assert.equal(await echterPfadOk(fh, d, ziel, st, { plattform: "darwin" }), true);              // Rückfall realpath + dev/ino
       assert.equal(await echterPfadOk(fh, d, ziel, { ...st, ino: st.ino + 1, dev: st.dev }, { plattform: "darwin" }), false);
     } finally { await fh.close(); }
+  } finally { await rm(wurzel, { recursive: true, force: true }); }
+});
+
+// ---------- Nachprüfung 02.11.2026 (GRÜN, N1/N2) ----------
+test("N1: Filter aus der globalen Git-Konfiguration starten nichts – auch mit .gitattributes nur im Index", async () => {
+  const { d, basis, gitDir, common, wurzel } = await arbeitsordner();
+  const home = path.join(wurzel, "home"); const marke = path.join(wurzel, "AUSGEFUEHRT_GLOBAL");
+  try {
+    await mkdir(home);
+    // eigener Name (nicht „lfs“: auf manchen Rechnern bringt die System-Konfiguration einen echten lfs-Filter mit)
+    await writeFile(path.join(home, ".gitconfig"), `[filter "global-boese"]\n\tclean = "sh -c 'touch ${marke}; cat'"\n\trequired = true\n`);
+    await writeFile(path.join(d, ".gitattributes"), "*.js filter=global-boese\n");
+    await git(d, "add", ".gitattributes"); await rm(path.join(d, ".gitattributes"));   // steht nur noch im Index
+    await writeFile(path.join(d, "src/a.js"), "geändert für die Gegenprobe\n");
+    const envPlain = { ...process.env, HOME: home, XDG_CONFIG_HOME: path.join(home, ".config"), GIT_OPTIONAL_LOCKS: "0" }; delete envPlain.GIT_CONFIG_GLOBAL;
+    const gitMit = (env) => async (cwd, ...a) => (await sh("git", ["-c", "core.fsmonitor=false", ...a], { cwd, env, maxBuffer: 20 * 1024 * 1024 })).stdout.trim();
+    await gitMit(envPlain)(d, "diff", "--numstat", basis).catch(() => {});
+    assert.ok(await da(marke), "Gegenprobe: plain git startet den globalen Filter"); await rm(marke, { force: true });
+    const env = codeLiveUmgebung(envPlain);
+    assert.equal(env.GIT_CONFIG_GLOBAL, NULL_GERAET); assert.equal(env.GIT_CONFIG_NOSYSTEM, "1"); assert.equal(env.GIT_ATTR_NOSYSTEM, "1");
+    const r = await diffSammeln({ git: gitMit(env), ordner: d, von: basis, gitDir, common });
+    assert.ok(!(await da(marke)), "Code live hat den globalen Filter gestartet");
+    assert.ok(r.dateien.some((x) => x.p === "src/a.js"));
+    // Konfiguration über Umgebungsvariablen wird ebenfalls verworfen
+    const e2 = codeLiveUmgebung({ GIT_CONFIG_COUNT: "1", GIT_CONFIG_KEY_0: "filter.x.clean", GIT_CONFIG_VALUE_0: "touch y", GIT_CONFIG_PARAMETERS: "'filter.x.clean'='y'", GIT_DIR: "/x" });
+    assert.ok(!("GIT_CONFIG_COUNT" in e2) && !("GIT_CONFIG_KEY_0" in e2) && !("GIT_CONFIG_PARAMETERS" in e2) && !("GIT_DIR" in e2));
+  } finally { await rm(wurzel, { recursive: true, force: true }); }
+});
+
+test("N2: neue Datei mit mindestens 50 % der Zeilen einer Geheimnis-Datei wird ausgeblendet", async () => {
+  const geheim = ["db_password: s3hr-geheim-123", "api_token: tok_abcdefghijklmn", "smtp_user: versand@beispiel.at", "smtp_pass: noch-ein-geheimnis", "region: eu-central-1"].join("\n");
+  assert.ok(zeilenAehnlich(["# umbenannt", "db_password: s3hr-geheim-123", "api_token: tok_abcdefghijklmn", "smtp_pass: noch-ein-geheimnis", "anderes: zeug"].join("\n"), geheim));   // 3 von 5
+  assert.ok(!zeilenAehnlich("region: eu-central-1\nnichts weiter hier\n", geheim));   // 1 von 5
+  assert.ok(!zeilenAehnlich("{\n}\n", "{\n}\n"), "kurze Zeilen zählen nicht");
+  assert.deepEqual(lsTreeEintraege("100644 blob " + "a".repeat(40) + "     42\tx.env\0"), [{ p: "x.env", sha: "a".repeat(40), groesse: 42 }]);
+  const { d, gitDir, common, wurzel } = await arbeitsordner();
+  try {
+    await writeFile(path.join(d, "secrets.yaml"), geheim + "\n"); await git(d, "add", "-A"); await commit(d, "geheim");
+    const von = await git(d, "rev-parse", "HEAD");
+    await git(d, "rm", "-q", "secrets.yaml");
+    await writeFile(path.join(d, "config.yml"), ["# umbenannt und leicht geändert", "db_password: s3hr-geheim-123", "api_token: tok_abcdefghijklmn", "smtp_pass: noch-ein-geheimnis", "neu: wert"].join("\n") + "\n");
+    await writeFile(path.join(d, "harmlos.yml"), "region: eu-central-1\nanderes: ganz anderes\n");
+    const r = await diffSammeln({ git, ordner: d, von, gitDir, common });
+    const nach = Object.fromEntries(r.dateien.map((x) => [x.p, x]));
+    assert.deepEqual(nach["config.yml"], { p: "config.yml", art: "ausgeblendet" });
+    assert.equal(nach["harmlos.yml"].art, "neu");
+    assert.deepEqual(nach["secrets.yaml"], { p: "secrets.yaml", art: "ausgeblendet" });
+    assert.ok(!/s3hr-geheim|tok_abc|noch-ein-geheimnis/.test(JSON.stringify(r)));
   } finally { await rm(wurzel, { recursive: true, force: true }); }
 });

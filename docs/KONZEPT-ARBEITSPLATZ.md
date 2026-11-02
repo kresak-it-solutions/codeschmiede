@@ -1,7 +1,7 @@
 # Ein Arbeitsplatz für jede Art von Programm
 
 **Stand:** 2026-11-02 · **Wer:** Gerhard Kresak (Entscheidungen, Entwurf freigegeben 02.11.2026), Claude (Konzept, Umsetzung)
-**Entwurf:** `docs/entwurf-1.0-arbeitsplatz-alle-arten.html` · **Version:** vorläufig 0.16.0 (Stufe 1; parallel entstehen 0.14.0 und 0.15.0, die Nummer wird beim Zusammenführen angepasst)
+**Entwurf:** `docs/entwurf-1.0-arbeitsplatz-alle-arten.html` · **Version:** vorläufig 0.15.0 (Stufe 1; 0.14.0 entsteht parallel, die endgültige Nummer wird beim Zusammenführen gesetzt)
 **Datenbank:** 0059 (`supabase/migrations/0059_arbeitsplatz.sql`, Test `supabase/tests/t46_arbeitsplatz.sql`; 0057 und 0058 sind für parallele Features reserviert)
 **Umgesetzt (Stufe 1):** `web/src/seiten/Arbeitsplatz.jsx` (Baum, Punkte, Prüfweg, rechte Hälfte), `web/src/bausteine/arbeitsplatz.js` (reine Funktionen,
 Test `desktop/dienst/test/arbeitsplatz.test.mjs`), `web/src/daten/punkte.js`, `desktop/dienst/lib/codeLive.mjs` (Diff-Filter, Test `codeLive.test.mjs`),
@@ -121,6 +121,13 @@ ein Entwickler-PC arbeitet – also **muss der Diff über die Datenbank** gehen.
 2b. **Umbenannte Geheimnisse:** Im Baum-Modus erkennt `git diff --name-status --find-renames --find-copies` Umbenennungen und Kopien – ist die Quelle eine
    Geheimnis-Datei, bleibt das Ziel ausgeblendet. In beiden Modi werden neue Dateien ausgeblendet, deren Inhalt (Blob-Kennung wie `git hash-object --no-filters`)
    einer Geheimnis-Datei des Startstands entspricht.
+2b'. **Ähnliche Inhalte** (Nachprüfung N2): Im Arbeitsordner wird eine neue Datei auch ausgeblendet, wenn sie mindestens 50 % der bedeutsamen Zeilen
+   (getrimmt, nicht leer, mindestens 8 Zeichen) einer Geheimnis-Datei des Startstands enthält. Verglichen werden höchstens 50 Geheimnis-Dateien zu je 64 KB,
+   nur im Speicher; nichts davon geht in ein Log oder in die Datenbank.
+2d. **Keine persönliche oder System-Konfiguration** (Nachprüfung N1): Jeder git-Aufruf von Code live läuft mit `GIT_CONFIG_GLOBAL=/dev/null` (Windows `NUL`),
+   `GIT_CONFIG_NOSYSTEM=1`, `GIT_ATTR_NOSYSTEM=1`; Konfiguration aus Umgebungsvariablen (`GIT_CONFIG_PARAMETERS`, `GIT_CONFIG_COUNT/KEY/VALUE`) und `GIT_DIR` &c.
+   werden verworfen. So startet auch ein Filter aus der persönlichen Konfiguration (z. B. git-lfs) nichts, selbst wenn die `.gitattributes` nur im Index steht.
+   Übernommen werden aus der persönlichen Konfiguration nur `core.autocrlf`, `core.eol` und `safe.directory` (gelesen, als `-c` übergeben).
 2c. **Echter Pfad:** Neue Dateien werden nach dem Öffnen am echten Pfad geprüft (Linux `/proc/self/fd`, sonst `realpath` nach dem Öffnen plus Gerät/Kennung).
 3. Der Dienst schreibt das Ergebnis über `ws_code_live_melden` (eine Zeile je Auftrag, überschrieben) und löscht sie nach dem Lauf (`ws_code_live_ende`);
    ein Trigger löscht sie zusätzlich, sobald der Auftrag „läuft“ verlässt, und alles älter als 2 Stunden fällt beim nächsten Melden weg.
@@ -142,7 +149,7 @@ ein Entwickler-PC arbeitet – also **muss der Diff über die Datenbank** gehen.
 ## Stufenplan
 | Stufe | Inhalt | Stand |
 |---|---|---|
-| **1 – Rahmen für alle Arten** | Offene Punkte am Feature mit Status, „Weiterarbeiten“/„Fragen“, Status-Punkt im Baum, rechts Vorschau / Code live / Verlauf, Ziele und Prüfweg, Technik-Empfehlung im Assistenten | **diese Version (0.16.0 vorläufig)** |
+| **1 – Rahmen für alle Arten** | Offene Punkte am Feature mit Status, „Weiterarbeiten“/„Fragen“, Status-Punkt im Baum, rechts Vorschau / Code live / Verlauf, Ziele und Prüfweg, Technik-Empfehlung im Assistenten | **diese Version (0.15.0 vorläufig)** |
 | 2 – Windows/Mac mit Tauri | Oberfläche des Programms als **Testseite** (gleicher React-Code; Tauri-Funktionen wie Dateien öffnen werden nachgespielt), dazu **Sandbox-Start** mit **Bildschirmfoto an den Chat** | offen |
 | 3 – Werkzeuge, Dokumente, Handy, .NET | **Werkzeug-Konsole** (Cloud-Lauf mit Beispiel-Eingaben, Ausgabe an den Chat), **Dokument-Vorschau** (PDF-Seiten), **Handy-QR-Code** (Testseite am echten Handy), **.NET-Sonderfall** (letzter Bau und Bildschirmfotos aus der Sandbox) | offen |
 
@@ -181,7 +188,7 @@ ein Entwickler-PC arbeitet – also **muss der Diff über die Datenbank** gehen.
 - Code live zeigt den Stand höchstens alle 5 Sekunden, nicht jeden Tastendruck; sehr große Änderungen sind gekürzt. Er braucht eine laufende Werkstatt.
 - Der Diff des letzten Auftrags braucht eine eingeschaltete Werkstatt (Admin-PC oder eigener PC) und den Zweig bei GitHub (nach dem Zusammenführen gelöschte Zweige: „nicht mehr vorhanden“).
 - **Restrisiko umbenannte Geheimnisse:** Erkannt werden umbenannte/kopierte Geheimnis-Dateien mit gleichem Inhalt (Arbeitsordner und Baum) bzw. mit ähnlichem
-  Inhalt (Baum, Ähnlichkeit ab 50 %). Nicht erkannt: eine Geheimnis-Datei, die erst im Lauf angelegt **und** dann umbenannt wird, ein stark umgeschriebener oder
+  Inhalt (Baum: Ähnlichkeit ab 50 %; Arbeitsordner: mindestens 50 % der bedeutsamen Zeilen). Nicht erkannt: eine Geheimnis-Datei, die erst im Lauf angelegt **und** dann umbenannt wird, ein stark umgeschriebener oder
   zerstückelter Inhalt, und Inhalte, die nur durch Zeilenende-Umwandlung (autocrlf) abweichen. Dort greift nur noch die Maskierung bekannter Schlüssel-Muster.
 - Die Maskierung erkennt bekannte Schlüssel-Muster; ein Geheimnis ohne erkennbares Muster in einer normalen Code-Datei würde angezeigt (wie im Code-Editor). Geheimnisse gehören nie in den Code.
 - Kein „Zurück auf diesen Stand“ je Feature (nur das Zurücksetzen der ganzen App durch den Admin).

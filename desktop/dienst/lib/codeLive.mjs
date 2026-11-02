@@ -141,6 +141,17 @@ export function neuAlsDiff(inhalt, grenzen) {
 
 // ---------- Härtung gegen Git-Treiber (Sicherheitsprüfung 02.11.2026, H1) ----------
 export const NULL_GERAET = process.platform === "win32" ? "NUL" : "/dev/null";
+/**
+ * Umgebung für JEDEN git-Aufruf von Code live (Nachprüfung 02.11.2026, N1): keine globale und keine System-Konfiguration und keine System-Attribute –
+ * so können auch Filter aus der persönlichen Git-Konfiguration (z. B. git-lfs) nichts starten, selbst wenn eine .gitattributes nur im Index steht
+ * (die Neutralisierung kennt nur Namen aus Dateien im Arbeitsordner). Ohne optionale Sperren, ohne Pager, ohne Rückfragen, ohne externes Diff.
+ */
+export function codeLiveUmgebung(basis = process.env) {
+  const env = { ...basis, GIT_CONFIG_GLOBAL: NULL_GERAET, GIT_CONFIG_NOSYSTEM: "1", GIT_ATTR_NOSYSTEM: "1", GIT_OPTIONAL_LOCKS: "0", GIT_PAGER: "cat", GIT_TERMINAL_PROMPT: "0" };
+  for (const k of ["GIT_EXTERNAL_DIFF", "GIT_CONFIG", "GIT_CONFIG_SYSTEM", "GIT_CONFIG_PARAMETERS", "GIT_CONFIG_COUNT", "GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE", "GIT_ATTR_SOURCE"]) delete env[k];
+  for (const k of Object.keys(env)) if (/^GIT_CONFIG_(KEY|VALUE)_\d+$/.test(k)) delete env[k];
+  return env;
+}
 const FILTER_NAME = /^[A-Za-z0-9._-]{1,64}$/;
 /** Filter-Namen aus .gitattributes-Texten (auch Makros „[attr]x filter=y“). → { namen: [...], ungueltig } */
 export function filterNamen(texte) {
@@ -221,6 +232,27 @@ export function umbenennungenLesen(roh) {
   }
   return out;
 }
+/** `git ls-tree -r -l -z` → [{ p, sha, groesse }] (nur Blobs) */
+export function lsTreeEintraege(roh) {
+  const out = [];
+  for (const z of String(roh || "").split("\0")) { const i = z.indexOf("\t"); if (i < 0) continue; const [, typ, sha, gr] = z.slice(0, i).trim().split(/\s+/); if (typ === "blob") out.push({ p: z.slice(i + 1), sha, groesse: Number(gr) || 0 }); }
+  return out;
+}
+/** Bedeutsame Zeilen (getrimmt, nicht leer, mindestens 8 Zeichen – „{“, „}“, „end“ zählen nicht). */
+const bedeutsam = (t) => new Set(String(t || "").split(/\r?\n/).map((z) => z.trim()).filter((z) => z.length >= 8));
+export const AEHNLICH_AB = 0.5;
+/**
+ * Hat ein neuer Inhalt mindestens 50 % der bedeutsamen Zeilen einer Geheimnis-Datei (Nachprüfung N2)? Dann ausblenden – auch wenn die Datei
+ * umbenannt und leicht geändert wurde. Vergleicht nur Mengen von Zeilen im Speicher; nichts davon geht in ein Log.
+ */
+export function zeilenAehnlich(neu, geheim, ab = AEHNLICH_AB) {
+  const g = bedeutsam(geheim); if (!g.size) return false;
+  const n = bedeutsam(neu); let gemeinsam = 0;
+  for (const z of g) if (n.has(z)) gemeinsam++;
+  return gemeinsam > 0 && gemeinsam / g.size >= ab;
+}
+export const GEHEIM_VERGLEICH = Object.freeze({ dateien: 50, jeDatei: 64 * 1024 });   // Grenzen für den Zeilenvergleich (Geheimnis-Dateien des Startstands)
+
 /** `git ls-tree -r -z` → Map Pfad → Blob-Kennung */
 export function lsTreeLesen(roh) {
   const m = new Map();
@@ -255,8 +287,19 @@ export async function diffSammeln({ git, ordner, von, bis = null, gitDir = null,
   }
   const liste = numstatLesen(await g("diff", "--numstat", "-z", ...GIT_DIFF, ...stande, "--"));
   // Geheimnis-Inhalte im Startstand: ihre Blob-Kennungen – eine neue Datei mit gleichem Inhalt (umbenannt/kopiert) wird ausgeblendet
-  const basis = lsTreeLesen(await g("ls-tree", "-r", "-z", "--full-tree", von));
-  const geheimShas = new Set([...basis].filter(([p]) => geheimDatei(p)).map(([, sha]) => sha));
+  const basisListe = lsTreeEintraege(await g("ls-tree", "-r", "-l", "-z", "--full-tree", von));
+  const basis = new Map(basisListe.map((x) => [x.p, x.sha]));
+  const geheimListe = basisListe.filter((x) => geheimDatei(x.p));
+  const geheimShas = new Set(geheimListe.map((x) => x.sha));
+  // Inhalte der Geheimnis-Dateien des Startstands nur für den Zeilenvergleich (begrenzt, nur im Speicher, erst bei Bedarf geladen)
+  let geheimTexte = null;
+  const geheimeTexte = async () => {
+    if (geheimTexte) return geheimTexte;
+    geheimTexte = [];
+    for (const x of geheimListe.filter((y) => y.groesse > 0 && y.groesse <= GEHEIM_VERGLEICH.jeDatei).slice(0, GEHEIM_VERGLEICH.dateien))
+      geheimTexte.push(await g("cat-file", "blob", x.sha).catch(() => ""));
+    return geheimTexte;
+  };
   const geheimZiele = new Set(); let bisBaum = null;
   if (bis) {
     // Baum-Modus: Umbenennungen nur zur Erkennung – ist die Quelle geheim, bleibt auch das Ziel ausgeblendet
@@ -282,6 +325,7 @@ export async function diffSammeln({ git, ordner, von, bis = null, gitDir = null,
       // neue Datei (auch per git mv umbenannt): Inhalt selbst lesen, Kennung wie git hash-object --no-filters vergleichen
       r = await neueDateiLesen(ordner, x.p, { max: grenzen.neuMax });
       if (r.sha && geheimShas.has(r.sha)) { dateien.push({ p: x.p, art: "ausgeblendet" }); continue; }
+      if (r.inhalt && geheimListe.length && (await geheimeTexte()).some((t) => zeilenAehnlich(r.inhalt, t))) { dateien.push({ p: x.p, art: "ausgeblendet" }); continue; }
     }
     if (x.neu) {
       if (r.art === "fehlt") continue;

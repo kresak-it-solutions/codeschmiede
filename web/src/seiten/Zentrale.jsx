@@ -41,7 +41,7 @@ export function Zentrale({ d: alle, ich, toast, nurGlobal = false, onDesigner, s
   const aufFor = (gid, fid) => d.auftraege.filter((a) => (fid === undefined ? a.gruppe_id === gid : a.feature_id === fid));
   const [station, setStation] = useState(null);
   const [platz, setPlatz] = useState(() => start?.f || null); // Feature-Arbeitsplatz (Doppelklick)
-  // Offene Punkte (Aufgaben an Features) und Status-Punkt je Feature (0.16.0, Arbeitsplatz für alle Arten)
+  // Offene Punkte (Aufgaben an Features) und Status-Punkt je Feature (0.15.0, Arbeitsplatz für alle Arten)
   const punkteDaten = usePunkte(alle.projektId);
   const statusVon = useFeatureStatus(d, punkteDaten);
   useEffect(() => { if (!start) return; setStation(null); if (start.f) setPlatz(start.f); else { setPlatz(null); setSel({ g: start.g, f: null }); } }, [start?.n]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -216,7 +216,7 @@ export function Zentrale({ d: alle, ich, toast, nurGlobal = false, onDesigner, s
 
 // onEntwurf(boolean): meldet, ob im Eingabefeld gerade ungesendeter Text steht (Live-Vorschau 0.13.2: dann wird links nicht gewechselt).
 // entwurfSpeicher (optional, Map im Speicher der Seite): Entwurf je Gruppe/Feature – bleibt beim Wechseln erhalten, solange die Seite offen ist.
-// punkt (optional, 0.16.0 Arbeitsplatz für alle Arten): gewählter offener Punkt des Features ({ id, titel, status, auftrag }) –
+// punkt (optional, 0.15.0 Arbeitsplatz für alle Arten): gewählter offener Punkt des Features ({ id, titel, status, auftrag }) –
 // dann „Fragen“ (Konzept-Chat, nur klären) und „Weiterarbeiten“ (genau dieser Punkt als Auftrag, ws_punkt_weiterarbeiten).
 export function AuftragsChat({ g, f, d, ich, darf, toast, onLoeschen, kanal = "codeschmiede", baustein, onBausteinFertig, eingebettet, onKonzept, onEntwurf, entwurfSpeicher, punkt, onPunktFertig }) {
   const auftraege = d.auftraege.filter((a) => (f ? a.feature_id === f.id : a.gruppe_id === g.id));   // je Feature: Verlauf bleibt beim Verschieben

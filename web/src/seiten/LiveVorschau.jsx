@@ -130,7 +130,7 @@ function FolgeHinweis({ h, gruppen, gruppeVon, darfMerken, onOeffnen, onMerken, 
 }
 
 // ---------------- Feature-Arbeitsplatz (Doppelklick) ----------------
-// Seit 0.16.0 (Entwurf „Ein Arbeitsplatz für jede Art von Programm“, Gerhard 02.11.2026, docs/KONZEPT-ARBEITSPLATZ.md):
+// Seit 0.15.0 (Entwurf „Ein Arbeitsplatz für jede Art von Programm“, Gerhard 02.11.2026, docs/KONZEPT-ARBEITSPLATZ.md):
 // links (breite Bildschirme) der Baum mit Status-Punkten, in der Mitte Prüfweg, offene Punkte und Chat, rechts Vorschau | Code live | Verlauf.
 export function FeatureArbeitsplatz({ f, g, d, ich, darf, toast, onZurueck, onLoeschen, punkteDaten, onFeature, onCode }) {
   const projekt = d.projekte.find((p) => p.id === d.projektId);
@@ -184,7 +184,7 @@ export function FeatureArbeitsplatz({ f, g, d, ich, darf, toast, onZurueck, onLo
 
 // Live-Vorschau: echte Testseite des Auftrags (Cloudflare), meldet neue Stände, „Zeigen & kommentieren“ über den Vorschau-Helfer der App
 // onSeite(pfad) (optional, 0.13.2): meldet jeden Seitenwechsel der Testseite nach oben – nur der Menüpunkt Live-Vorschau nutzt es.
-// startGeraet (0.16.0): Gerät beim Öffnen (Ziel „Handy (PWA)“ → handy) · eingebettet: ohne eigenen Rahmen (in der rechten Hälfte des Arbeitsplatzes)
+// startGeraet (0.15.0): Gerät beim Öffnen (Ziel „Handy (PWA)“ → handy) · eingebettet: ohne eigenen Rahmen (in der rechten Hälfte des Arbeitsplatzes)
 export function LiveVorschau({ projekt, a, f, darfMerken, toast, onBaustein, baustein, onSeite, startGeraet, eingebettet = false }) {
   const url = vorschauUrl(projekt, a);
   const onSeiteRef = useRef(onSeite); onSeiteRef.current = onSeite;

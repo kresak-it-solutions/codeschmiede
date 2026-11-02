@@ -52,7 +52,7 @@ import { setupNameOk, versionOrdner, releaseVersion, releaseWahl, tagImLive, ver
 import { sicherungsName, freierName, uebersicht as sicherungenUebersicht, sicherungenLampe, aufbauPruefen, aufbauArtefakt, BUNDLE_MAX } from "./lib/sicherungen.mjs";
 import { testseiteEinrichten, lotsePruefen, Lotse } from "./lib/testseite.mjs";
 import { laufSperren, sperrListe, gefaehrlicheGitConfig, gefaehrlicheAttribute, gitdirOk, linksNachAussen } from "./lib/rechte.mjs";
-import { diffSammeln, fingerabdruck, GitVerdaechtig } from "./lib/codeLive.mjs";
+import { diffSammeln, fingerabdruck, GitVerdaechtig, codeLiveUmgebung } from "./lib/codeLive.mjs";
 
 const HIER = path.dirname(fileURLToPath(import.meta.url));
 // Claude Code finden. Windows: nativer Installer (claude.exe in %USERPROFILE%\.local\bin) oder npm (cli.js) – immer OHNE Shell
@@ -148,10 +148,20 @@ async function existiert(p) { try { await access(p); return true; } catch { retu
 const GIT_SICHER = ["-c", "core.fsmonitor=false", "-c", "protocol.ext.allow=never"];
 async function git(cwd, ...args) { return (await sh("git", [...GIT_SICHER, ...args], { cwd, maxBuffer: 20 * 1024 * 1024 })).stdout.trim(); }
 // Code live (0059): nur lesen, ohne optionale Sperren – schreibt nie in den Index, stört den laufenden Auftrag nicht
+// Aus der persönlichen Git-Konfiguration übernimmt Code live nur harmlose Werte, die das Ergebnis betreffen: Zeilenenden (sonst zeigt Windows
+// mit autocrlf jede Datei als geändert) und safe.directory (externe Festplatte mit anderem Besitzer). Gelesen, nie ausgeführt; Filter nie.
+let liveGlobal = null;
+async function liveGlobaleArgs() {
+  if (liveGlobal) return liveGlobal;
+  const lies = async (...x) => (await sh("git", [...GIT_SICHER, "config", "--global", "--no-includes", ...x], { env: { ...process.env, GIT_CONFIG_NOSYSTEM: "1" } }).catch(() => ({ stdout: "" }))).stdout;
+  const a = [];
+  for (const k of ["core.autocrlf", "core.eol"]) { const v = String(await lies("--get", k)).trim(); if (/^(true|false|input|lf|crlf|native)$/i.test(v)) a.push("-c", `${k}=${v}`); }
+  for (const v of String(await lies("--get-all", "safe.directory")).split(/\r?\n/).map((x) => x.trim()).filter((x) => x && x.length < 1000).slice(0, 50)) a.push("-c", `safe.directory=${v}`);
+  return (liveGlobal = a);
+}
 async function gitLive(cwd, ...args) {
-  // Externe Diff-Programme sind über --no-ext-diff/--no-textconv aus (lib/codeLive.mjs); die Umgebung bringt auch keins mit
-  const env = { ...process.env, GIT_OPTIONAL_LOCKS: "0", GIT_PAGER: "cat", GIT_TERMINAL_PROMPT: "0" }; delete env.GIT_EXTERNAL_DIFF;
-  return (await sh("git", [...GIT_SICHER, "-c", "core.quotePath=false", ...args], { cwd, maxBuffer: 8 * 1024 * 1024, env })).stdout.trim();
+  // Externe Diff-Programme sind über --no-ext-diff/--no-textconv aus; Umgebung ohne globale/System-Konfiguration und System-Attribute (Nachprüfung N1)
+  return (await sh("git", [...GIT_SICHER, "-c", "core.quotePath=false", ...(await liveGlobaleArgs()), ...args], { cwd, maxBuffer: 8 * 1024 * 1024, env: codeLiveUmgebung() })).stdout.trim();
 }
 async function log(auftrag, art, text, ausschnitt) {
   await db.from("ws_live_log").insert({ auftrag_id: auftrag, art, text: kuerzen(ohneGeheimnisse(text), 500), ausschnitt: ausschnitt ? kuerzen(ohneGeheimnisse(ausschnitt), 2000) : null });
@@ -597,7 +607,6 @@ async function fuehreAus(auftrag, { fortsetzen = false, nacharbeit = false } = {
     await db.from("ws_auftraege").update({ stand: "laeuft", werkstatt_pc: pcId, modell, zweig }).eq("id", auftrag.id);
     await log(auftrag.id, "info", fremd ? `Werkstatt-PC ${cfg.pc_name || os.hostname()} programmiert mit ${werkzeugName(werkzeug)} (${modell}) auf ${zweig}`
       : `Werkstatt-PC ${cfg.pc_name || os.hostname()} arbeitet mit Modell ${modell} auf ${zweig}${lage === "klein" ? " (Abo-Limit wird knapp – kleineres Modell)" : ""}`);
-    codeLiveStopp = await codeLiveStarten(auftrag, ordner);
     codeLiveStopp = await codeLiveStarten(auftrag, projekt, ordner);
 
     let prompt = fremd

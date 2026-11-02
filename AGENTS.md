@@ -40,7 +40,7 @@ Zusammengeführt wird nur auf Gerhards Wort (in der Codeschmiede: Knopf „Freig
 - Werkstatt arbeitet nur im Arbeitsordner des Auftrags (eigener Zweig), nie direkt auf `main`; heikle Befehle brauchen Erlaubnis im Programm.
 
 ## Neue Anweisungen
-- **2026-11-02 – Ein Arbeitsplatz für jede Art von Programm (Entwurf 1.0 frei, `docs/entwurf-1.0-arbeitsplatz-alle-arten.html`, Stufe 1 in 0.16.0 vorläufig):**
+- **2026-11-02 – Ein Arbeitsplatz für jede Art von Programm (Entwurf 1.0 frei, `docs/entwurf-1.0-arbeitsplatz-alle-arten.html`, Stufe 1 in 0.15.0 vorläufig):**
   Baum Bereich › Gruppe › Feature für alle Arten gleich, Namen überall gleich; was sich je Art ändert, ist der **Prüfweg** (Seite/Fenster/Befehl/Kapitel).
   **Tauri** ist Standard für Windows/Mac, .NET nur Sonderfall. Projekte haben mehrere **Ziele** (Web, Handy, Windows, Mac, Cloud-Lauf, PDF). Rechts
   Vorschau | Code live | Verlauf; in der Mitte die offenen Punkte (= Aufgaben am Feature, kein zweites System) und der Chat – „Weiterarbeiten“ gibt einen

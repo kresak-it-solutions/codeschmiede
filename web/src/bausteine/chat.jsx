@@ -5,7 +5,7 @@
 //   „Besprechen“ (Standard, Enter) – die KI antwortet, gebaut wird nichts.
 //   „Als Auftrag“ – nur wo es heute schon einen direkten Auftrag gab (Baustein aus „Zeigen & kommentieren“, Kachel-Wunsch, Entwurf, Umdesign).
 //   „Antworten“ – nur auf eine offene Rückfrage der Werkstatt (geht an den laufenden Auftrag).
-//   Seit 0.16.0 (Entwurf „Arbeitsplatz für alle Arten“, Gerhard 02.11.2026), nur mit gewähltem offenem Punkt im Feature-Arbeitsplatz:
+//   Seit 0.15.0 (Entwurf „Arbeitsplatz für alle Arten“, Gerhard 02.11.2026), nur mit gewähltem offenem Punkt im Feature-Arbeitsplatz:
 //   „Fragen“ – wie Besprechen, zum Punkt (nur klären) · „Weiterarbeiten“ – genau dieser Punkt als Auftrag (geht auch ohne Text).
 // Was gesendet wird und wohin, bestimmt weiter jeder Ort selbst (Tabellen, Rechte, Datenblöcke) – der Baustein ändert nur Aussehen und Begriffe.
 import React, { forwardRef, useEffect, useRef } from "react";

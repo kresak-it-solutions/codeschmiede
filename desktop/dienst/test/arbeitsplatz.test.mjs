@@ -82,7 +82,7 @@ test("Technik-Empfehlung: Tauri ist Vorschlag für Windows/Mac, .NET nur Sonderf
 
 test("Dienst: Code live nur lesend, ohne Sperren, im finally beendet", async () => {
   const s = await readFile(new URL("../index.mjs", import.meta.url), "utf8");
-  assert.match(s, /GIT_OPTIONAL_LOCKS: "0"/);
+  assert.match(await readFile(new URL("../lib/codeLive.mjs", import.meta.url), "utf8"), /GIT_OPTIONAL_LOCKS: "0"/);
   assert.match(s, /if \(codeLiveStopp\) await codeLiveStopp\(\)/);
   assert.match(s, /ws_code_live_ende/);
   const lib = await readFile(new URL("../lib/codeLive.mjs", import.meta.url), "utf8");
@@ -93,4 +93,7 @@ test("Dienst: Code live nur lesend, ohne Sperren, im finally beendet", async () 
   assert.match(s, /GitVerdaechtig\) await abschalten/);
   assert.match(lib, /"--ignore-submodules=all"/);
   assert.match(lib, /core\.attributesFile=/);
+  // Nachprüfung N1: jeder Code-live-git-Aufruf ohne globale/System-Konfiguration und System-Attribute
+  assert.match(s, /env: codeLiveUmgebung\(\)/);
+  assert.match(lib, /GIT_CONFIG_GLOBAL: NULL_GERAET, GIT_CONFIG_NOSYSTEM: "1", GIT_ATTR_NOSYSTEM: "1"/);
 });
