@@ -25,7 +25,7 @@ export const CHANGELOG_PFAD = "docs/CHANGELOG.md";
 export async function dateiAufMain(sh, repo, pfad) {
   repoPruefen(repo);
   try {
-    const { stdout } = await sh("gh", ["api", `repos/${repo}/contents/${pfad}?ref=main`, "--jq", "[.sha, .content] | @tsv"]);
+    const { stdout } = await sh("gh", ["api", `repos/${repo}/contents/${pfad}?ref=refs/heads/main`, "--jq", "[.sha, .content] | @tsv"]);
     const [blob, b64] = stdout.trim().split("\t");
     if (!SHA.test(blob || "")) return null;
     return { blob, inhalt: Buffer.from(String(b64 || "").replace(/\\n/g, ""), "base64").toString("utf8") };
@@ -206,7 +206,7 @@ export async function dbLiveEinspielen({ sh, projekt, vorher = null, kennung = "
   if (!(await ablaufAufMain(sh, repo))) return "Datenbank-Station noch nicht eingerichtet – Live-Datenbank nicht aktualisiert";
   const start = Date.now();
   const k = `cs-${String(kennung).replace(/[^0-9a-z-]/gi, "").slice(0, 30)}-${start}`;
-  const args = ["workflow", "run", "datenbank.yml", "--repo", repo, "--ref", "live", "-f", `kennung=${k}`];
+  const args = ["workflow", "run", "datenbank.yml", "--repo", repo, "--ref", "refs/heads/live", "-f", `kennung=${k}`];
   if (vorher && SHA.test(vorher)) args.push("-f", `vorher=${vorher}`);
   await sh("gh", args);
   let lauf = null;

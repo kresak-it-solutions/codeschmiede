@@ -58,7 +58,7 @@ import { repoEinlesen } from "./lib/repo.mjs";
 import { pfadOk } from "./lib/projektordner.mjs";
 import { diffSammeln, fingerabdruck, GitVerdaechtig, codeLiveUmgebung } from "./lib/codeLive.mjs";
 import { bildschirmfotoNehmen } from "./lib/bildschirmfoto.mjs";
-import { aufLaufWarten, artefaktHolen, testlaufErgebnis, dokumentSeiten, eingabenFehler, ablaufUnveraendert, laufArgs } from "./lib/cloudLauf.mjs";
+import { aufLaufWarten, artefaktHolen, testlaufErgebnis, dokumentSeiten, eingabenFehler, ablaufUnveraendert, laufArgs, standFesthalten } from "./lib/cloudLauf.mjs";
 import { repoGut, zweigGut } from "./lib/anbindungen.mjs";
 import { vorschauEinrichten } from "./lib/vorschauEinrichten.mjs";
 
@@ -2815,18 +2815,23 @@ async function testlaufKonsole(a, ende) {
   // Prüfung M2: nur mit dem geprüften Ablauf (gleiche Datei wie auf main/live), sonst nicht starten
   const veraendert = await ablaufUnveraendert({ sh: ghGrenze, repo: a.repo, zweig, workflow: "lauf.yml" });
   if (veraendert) throw new Error(veraendert);
+  // 0.17.1: Kopf-Commit festhalten (nach dem Vergleich, vor dem Start); der gefundene Lauf muss genau diesen Stand haben
+  const stand = await standFesthalten({ sh: ghGrenze, repo: a.repo, zweig, workflow: "lauf.yml" });
   await testlaufStarten({ sh: ghGrenze, repo: a.repo, zweig, eingaben: a.eingaben, kennung });
   await lebt(`Testlauf „${a.eingaben.befehl} ${a.eingaben.eingabe}“ in GitHub gestartet`);
   hintergrund(a.id, async () => {
     try {
-      const lauf = await aufLaufWarten({ sh: ghGrenze, repo: a.repo, workflow: "lauf.yml", zweig, kennung, lebt });
+      const lauf = await aufLaufWarten({ sh: ghGrenze, repo: a.repo, workflow: "lauf.yml", zweig, kennung, stand, lebt });
       if (!lauf) { await ende(null, "Der Lauf braucht länger als 14 Minuten – Ergebnis bei GitHub ansehen", `https://github.com/${a.repo}/actions/workflows/lauf.yml`, true); return; }
       const eintraege = await artefaktHolen({ sh: ghGrenze, repo: a.repo, lauf, name: "ergebnis" });
       const e = eintraege ? testlaufErgebnis(eintraege) : { ausgabe: "", gekuerzt: false, dateien: [] };
       const ok = lauf.conclusion === "success";
       await ende({ ...e, erfolg: ok, lauf: String(lauf.databaseId), befehl: a.eingaben.befehl, eingabe: a.eingaben.eingabe },
         ok ? `Testlauf fertig: ${a.eingaben.befehl} ${a.eingaben.eingabe}` : `Testlauf ${lauf.conclusion === "failure" ? "mit Fehler beendet" : lauf.conclusion || "beendet"} – Ausgabe unten`, lauf.url, false);
-    } catch (e) { await ende(null, `Hat nicht geklappt: ${kuerzen(ohneGeheimnisse(e?.stderr || e?.message || String(e)), 400)}`, null, true); }
+    } catch (e) {
+      if (e?.verworfen) { await ende(null, e.message, e.url, true); return; }
+      await ende(null, `Hat nicht geklappt: ${kuerzen(ohneGeheimnisse(e?.stderr || e?.message || String(e)), 400)}`, null, true);
+    }
   });
 }
 async function dokumentBauen(a, ende) {
@@ -2835,11 +2840,12 @@ async function dokumentBauen(a, ende) {
   const lebt = (hinweis) => db.rpc("ws_projekt_aktion_lebt", { p_pc: pcId, p_id: a.id, p_hinweis: hinweis }).then(() => {}, () => {});
   const veraendert = await ablaufUnveraendert({ sh: ghGrenze, repo: a.repo, zweig, workflow: "dokument.yml" });
   if (veraendert) throw new Error(veraendert);
+  const stand = await standFesthalten({ sh: ghGrenze, repo: a.repo, zweig, workflow: "dokument.yml" });   // 0.17.1, siehe testlaufKonsole
   await ghGrenze("gh", laufArgs({ repo: a.repo, zweig, kennung, workflow: "dokument.yml" }));
   await lebt("Dokument wird in GitHub gebaut");
   hintergrund(a.id, async () => {
     try {
-      const lauf = await aufLaufWarten({ sh: ghGrenze, repo: a.repo, workflow: "dokument.yml", zweig, kennung, lebt });
+      const lauf = await aufLaufWarten({ sh: ghGrenze, repo: a.repo, workflow: "dokument.yml", zweig, kennung, stand, lebt });
       if (!lauf) { await ende(null, "Der Bau braucht länger als 14 Minuten – bei GitHub ansehen", `https://github.com/${a.repo}/actions/workflows/dokument.yml`, true); return; }
       if (lauf.conclusion !== "success") { await ende(null, "Dokument bauen ist fehlgeschlagen – bei GitHub ansehen (fehlt das Skript „pdf“?)", lauf.url, true); return; }
       const eintraege = await artefaktHolen({ sh: ghGrenze, repo: a.repo, lauf, name: "dokument-seiten" });
@@ -2855,7 +2861,10 @@ async function dokumentBauen(a, ende) {
       }
       await ende({ seiten: liste, gesamt, gekuerzt, lauf: String(lauf.databaseId) }, `Dokument gebaut: ${liste.length} Seite(n)${gekuerzt ? ` von ${gesamt} (gekürzt)` : ""}`, lauf.url, false);
       await vorschauAufraeumen(a.projekt_id).catch(() => {});
-    } catch (e) { await ende(null, `Hat nicht geklappt: ${kuerzen(ohneGeheimnisse(e?.stderr || e?.message || String(e)), 400)}`, null, true); }
+    } catch (e) {
+      if (e?.verworfen) { await ende(null, e.message, e.url, true); return; }
+      await ende(null, `Hat nicht geklappt: ${kuerzen(ohneGeheimnisse(e?.stderr || e?.message || String(e)), 400)}`, null, true);
+    }
   });
 }
 

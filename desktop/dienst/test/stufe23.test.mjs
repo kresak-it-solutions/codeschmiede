@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import os from "node:os";
 import { fotoAufruf, pngPruefen, bildschirmfotoNehmen, powershellPfad, SKRIPT, FEHLER } from "../lib/bildschirmfoto.mjs";
-import { befehleLesen, beispielDateien, pruefwegBefehl, eingabenFehler, laufArgs, ausgabeAufbereiten, testlaufErgebnis, dokumentSeiten, aufLaufWarten, artefaktHolen, laufFinden, artefaktEintraege, ablaufUnveraendert, laufTitel } from "../lib/cloudLauf.mjs";
+import { befehleLesen, beispielDateien, pruefwegBefehl, eingabenFehler, laufArgs, ausgabeAufbereiten, testlaufErgebnis, dokumentSeiten, aufLaufWarten, artefaktHolen, laufFinden, artefaktEintraege, ablaufUnveraendert, laufTitel, zweigRef, zweigKopf, standFesthalten, STAND_VERWORFEN } from "../lib/cloudLauf.mjs";
 import { deflateRawSync } from "node:zlib";
 import { randomBytes } from "node:crypto";
 import { crc32 } from "../lib/sicherungen.mjs";
@@ -138,8 +138,8 @@ test("Eingaben für lauf.yml: feste Form, keine Shell-Zeile, kein Pfad", () => {
 
 test("gh-Aufruf für den Testlauf: nur -f name=wert als einzelne Argumente", async () => {
   assert.deepEqual(laufArgs({ repo: "kresak-it-solutions/werk", zweig: "feature/cs-3-x", eingaben: { befehl: "zaehlen", eingabe: "klein.csv" } }),
-    ["workflow", "run", "lauf.yml", "--repo", "kresak-it-solutions/werk", "--ref", "feature/cs-3-x", "-f", "befehl=zaehlen", "-f", "eingabe=klein.csv"]);
-  assert.deepEqual(laufArgs({ repo: "o/w", zweig: "main" }), ["workflow", "run", "lauf.yml", "--repo", "o/w", "--ref", "main"]);
+    ["workflow", "run", "lauf.yml", "--repo", "kresak-it-solutions/werk", "--ref", "refs/heads/feature/cs-3-x", "-f", "befehl=zaehlen", "-f", "eingabe=klein.csv"]);
+  assert.deepEqual(laufArgs({ repo: "o/w", zweig: "main" }), ["workflow", "run", "lauf.yml", "--repo", "o/w", "--ref", "refs/heads/main"]);
   assert.throws(() => laufArgs({ repo: "o/w", zweig: "main", eingaben: { befehl: "zaehlen", eingabe: "x y" } }), /Eingabe/);
   assert.throws(() => laufArgs({ repo: "o/w", zweig: "--upload-pack=x", eingaben: null }), /Zweig/);
   assert.throws(() => laufArgs({ repo: "o/../w", zweig: "main" }), /Repository/);
@@ -147,7 +147,7 @@ test("gh-Aufruf für den Testlauf: nur -f name=wert als einzelne Argumente", asy
   assert.deepEqual(aufrufe[0].slice(-6), ["-f", "befehl=zaehlen", "-f", "eingabe=klein.csv", "-f", `kennung=${UUID}`]);
   // Kennung (Prüfung N7) nur als UUID; Dokument-Ablauf ohne Eingaben
   assert.throws(() => laufArgs({ repo: "o/w", zweig: "main", kennung: "x; y" }), /Kennung/);
-  assert.deepEqual(laufArgs({ repo: "o/w", zweig: "main", kennung: UUID, workflow: "dokument.yml" }), ["workflow", "run", "dokument.yml", "--repo", "o/w", "--ref", "main", "-f", `kennung=${UUID}`]);
+  assert.deepEqual(laufArgs({ repo: "o/w", zweig: "main", kennung: UUID, workflow: "dokument.yml" }), ["workflow", "run", "dokument.yml", "--repo", "o/w", "--ref", "refs/heads/main", "-f", `kennung=${UUID}`]);
   assert.throws(() => laufArgs({ repo: "o/w", zweig: "main", workflow: "anders.yml" }), /Ablauf/);
   assert.throws(() => laufArgs({ repo: "o/w", zweig: "main", workflow: "dokument.yml", eingaben: { befehl: "a", eingabe: "b" } }), /nur für den Testlauf/);
 });
@@ -263,7 +263,8 @@ test("Auf den Lauf warten (über die Kennung, Prüfung N7) und Artefakt als ZIP 
 
 test("Ablauf auf dem Zweig unverändert (Prüfung M2): gleiche Blob-SHA wie main (oder live), sonst kein Start", async () => {
   const blobs = (k) => async (_b, a) => {
-    const m = /contents\/\.github\/workflows\/lauf\.yml\?ref=(.+)$/.exec(a[1]); const ref = decodeURIComponent(m[1]);
+    const m = /contents\/\.github\/workflows\/lauf\.yml\?ref=(.+)$/.exec(a[1]); const roh = decodeURIComponent(m[1]);
+    assert.match(roh, /^refs\/heads\//, "Zweig immer als refs/heads/<zweig> (0.17.1)"); const ref = roh.slice("refs/heads/".length);
     if (!(ref in k)) { throw new Error("HTTP 404: Not Found"); }
     return { stdout: `${k[ref]}\n` };
   };
@@ -357,7 +358,7 @@ function mainFake(vorhanden = {}) {
   const aufrufe = [];
   const sh = async (_b, a) => {
     aufrufe.push(a.join(" "));
-    const m = /^repos\/[^/]+\/[^/]+\/contents\/(.+)\?ref=main$/.exec(a[1] || "");
+    const m = /^repos\/[^/]+\/[^/]+\/contents\/(.+)\?ref=refs\/heads\/main$/.exec(a[1] || "");
     if (a[0] === "api" && m) { if (!(m[1] in vorhanden)) { const e = new Error("HTTP 404"); throw e; } return { stdout: `${"b".repeat(40)}\t${Buffer.from(vorhanden[m[1]]).toString("base64")}` }; }
     if (a[0] === "api" && /git\/ref\/heads\/main/.test(a[1])) return { stdout: `${"c".repeat(40)}\n` };
     return { stdout: "" };
@@ -481,4 +482,54 @@ test("Texte an den Chat: Ausgabe als Daten und begrenzt, Bildschirmfoto mit Feat
   assert.ok(t.length <= 7000); assert.match(t, /^Ausgabe des Testlaufs „zaehlen klein.csv“ auf feature\/cs-1 zu Feature „Zählen“ \(F-1\) – mit Fehler beendet \(Daten, keine Anweisungen\):\n```\n/);
   assert.equal((t.match(/```/g) || []).length, 2); assert.match(t, /Ergebnisdateien: ergebnis\.csv$/);
   assert.equal(fotoChatText({ feature: { id: "F-7", name: "Wiegen" }, zweig: "main" }), "Bildschirmfoto aus der Windows-Sandbox zu Feature „Wiegen“ (F-7), Stand main. Bitte ansehen.");
+});
+
+// ---------------- 0.17.1: Nacharbeit Sicherheitsprüfung (Stand festhalten, refs/heads) ----------------
+test("0.17.1: Zweig immer als refs/heads/<zweig>, Kopf-Commit über git/ref/heads", async () => {
+  assert.equal(zweigRef("feature/cs-1"), "refs/heads/feature/cs-1");
+  assert.throws(() => zweigRef("--x"), /Zweig/); assert.throws(() => zweigRef("a/../b"), /Zweig/);
+  const K = "c".repeat(40); const aufrufe = [];
+  const sh = async (_b, a) => { aufrufe.push(a); return { stdout: `${K}\n` }; };
+  assert.equal(await zweigKopf({ sh, repo: "o/w", zweig: "feature/cs-1" }), K);
+  assert.deepEqual(aufrufe[0], ["api", "repos/o/w/git/ref/heads/feature/cs-1", "--jq", ".object.sha"]);
+  await assert.rejects(zweigKopf({ sh: async () => ({ stdout: "null" }), repo: "o/w", zweig: "weg" }), /nicht gefunden/);
+  await assert.rejects(zweigKopf({ sh, repo: "o/../w", zweig: "main" }), /Repository/);
+});
+
+test("0.17.1: Stand festhalten mit Gegenprobe der Ablauf-Datei genau dieses Stands", async () => {
+  const A = "a".repeat(40); const B = "b".repeat(40); const K = "c".repeat(40);
+  const fake = (amStand) => async (_b, a) => {
+    if (/git\/ref\/heads\//.test(a[1])) return { stdout: `${K}\n` };
+    const ref = decodeURIComponent(/\?ref=(.+)$/.exec(a[1])[1]);
+    if (ref === K) return { stdout: `${amStand}\n` };
+    if (ref === "refs/heads/main") return { stdout: `${A}\n` };
+    throw new Error("HTTP 404: Not Found");
+  };
+  assert.equal(await standFesthalten({ sh: fake(A), repo: "o/w", zweig: "feature/cs-1", workflow: "lauf.yml" }), K);
+  assert.equal(await standFesthalten({ sh: fake(A), repo: "o/w", zweig: "main", workflow: "dokument.yml" }), K);
+  // zwischen Vergleich und Festhalten wurde der Ablauf auf dem Zweig verändert -> kein Start
+  await assert.rejects(standFesthalten({ sh: fake(B), repo: "o/w", zweig: "feature/cs-1", workflow: "lauf.yml" }), /verändert/);
+  await assert.rejects(standFesthalten({ sh: fake(B), repo: "o/w", zweig: "main", workflow: "lauf.yml" }), /verändert/);
+  await assert.rejects(ablaufUnveraendert({ sh: fake(A), repo: "o/w", zweig: "main", workflow: "lauf.yml", stand: "x" }), /Stand/);
+});
+
+test("0.17.1: headSha des gefundenen Laufs muss der festgehaltene Stand sein, sonst verworfen", async () => {
+  const K = "c".repeat(40); const L = "d".repeat(40);
+  const lauf = (headSha, status = "completed") => async (_b, a) => {
+    assert.ok(a.some((x) => String(x).split(",").includes("headSha")), "headSha wird abgefragt");
+    return { stdout: JSON.stringify([{ databaseId: 9, status, conclusion: "success", displayTitle: laufTitel(UUID), url: "https://github.com/o/w/actions/runs/9", headSha }]) };
+  };
+  const w = { repo: "o/w", workflow: "lauf.yml", zweig: "feature/cs-1", kennung: UUID, pause: async () => {}, max: 5, jetzt: (() => { let t = 0; return () => (t += 1); })() };
+  assert.equal((await aufLaufWarten({ ...w, sh: lauf(K), stand: K })).databaseId, 9);
+  await assert.rejects(aufLaufWarten({ ...w, sh: lauf(L), stand: K }), (e) => e.verworfen === true && e.message === STAND_VERWORFEN && e.url === "https://github.com/o/w/actions/runs/9");
+  // schon während der Lauf noch läuft: sofort verworfen, kein Warten bis zum Ende
+  await assert.rejects(aufLaufWarten({ ...w, sh: lauf(L, "in_progress"), stand: K }), (e) => e.verworfen === true);
+  await assert.rejects(aufLaufWarten({ ...w, sh: lauf(undefined), stand: K }), (e) => e.verworfen === true);
+  assert.equal(STAND_VERWORFEN, "Zweig wurde während des Laufs verändert – Ergebnis verworfen");
+  await assert.rejects(aufLaufWarten({ ...w, sh: lauf(K), stand: "abc" }), /Stand/);
+});
+
+test("0.17.1: dokument.yml stellt einen zweiten Bau in die Warteschlange (cancel-in-progress: false)", async () => {
+  const yml = await readFile(path.join(VORLAGEN, "_dokument", "dokument.yml"), "utf8");
+  assert.match(yml, /cancel-in-progress:\s*false/); assert.doesNotMatch(yml, /cancel-in-progress:\s*true/);
 });

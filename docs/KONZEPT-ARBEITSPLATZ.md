@@ -4,6 +4,7 @@
 **Entwurf:** `docs/entwurf-1.0-arbeitsplatz-alle-arten.html` · **Version:** 0.15.0 (Stufe 1) · **0.17.0 (Stufen 2 und 3, freigegeben von Gerhard 02.11.2026, gebaut ohne weiteren Entwurf)**
 **Datenbank:** 0059 (`supabase/migrations/0059_arbeitsplatz.sql`, Test `supabase/tests/t46_arbeitsplatz.sql`; 0057 kommt aus 0.14.0, 0058 ist reserviert) – eingetragen in `supabase/einspielen.txt` nach der Sicherheitsprüfung (GRÜN 02.11.2026)
 **Datenbank Stufen 2/3:** 0060 (`supabase/migrations/0060_arbeitsplatz_stufe23.sql`, Test `supabase/tests/t47_arbeitsplatz_stufe23.sql`) – Sicherheitsprüfung GRÜN 02.11.2026 (nach Behebung M1–M2, N1–N7), eingetragen in `supabase/einspielen.txt`
+**Nacharbeit 0.17.1:** 0061 (`supabase/migrations/0061_stufe23_nacharbeit.sql`, Test `supabase/tests/t48_stufe23_nacharbeit.sql`) – ersetzt 0060 in `supabase/einspielen.txt`
 **Umgesetzt (Stufen 2/3):** `web/src/seiten/ArbeitsplatzZiele.jsx` (Fensterrahmen, Sandbox-Leiste mit Bildschirmfoto, .NET, Werkzeug-Konsole, Dokument-Vorschau, Handy-QR), `web/src/bausteine/qr.js`, `desktop/dienst/lib/bildschirmfoto.mjs` + `.ps1`, `lib/cloudLauf.mjs`, `lib/vorschauEinrichten.mjs`, Vorlagen `programm/vorschau/`, `werkzeug/beispiele/` + `lauf.yml`, `_dokument/dokument.yml` (Tests `desktop/dienst/test/stufe23.test.mjs`)
 **Umgesetzt (Stufe 1):** `web/src/seiten/Arbeitsplatz.jsx` (Baum, Punkte, Prüfweg, rechte Hälfte), `web/src/bausteine/arbeitsplatz.js` (reine Funktionen,
 Test `desktop/dienst/test/arbeitsplatz.test.mjs`), `web/src/daten/punkte.js`, `desktop/dienst/lib/codeLive.mjs` (Diff-Filter, Test `codeLive.test.mjs`),
@@ -248,6 +249,20 @@ Freigegeben von Gerhard am 02.11.2026 („alles freigegeben“), gebaut nach dem
   (`desktop/ui/start.js` leitet dorthin weiter), darum keine `tauri://`-Herkunft.
 - **N6/N7:** Repository und Zweig werden in allen Cloud-Lauf-Funktionen geprüft; der Lauf wird über eine eigene Kennung (UUID als Eingabe `kennung`, Name des Laufs `Codeschmiede <kennung>`
   per `run-name`) zugeordnet, nicht über die Uhrzeit.
+
+### Restlücken der Sicherheitsprüfung – behoben in 0.17.1 (Nacharbeit, freigegeben von Gerhard 02.11.2026, Datenbank 0061)
+- **Stand festhalten – behoben:** Nach dem SHA-Vergleich der Ablauf-Datei und vor `gh workflow run` hält der Dienst den Kopf-Commit des Zweigs fest
+  (`gh api repos/<repo>/git/ref/heads/<zweig>`, mit Gegenprobe: die Ablauf-Datei genau dieses Stands ist dieselbe wie auf main/live). Sobald der Lauf über
+  seine Kennung gefunden ist, muss sein `headSha` genau dieser Stand sein – sonst wird das Ergebnis verworfen: „Zweig wurde während des Laufs verändert – Ergebnis verworfen“
+  (gilt für Werkzeug-Konsole und Dokument-Vorschau, `standFesthalten` und `aufLaufWarten` in `desktop/dienst/lib/cloudLauf.mjs`).
+- **Zweig eindeutig – behoben:** Zweige gehen an gh/GitHub als `refs/heads/<zweig>` (`gh workflow run --ref`, `contents?ref=` – auch beim Datenbank-Ablauf auf live und beim Lesen von Dateien auf main),
+  damit ein gleichnamiger Tag nie gemeint sein kann. `gh run list --branch` und `gh pr create --head/--base` nehmen nur Zweignamen und bleiben so.
+- **Foto-Aufräumen – behoben:** `ws_bildschirmfotos_aufraeumen` sperrt die fälligen Aktionen zuerst (`FOR UPDATE SKIP LOCKED`), setzt sie auf „verfallen“ und trägt nur die Pfade
+  genau dieser Zeilen in `ws_chat_dateien_weg` ein (`UPDATE … RETURNING`, eine Anweisung). Ein Foto, das gerade bestätigt wird, kommt nie in die Lösch-Warteschlange;
+  `ws_bildschirmfoto_senden` sperrt dieselbe Zeile weiter mit `FOR UPDATE` (unverändert) und findet nach einem Aufräumen „Kein offenes Bildschirmfoto“. Test `supabase/tests/t48_stufe23_nacharbeit.sql`
+  (echte Gleichzeitigkeit über zwei Verbindungen).
+- **Dokument-Bau – behoben:** `dokument.yml` (Vorlage) mit `cancel-in-progress: false` – ein zweiter Bau bricht den ersten nicht ab, er wartet (GitHub hält je Zweig höchstens einen wartenden Lauf).
+  Bestehende Projekte bekommen die Änderung erst, wenn ihr `dokument.yml` über einen Auftrag erneuert wird.
 
 ### Datenmodell (Datenbank 0060)
 | Was | Wo | Regeln |

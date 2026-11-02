@@ -10,6 +10,8 @@ import { geheimDatei } from "./codeLive.mjs";
 import { pngPruefen } from "./bildschirmfoto.mjs";
 import { zipEintraege } from "./einlesen.mjs";
 
+// 0.17.1 (Nacharbeit Sicherheitsprüfung): Zweige gehen an gh/GitHub immer als refs/heads/<zweig> (keine Verwechslung mit einem gleichnamigen Tag);
+// vor dem Start wird der Kopf-Commit des Zweigs festgehalten und mit headSha des gefundenen Laufs verglichen (anders → Ergebnis verworfen).
 // gleiche Regeln wie anbindungen.mjs (hier eigen, damit es keinen Kreis-Import gibt)
 const repoGut = (r) => /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\/[A-Za-z0-9._-]{1,100}$/.test(r || "") && !/\/\.\.?$/.test(r);
 const zweigGut = (z) => /^[A-Za-z0-9._/-]{1,100}$/.test(z || "") && !/\.\./.test(z) && !/^[/.-]/.test(z);
@@ -48,6 +50,10 @@ export function eingabenFehler(e, { befehle = null, dateien = null } = {}) {
   if (dateien && !dateien.includes(e.eingabe)) return `Beispiel-Eingabe „${e.eingabe}“ liegt nicht in beispiele/`;
   return null;
 }
+/** Zweig als eindeutige Referenz für gh/GitHub (nie ein Tag gleichen Namens). */
+export const zweigRef = (zweig) => { if (!zweigGut(zweig)) throw new Error("Ungültiger Zweig"); return `refs/heads/${zweig}`; };
+const SHA = /^[0-9a-f]{40}$/;
+export const STAND_VERWORFEN = "Zweig wurde während des Laufs verändert – Ergebnis verworfen";
 export const KENNUNG = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 /** Name des Laufs bei GitHub (run-name in lauf.yml/dokument.yml) – darüber wird der Lauf zugeordnet, nicht über die Uhrzeit (Prüfung N7). */
 export const laufTitel = (kennung) => `Codeschmiede ${kennung}`;
@@ -59,7 +65,7 @@ export function laufArgs({ repo, zweig, eingaben = null, kennung = null, workflo
   if (!repoGut(repo)) throw new Error("Ungültiges Repository");
   if (!zweigGut(zweig)) throw new Error("Ungültiger Zweig");
   if (!["lauf.yml", "dokument.yml"].includes(workflow)) throw new Error("Unbekannter Ablauf");
-  const a = ["workflow", "run", workflow, "--repo", repo, "--ref", zweig];
+  const a = ["workflow", "run", workflow, "--repo", repo, "--ref", zweigRef(zweig)];
   if (eingaben) {
     if (workflow !== "lauf.yml") throw new Error("Eingaben nur für den Testlauf");
     const f = eingabenFehler(eingaben); if (f) throw new Error(f);
@@ -72,9 +78,10 @@ export function laufArgs({ repo, zweig, eingaben = null, kennung = null, workflo
 /**
  * Prüfung M2: Ein Lauf per Knopf auf einem Zweig führt die Ablauf-Datei DES ZWEIGS aus. Gestartet wird nur, wenn sie genau so auf main
  * (bzw. live) liegt – gleiche Blob-SHA. Sonst hätte ein ungeprüfter Auftrags-Zweig den Ablauf (und damit, was in GitHub läuft) verändert.
+ * stand (Commit-SHA, 0.17.1): statt des Zweig-Kopfs genau diesen Stand des Zweigs prüfen (Gegenprobe zum festgehaltenen Stand).
  * → null (in Ordnung) oder Fehlertext.
  */
-export async function ablaufUnveraendert({ sh, repo, zweig, workflow }) {
+export async function ablaufUnveraendert({ sh, repo, zweig, workflow, stand = null }) {
   if (!repoGut(repo)) throw new Error("Ungültiges Repository");
   if (!zweigGut(zweig)) throw new Error("Ungültiger Zweig");
   if (!["lauf.yml", "dokument.yml"].includes(workflow)) throw new Error("Unbekannter Ablauf");
@@ -84,13 +91,34 @@ export async function ablaufUnveraendert({ sh, repo, zweig, workflow }) {
       const s = String(stdout).trim(); return /^[0-9a-f]{40}$/.test(s) ? s : null;
     } catch (e) { if (/HTTP 404|Not Found/i.test(`${e?.stderr || ""}${e?.message || ""}`)) return null; throw e; }
   };
-  const main = await blob("main");
+  if (stand != null && !SHA.test(stand)) throw new Error("Ungültiger Stand");
+  const main = await blob(zweigRef("main"));
   if (!main) return `Der Ablauf ${workflow} fehlt auf main – erst einrichten (Auftrag mit Prüfung und Zusammenführen)`;
-  if (zweig === "main") return null;
-  const hier = await blob(zweig);
+  if (zweig === "main" && !stand) return null;
+  const hier = await blob(stand || zweigRef(zweig));
   if (hier === main) return null;
-  if (hier && zweig !== "live" && hier === (await blob("live"))) return null;
+  if (hier && zweig !== "live" && hier === (await blob(zweigRef("live")))) return null;
   return `Ablauf auf dem Zweig verändert – erst nach Prüfung und Zusammenführen (${workflow} auf ${zweig} ist nicht derselbe wie auf main)`;
+}
+
+/** Kopf-Commit des Zweigs (gh api …/git/ref/heads/<zweig>, nur genau dieser Zweig). → SHA; Fehler, wenn es den Zweig nicht gibt. */
+export async function zweigKopf({ sh, repo, zweig }) {
+  if (!repoGut(repo)) throw new Error("Ungültiges Repository");
+  const ref = zweigRef(zweig);
+  const { stdout } = await sh("gh", ["api", `repos/${repo}/git/ref/${ref.slice("refs/".length)}`, "--jq", ".object.sha"]);
+  const s = String(stdout).trim();
+  if (!SHA.test(s)) throw new Error(`Zweig ${zweig} nicht gefunden`);
+  return s;
+}
+/**
+ * Stand festhalten (0.17.1): nach dem SHA-Vergleich der Ablauf-Datei und VOR gh workflow run. Gegenprobe: die Ablauf-Datei genau dieses Stands ist
+ * ebenfalls dieselbe wie auf main/live (sonst hätte sich der Zweig zwischen Vergleich und Festhalten geändert). → SHA des Stands.
+ */
+export async function standFesthalten({ sh, repo, zweig, workflow }) {
+  const stand = await zweigKopf({ sh, repo, zweig });
+  const f = await ablaufUnveraendert({ sh, repo, zweig, workflow, stand });
+  if (f) throw new Error(f);
+  return stand;
 }
 
 // Steuerzeichen (außer Zeilenumbruch und Tab) und ANSI-Farbcodes raus
@@ -172,14 +200,20 @@ export async function laufFinden({ sh, repo, workflow, zweig, kennung }) {
   if (!zweigGut(zweig)) throw new Error("Ungültiger Zweig");
   if (!KENNUNG.test(String(kennung || ""))) throw new Error("Ungültige Kennung");
   const { stdout } = await sh("gh", ["run", "list", "--repo", repo, "--workflow", workflow, "--branch", zweig, "--event", "workflow_dispatch", "--limit", "20",
-    "--json", "databaseId,status,conclusion,createdAt,url,displayTitle"]);
+    "--json", "databaseId,status,conclusion,createdAt,url,displayTitle,headSha"]);
   return JSON.parse(stdout || "[]").find((x) => /^\d{1,20}$/.test(String(x.databaseId)) && x.displayTitle === laufTitel(kennung)) || null;
 }
-/** Auf den Lauf warten (alle 15 s, höchstens grenzen.warten); lebt() hält die Aktion in der Datenbank. → Lauf oder null (Zeit um). */
-export async function aufLaufWarten({ sh, repo, workflow, zweig, kennung, lebt = async () => {}, pause = (ms) => new Promise((r) => setTimeout(r, ms)), jetzt = Date.now, max = GRENZEN.warten, takt = 15000 }) {
+/**
+ * Auf den Lauf warten (alle 15 s, höchstens grenzen.warten); lebt() hält die Aktion in der Datenbank. → Lauf oder null (Zeit um).
+ * stand (0.17.1): festgehaltener Kopf-Commit vor dem Start. Sobald der Lauf gefunden ist, muss headSha genau dieser Stand sein – sonst Fehler
+ * STAND_VERWORFEN (e.verworfen = true, e.url = Lauf); das Ergebnis wird nicht geholt.
+ */
+export async function aufLaufWarten({ sh, repo, workflow, zweig, kennung, stand = null, lebt = async () => {}, pause = (ms) => new Promise((r) => setTimeout(r, ms)), jetzt = Date.now, max = GRENZEN.warten, takt = 15000 }) {
+  if (stand != null && !SHA.test(stand)) throw new Error("Ungültiger Stand");
   const ende = jetzt() + max; let lauf = null;
   while (jetzt() < ende) {
     lauf = await laufFinden({ sh, repo, workflow, zweig, kennung }).catch(() => lauf);
+    if (lauf && stand && lauf.headSha !== stand) throw Object.assign(new Error(STAND_VERWORFEN), { verworfen: true, url: lauf.url || null });
     if (lauf?.status === "completed") return lauf;
     await lebt(lauf ? "Lauf in GitHub läuft" : "Wartet auf den Start in GitHub");
     await pause(takt);

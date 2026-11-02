@@ -1,3 +1,3 @@
 # Dateien, die beim nächsten Push in die Codeschmiede-Datenbank eingespielt werden (Reihenfolge!). Alle sind mehrfach ausführbar.
-# Arbeitsplatz Stufe 2/3 (0.17.0) – Sicherheitsprüfung GRÜN 02.11.2026
-migrations/0060_arbeitsplatz_stufe23.sql
+# Nacharbeit Stufe 2/3 (0.17.1) – Sicherheitsprüfung GRÜN 02.11.2026
+migrations/0061_stufe23_nacharbeit.sql
