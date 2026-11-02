@@ -1876,6 +1876,7 @@ async function holeFreieAnbieter() {
 let kiKopplung = {};                         // anbieter -> { gekoppelt }
 // Verpflichtende Anbieter (Nachprüfung 0.13.1, Punkt 1): Ist die Zuständigkeit nicht lesbar oder für diese Aufgabe nicht eingestellt, wird NICHT auf
 // den Standard (Claude) ausgewichen – die Reihe ist leer, die Aufgabe wartet mit „wartet“-Text. Ausnahme: Programmieren ist fest Claude Code (keine Einstellung).
+// Die Standardwerte (Claude) stehen seit Datenbank 0056 als echte Zeilen für jedes Projekt in ws_ki_zustaendigkeit (Entscheidung „Claude fest eintragen“).
 async function kiReihe(projektId, aufgabe) {
   if (aufgabe === "bauen") return { reihe: reiheFuer("bauen", null), ab: 90, fehlt: null };
   try {

@@ -46,6 +46,9 @@ Zusammengeführt wird nur auf Gerhards Wort (in der Codeschmiede: Knopf „Freig
   „wartet auf <Anbieter>: <Grund>“. Programmieren nur Claude Code – das Ausweichen auf ChatGPT (Codex) bei vollem Limit entfällt, der Auftrag wartet.
   Nach jedem Live-Schalten eines Programms legt die Werkstatt des Admins die Installationsdateien des Releases in `<Projektordner>\setup\<version>\` ab.
   Limit-Anzeige: „5 Std.: kein Limit“, wenn Claude Code kein 5-Stunden-Fenster meldet; modell-eigene Wochenlimits (z. B. Fable) zusätzlich, nur was gemeldet wird.
+  Ergänzung (Gerhard, „Claude fest eintragen“): Für alle bestehenden und neuen Projekte stehen die bisherigen Standardwerte (Claude) als echte,
+  in der Oberfläche änderbare Zuständigkeiten in der Datenbank (0056: nur fehlende Zeilen, nie überschreiben; Trigger beim Anlegen). Fehlt eine
+  Zeile oder ist sie nicht lesbar, wartet die Aufgabe weiterhin – es gibt kein Ausweichen zur Laufzeit.
 - **2026-11-02 09:50–09:55 – Globale Regeln (0.13.1):** `<Projekte-Ordner>\Regeln\CLAUDE.md` gilt für alle Projekte, zusätzlich zu den Projektregeln.
   Rangfolge überall: 1 Sicherheit › 2 Projektregeln › 3 globale Regeln › 4 Regelwerk. Gleicher Schutz wie REGELN.md (Bestätigung nur Admin).
   Kennung „regeln“ ist für Projekte gesperrt. `docs/KONZEPT-PROJEKTORDNER.md`.
@@ -168,7 +171,8 @@ Zusammengeführt wird nur auf Gerhards Wort (in der Codeschmiede: Knopf „Freig
 - **2026-10-23 14:11 – Alles fertig machen:** Keine Platzhalter mehr in der Codeschmiede; offene Menüpunkte werden gebaut (0.6.0).
 - **2026-10-23 14:14–15:00 – KI-Anbieter (Entwurf 1.2 freigegeben):** Beliebig viele KI-Anbieter (Claude, ChatGPT, Gemini …) mit dem
   eigenen Abo. Klären, Ausloten und Konzepte laufen über die eingestellten Anbieter (Vorschlag ChatGPT; **solange der Admin nichts
-  speichert, nur Claude** – seit 0.13.1 abgelöst: ohne gespeicherte Zuständigkeit wartet die Aufgabe, siehe 2026-11-02 10:00). Unabhängige Prüfungen durch fremde Anbieter (Entscheidung 14:27) sind **vorerst gesperrt** und nur Claude,
+  speichert, nur Claude** – seit 0.13.1: Claude ist als echte, änderbare Zuständigkeit eingetragen (Datenbank 0056, auch für neue Projekte);
+  ohne gespeicherte bzw. lesbare Zuständigkeit wartet die Aufgabe, kein Ausweichen zur Laufzeit, siehe 2026-11-02). Unabhängige Prüfungen durch fremde Anbieter (Entscheidung 14:27) sind **vorerst gesperrt** und nur Claude,
   bis fremde Programme in einer Betriebssystem-Sandbox laufen (unabhängige Prüfung 2026-10-23: sonst Lesezugriff auf den PC).
   **Bauen und Programmieren macht nur Claude – nie ein anderer Anbieter** (14:27). Je Aufgabe Anbieter **und Modell** in Reihenfolge frei
   wählbar (14:49); der nächste übernimmt bei vollem Limit oder ohne Kopplung. Zuständigkeiten stellt **nur der Admin** ein (14:59).

@@ -10,6 +10,10 @@
 --   * Globale Regeln der ganzen Codeschmiede (Gerhard 02.11.2026 09:50/09:54/09:55): <basis>\Regeln\CLAUDE.md – gleicher Schutz wie die
 --     REGELN.md der Projekte: Werkstatt meldet Prüfsumme und Text je PC (ws_regeln_global_melden), nur der Admin bestätigt bzw. widerruft, es gilt
 --     nur die neueste Bestätigung. Projekt-Kennung „regeln“ gesperrt (der Ordner „Regeln“ liegt neben den Projektordnern).
+--   * KI-Zuständigkeiten fest eintragen (Entscheidung Gerhard 02.11.2026: „Claude fest eintragen“): Da die Werkstatt ohne gespeicherte
+--     Zuständigkeit wartet (kein Ausweichen zur Laufzeit), bekommen alle bestehenden Projekte für jede fehlende Aufgabe die bisherigen
+--     Standardwerte (Claude) als echte, in der Oberfläche änderbare Zeile – nie überschreibend (on conflict do nothing). Neue Projekte bekommen
+--     dieselben Zeilen beim Anlegen (Trigger auf ws_projekte).
 --   * Abo-Limits (Claude „Ultra“, Gerhard 02.11.2026 10:00): fuenf_std_kein (Claude Code meldet kein 5-Stunden-Fenster) und woche_modelle
 --     (modell-eigene Wochenfenster wie gemeldet, z. B. Fable) in ws_abo_limits – nur eigene Zeile, Form geprüft.
 -- Mehrfach ausführbar. Reihenfolge 0001 → … → 0056.
@@ -229,5 +233,33 @@ $$;
 alter table public.ws_abo_limits drop constraint if exists ws_abo_limits_woche_modelle_check;
 alter table public.ws_abo_limits add constraint ws_abo_limits_woche_modelle_check check (public.ws_woche_modelle_ok(woche_modelle));
 grant insert (fuenf_std_kein, woche_modelle), update (fuenf_std_kein, woche_modelle) on public.ws_abo_limits to authenticated;
+
+-- ---------- KI-Zuständigkeiten: Standard (Claude) fest eintragen ----------
+-- Gleiche Werte wie bisher zur Laufzeit (desktop/dienst/lib/ki.mjs › STANDARD). Nie überschreiben: nur fehlende (Projekt, Aufgabe).
+create or replace function public.ws_ki_standard_reihen() returns table (aufgabe text, reihe jsonb)
+language sql immutable set search_path = public as $$
+  values ('chat', '[{"anbieter":"claude","modell":"sonnet"}]'::jsonb), ('konzept', '[{"anbieter":"claude","modell":"opus"}]'::jsonb),
+         ('design', '[{"anbieter":"claude","modell":"sonnet"}]'::jsonb), ('pruefung', '[{"anbieter":"claude","modell":"opus"}]'::jsonb),
+         ('doku', '[{"anbieter":"claude","modell":"sonnet"}]'::jsonb), ('texte', '[{"anbieter":"claude","modell":"haiku"}]'::jsonb),
+         ('bilder', '[{"anbieter":"claude"}]'::jsonb), ('bauen', '[{"anbieter":"claude"}]'::jsonb)
+$$;
+revoke execute on function public.ws_ki_standard_reihen() from public, anon, authenticated;
+
+insert into public.ws_ki_zustaendigkeit (projekt_id, aufgabe, reihe, weitergeben_ab, geaendert, geaendert_von)
+select p.id, s.aufgabe, s.reihe, 90, now(), null from public.ws_projekte p cross join public.ws_ki_standard_reihen() s
+on conflict (projekt_id, aufgabe) do nothing;
+
+-- Neue Projekte: dieselben Zeilen gleich beim Anlegen (auf jedem Weg, auf dem ein Projekt entsteht)
+create or replace function public.ws_ki_standard_eintragen() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  insert into public.ws_ki_zustaendigkeit (projekt_id, aufgabe, reihe, weitergeben_ab, geaendert, geaendert_von)
+  select new.id, s.aufgabe, s.reihe, 90, now(), null from public.ws_ki_standard_reihen() s
+  on conflict (projekt_id, aufgabe) do nothing;
+  return new;
+end $$;
+revoke execute on function public.ws_ki_standard_eintragen() from public, anon, authenticated;
+drop trigger if exists ws_projekte_ki_standard on public.ws_projekte;
+create trigger ws_projekte_ki_standard after insert on public.ws_projekte for each row execute function public.ws_ki_standard_eintragen();
 
 commit;
