@@ -155,7 +155,7 @@ export default function App() {
             : !daten.projektId ? <div className={card}><Leerzustand titel="Noch kein Projekt" text="Du bist noch keinem Projekt zugeordnet. Der Admin nimmt dich in ein Projekt auf."
                 aktion={ich.rolle === "admin" ? { text: "Neues Projekt", Symbol: Plus, onClick: () => setNeuesProjekt(true) } : null} /></div>
             : ansicht === "chat" ? <Chat key={daten.projektId} d={daten} ich={ich} toast={setToast} start={chatStart} onFeature={(f) => { setOeffne({ f: f.id, g: f.gruppe_id, n: Date.now() }); geh("zentrale"); }} />
-            : ansicht === "zentrale" ? <><Kennzahlen d={daten} onChat={() => geh("chat")} onErledigen={() => geh("erledigen")} /><Zentrale key={daten.projektId} d={daten} ich={ich} toast={setToast} onDesigner={() => geh("designer")} start={oeffne} /></>
+            : ansicht === "zentrale" ? <><Kennzahlen d={daten} onChat={() => geh("chat")} onErledigen={() => geh("erledigen")} /><Zentrale key={daten.projektId} d={daten} ich={ich} toast={setToast} onDesigner={() => geh("designer")} start={oeffne} onCode={() => geh("code")} /></>
             : ansicht === "erledigen" ? <ZuErledigen key={daten.projektId} d={daten} ich={ich} toast={setToast} onOeffne={(a) => { setOeffne({ f: a.feature_id, g: a.gruppe_id, n: Date.now() }); geh("zentrale"); }} />
             : ansicht === "aufgaben" ? <Aufgaben key={daten.projektId} d={daten} ich={ich} toast={setToast} onOeffneChat={(z) => { setOeffne({ f: z.f, g: z.g, n: Date.now() }); geh("zentrale"); }} />
             : ansicht === "global" ? <Zentrale key={daten.projektId + "-global"} d={daten} ich={ich} toast={setToast} nurGlobal />

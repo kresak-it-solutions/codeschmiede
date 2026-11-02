@@ -20,7 +20,7 @@ const merk = {
 };
 
 /** Anfrage an die Werkstatt stellen und auf die Antwort warten (Abfrage alle 0,7 s). Eigener PC antwortet nicht → Werkstatt des Admins. */
-async function frage(projekt, zweig, art, pfad, pc) {
+export async function frage(projekt, zweig, art, pfad, pc) {
   try { return await frageEinmal(projekt, zweig, art, pfad, pc, pc ? 15000 : 45000); }
   catch (e) { if (pc && e?.zeit) return frageEinmal(projekt, zweig, art, pfad, null, 45000); throw e; }
 }

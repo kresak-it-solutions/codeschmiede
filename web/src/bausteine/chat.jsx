@@ -5,13 +5,15 @@
 //   „Besprechen“ (Standard, Enter) – die KI antwortet, gebaut wird nichts.
 //   „Als Auftrag“ – nur wo es heute schon einen direkten Auftrag gab (Baustein aus „Zeigen & kommentieren“, Kachel-Wunsch, Entwurf, Umdesign).
 //   „Antworten“ – nur auf eine offene Rückfrage der Werkstatt (geht an den laufenden Auftrag).
+//   Seit 0.15.0 (Entwurf „Arbeitsplatz für alle Arten“, Gerhard 02.11.2026), nur mit gewähltem offenem Punkt im Feature-Arbeitsplatz:
+//   „Fragen“ – wie Besprechen, zum Punkt (nur klären) · „Weiterarbeiten“ – genau dieser Punkt als Auftrag (geht auch ohne Text).
 // Was gesendet wird und wohin, bestimmt weiter jeder Ort selbst (Tabellen, Rechte, Datenblöcke) – der Baustein ändert nur Aussehen und Begriffe.
 import React, { forwardRef, useEffect, useRef } from "react";
-import { MessageSquare, Hammer, Reply, Loader2, FolderKanban, Lightbulb, Hash, Layers, Component, LayoutGrid, Palette, Shapes, Bot } from "lucide-react";
+import { MessageSquare, Hammer, Reply, Loader2, FolderKanban, Lightbulb, Hash, Layers, Component, LayoutGrid, Palette, Shapes, Bot, ListChecks, MessageCircleQuestion } from "lucide-react";
 import { useAutoHoehe } from "../autoHoehe";
 import CodeschmiedeZeichen from "../Zeichen";
 
-export const BEGRIFFE = { besprechen: "Besprechen", auftrag: "Als Auftrag", antworten: "Antworten" };
+export const BEGRIFFE = { besprechen: "Besprechen", auftrag: "Als Auftrag", antworten: "Antworten", fragen: "Fragen", weiterarbeiten: "Weiterarbeiten" };
 
 export const BEZUG = {
   projekt: { label: "Projekt", Symbol: FolderKanban },
@@ -22,6 +24,7 @@ export const BEZUG = {
   kachel: { label: "Kachel", Symbol: LayoutGrid },
   design: { label: "Design", Symbol: Palette },
   symbol: { label: "Symbol", Symbol: Shapes },
+  punkt: { label: "Punkt", Symbol: ListChecks },
 };
 
 /** Bezug als Chip: Art (Symbol + Wort) und Name. */
@@ -123,11 +126,13 @@ const NEBEN = `${KNOPF} border border-emerald-700/40 dark:border-emerald-600/50 
  * aktionen: { besprechen?: fn, auftrag?: fn, antworten?: fn } – der erste vorhandene in dieser Reihenfolge (antworten, besprechen, auftrag)
  * ist der Hauptknopf und kommt mit Enter. `kannSenden` übersteuert „Text nötig“ (z. B. nur Anhänge). `gesperrt` (Text) ersetzt die Eingabe durch einen Hinweis (fehlendes Recht).
  */
-export function ChatEingabe({ value, onChange, aktionen = {}, busy = false, platzhalter = "Nachricht …", hinweis, werkzeuge, ideen, onIdee, gesperrt, feld, maxLength = 8000, id, label = "Nachricht", oben, titel = {}, kannSenden }) {
+// ohneText: Aktionen, die auch ohne Text gehen (z. B. „weiterarbeiten“ – der Punkt selbst ist der Auftrag)
+export function ChatEingabe({ value, onChange, aktionen = {}, busy = false, platzhalter = "Nachricht …", hinweis, werkzeuge, ideen, onIdee, gesperrt, feld, maxLength = 8000, id, label = "Nachricht", oben, titel = {}, kannSenden, ohneText = [] }) {
   if (gesperrt) return <p className="border-t border-slate-200 dark:border-slate-800 px-3 py-3 text-xs text-slate-500">{gesperrt}</p>;
-  const reihe = [["antworten", Reply], ["besprechen", MessageSquare], ["auftrag", Hammer]].filter(([k]) => typeof aktionen[k] === "function");
+  const reihe = [["antworten", Reply], ["fragen", MessageCircleQuestion], ["besprechen", MessageSquare], ["weiterarbeiten", Hammer], ["auftrag", Hammer]].filter(([k]) => typeof aktionen[k] === "function");
   const haupt = reihe[0]?.[0];
-  const leer = kannSenden === undefined ? !String(value || "").trim() : !kannSenden;
+  const leerFuer = (k) => (ohneText.includes(k) ? false : kannSenden === undefined ? !String(value || "").trim() : !kannSenden);
+  const leer = leerFuer(haupt);
   const los = () => { if (!busy && !leer && haupt) aktionen[haupt](); };
   return (
     <div className="border-t border-slate-200 dark:border-slate-800 p-2.5 flex flex-col gap-2">
@@ -139,7 +144,7 @@ export function ChatEingabe({ value, onChange, aktionen = {}, busy = false, plat
           {werkzeuge}
           <span className="ml-auto" />
           {reihe.map(([k, S]) => (
-            <button key={k} type="button" className={k === haupt ? HAUPT : NEBEN} disabled={busy || leer} onClick={() => aktionen[k]()}
+            <button key={k} type="button" className={k === haupt ? HAUPT : NEBEN} disabled={busy || leerFuer(k)} onClick={() => aktionen[k]()}
               title={titel[k] || (k === haupt ? `${BEGRIFFE[k]} (Enter)` : BEGRIFFE[k])}>
               {busy && k === haupt ? <Loader2 className="w-4 h-4 motion-safe:animate-spin" aria-hidden="true" /> : <S className="w-4 h-4" aria-hidden="true" />}{BEGRIFFE[k]}</button>))}
         </div>
