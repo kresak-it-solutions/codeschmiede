@@ -6,6 +6,7 @@ import { existsSync } from "node:fs";
 import { lstat, mkdir, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { ohneGeheimnisse } from "./geheim.mjs";
+import { laufArgs } from "./cloudLauf.mjs";
 
 const REPO = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\/[A-Za-z0-9._-]{1,100}$/;
 const ZWEIG = /^[A-Za-z0-9._/-]{1,100}$/;
@@ -37,8 +38,30 @@ const laufLampe = (l, name, zweig = "main") => !l ? lampe("grau", `${name}: noch
  * Ampel eines Projekts. projekt: { repo, repo_stand, technik_art, datenbank, vorschau_domain, test_url, live_url }.
  * Fehler einzelner Prüfungen machen nur die jeweilige Lampe grau – die Ampel kommt immer zurück.
  */
+/** Was ein Projekt braucht – aus Art UND Zielen (0.17.0: „Die Ziele steuern auch die Ampel und die Abläufe“). */
+export function ampelBedarf(projekt) {
+  const art = projekt?.technik_art || "web";
+  const ziele = Array.isArray(projekt?.ziele) ? projekt.ziele : [];
+  const dotnet = projekt?.programm_technik === "dotnet";
+  const windows = art === "programm" || ziele.includes("windows");
+  return {
+    build: windows || (art === "programm" && ziele.includes("mac")),
+    signatur: art === "programm" && !dotnet,
+    sandbox: windows,
+    testlauf: art === "werkzeug" || ziele.includes("cloud_lauf"),
+    dokument: ziele.includes("pdf"),
+    // Testseite: Web, Handy und Tauri-Programme (Oberfläche als Testseite) – nie .NET
+    testseite: art === "web" || art === "handy" || (art === "programm" && !dotnet),
+  };
+}
+
+/**
+ * Ampel eines Projekts. projekt: { repo, repo_stand, technik_art, ziele, programm_technik, datenbank, vorschau_domain, test_url, live_url }.
+ * Fehler einzelner Prüfungen machen nur die jeweilige Lampe grau – die Ampel kommt immer zurück.
+ */
 export async function ampelPruefen({ sh, projekt, plattform = process.platform, holen = fetch, sandbox = sandboxPfad }) {
   const a = {}; const art = projekt.technik_art || "web"; const repo = projekt.repo;
+  const bedarf = ampelBedarf(projekt);
   const versuch = async (schluessel, f) => { try { a[schluessel] = await f(); } catch (e) { a[schluessel] = lampe("grau", `Nicht prüfbar: ${kurz(ohneGeheimnisse(String(e?.stderr || e?.message || "")), 120)}`); } };
   if (!repo) a.github = lampe(projekt.repo_stand === "angefragt" || projekt.repo_stand === "laeuft" ? "gelb" : "rot",
     projekt.repo_stand === "fehler" ? "Repository anlegen hat nicht geklappt – unter „Projekte verwalten“ nochmal" : projekt.repo_stand ? "Repository wird angelegt" : "Noch kein Repository – unter „Projekte verwalten“ anlegen");
@@ -49,24 +72,34 @@ export async function ampelPruefen({ sh, projekt, plattform = process.platform, 
       return lampe("gruen", `Repository da (${/PRIVATE|INTERNAL/i.test(stdout) ? "privat" : "öffentlich"})`);
     });
     await versuch("pruefung", async () => laufLampe(await letzterLauf(sh, repo, { workflow: "pruefung.yml" }), "Letzte Prüfung"));
-    if (art === "programm") {
-      await versuch("build", async () => laufLampe(await letzterLauf(sh, repo, { workflow: "programm.yml" }), "Build Windows/Mac"));
+    if (bedarf.build) await versuch("build", async () => laufLampe(await letzterLauf(sh, repo, { workflow: "programm.yml" }), "Build Windows/Mac"));
+    if (bedarf.signatur) {
       await versuch("signatur", async () => {
         const { stdout } = await sh("gh", ["secret", "list", "--repo", repo, "--json", "name", "--jq", ".[].name"]);
         return stdout.split(/\s+/).includes("TAURI_SIGNING_PRIVATE_KEY") ? lampe("gruen", "Automatische Updates: Signatur-Schlüssel hinterlegt")
           : lampe("grau", "Automatische Updates noch nicht eingerichtet (optional, eigener Schritt)");
       });
     }
-    if (art === "werkzeug") await versuch("testlauf", async () => laufLampe(await letzterLauf(sh, repo, { workflow: "lauf.yml" }), "Letzter Lauf"));
+    if (bedarf.testlauf) await versuch("testlauf", async () => laufLampe(await letzterLauf(sh, repo, { workflow: "lauf.yml" }), "Letzter Lauf"));
+    if (bedarf.dokument) {
+      try { a.dokument = laufLampe(await letzterLauf(sh, repo, { workflow: "dokument.yml" }), "Seiten-Vorschau (Ablauf „Dokument“)"); }
+      catch (e) {
+        a.dokument = /could not find|not found|404/i.test(String(e?.stderr || e?.message || ""))
+          ? lampe("gelb", "Seiten-Vorschau noch nicht eingerichtet – unter „Anbindungen“ auf „Seiten-Vorschau einrichten“")
+          : lampe("grau", `Nicht prüfbar: ${kurz(ohneGeheimnisse(String(e?.stderr || e?.message || "")), 120)}`);
+      }
+    }
   }
-  if (art === "programm") {
+  if (bedarf.sandbox) {
     a.sandbox = plattform !== "win32" ? lampe("grau", "Windows-Sandbox gibt es nur unter Windows")
       : sandbox(plattform) ? lampe("gruen", "Windows-Sandbox auf diesem PC bereit")
       : lampe("gelb", "Windows-Sandbox einschalten: Windows-Features › „Windows-Sandbox“ (nur Windows Pro/Enterprise), danach neu starten");
   }
-  if (art === "web" || art === "handy") {
+  if (bedarf.testseite) {
     const ziel = projekt.test_url || (projekt.vorschau_domain ? `https://${projekt.vorschau_domain}` : null) || projekt.live_url;
-    if (!ziel) a.testseite = lampe("gelb", "Testseite fehlt – unter „Anbindungen“ auf „Testseite einrichten“ klicken (Cloudflare, kostenlos)");
+    if (!ziel) a.testseite = lampe("gelb", art === "programm"
+      ? "Testseite der Programm-Oberfläche fehlt – unter „Anbindungen“: erst „Testseite für die Programm-Oberfläche einrichten“, dann „Testseite einrichten“"
+      : "Testseite fehlt – unter „Anbindungen“ auf „Testseite einrichten“ klicken (Cloudflare, kostenlos)");
     else await versuch("testseite", async () => {
       if (!/^https:\/\/[A-Za-z0-9.-]+(\/.*)?$/.test(ziel)) return lampe("rot", "Ungültige Adresse");
       const r = await holen(ziel, { method: "GET", redirect: "manual", signal: AbortSignal.timeout(8000) });
@@ -146,10 +179,10 @@ export async function sandboxStarten({ sh, repo, zweig = "main", basis, projektI
   return { datei: exes[0], link: lauf.url };
 }
 
-/** Testlauf eines Werkzeugs anstoßen (Ablauf „Lauf“ in GitHub). */
-export async function testlaufStarten({ sh, repo, zweig = "main" }) {
+/** Testlauf eines Werkzeugs anstoßen (Ablauf „Lauf“ in GitHub). eingaben = { befehl, eingabe } (geprüft, nur als -f name=wert), kennung = UUID des Laufs (0.17.0). */
+export async function testlaufStarten({ sh, repo, zweig = "main", eingaben = null, kennung = null }) {
   if (!repoGut(repo)) throw new Error("Ungültiges Repository");
   if (!zweigGut(zweig)) throw new Error("Ungültiger Zweig");
-  await sh("gh", ["workflow", "run", "lauf.yml", "--repo", repo, "--ref", zweig]);
+  await sh("gh", laufArgs({ repo, zweig, eingaben, kennung }));
   return { link: `https://github.com/${repo}/actions/workflows/lauf.yml` };
 }

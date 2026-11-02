@@ -89,7 +89,7 @@ jobs:
         run: |
           npm install --no-audit --no-fund
           npm test
-          if [ "${{ matrix.art }}" != "werkzeug" ]; then npm run build; else npm start; fi
+          if [ "${{ matrix.art }}" != "werkzeug" ]; then npm run build; else npm start; npm start -- zaehlen beispiele/klein.csv; test -f ausgabe/ergebnis.json; fi
       - uses: dtolnay/rust-toolchain@stable
         if: ${{ matrix.art == 'programm' }}
       - name: Programm prüfen
@@ -98,6 +98,9 @@ jobs:
         run: |
           # Bei Fehler die letzten Zeilen als Hinweis zeigen (das Protokoll ist sonst nur bei GitHub lesbar)
           schritt() { "$@" > "$RUNNER_TEMP/aus.txt" 2>&1 || { echo "::error::$(tail -n 40 "$RUNNER_TEMP/aus.txt" | cut -c1-300 | sed -e 's/%/%25/g' | awk '{printf "%s%%0A", $0}')"; exit 1; }; tail -n 5 "$RUNNER_TEMP/aus.txt"; }
+          # Testseite der Oberfläche (Arbeitsplatz Stufe 2): Web-Fassung mit nachgespielten Tauri-Funktionen
+          schritt node vorschau/bauen.mjs
+          test -f vorschau-dist/index.html && test -f vorschau-dist/cs-vorschau/tauri-nachbildung.js && grep -q "cs-vorschau/tauri-nachbildung.js" vorschau-dist/index.html
           schritt npx --yes @tauri-apps/cli@^2 icon app-icon.png
           schritt cargo test --manifest-path src-tauri/Cargo.toml
           schritt npx --yes @tauri-apps/cli@^2 build --bundles nsis

@@ -3,7 +3,8 @@
   "private": true,
   "version": "0.1.0",
   "scripts": {
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "vorschau": "node vorschau/bauen.mjs"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.0.0"

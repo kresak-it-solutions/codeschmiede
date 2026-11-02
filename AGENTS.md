@@ -52,6 +52,9 @@ Zusammengeführt wird nur auf Gerhards Wort (in der Codeschmiede: Knopf „Freig
   Chat-Begriffe dafür: „Fragen“ und „Weiterarbeiten“ nur mit gewähltem Punkt. **Code live** zeigt nur Code aus dem Arbeitsordner bzw. Zweig, nie Geheimnis-Dateien
   (nur Name „ausgeblendet“), Schlüssel maskiert, keine Personendaten; geht flüchtig über die Datenbank (`ws_code_live`, gelöscht bei Auftragsende) und führt nie
   Projekt-Code aus (nur Git-Lesebefehle ohne ext-diff/textconv). Datenbank 0059, `docs/KONZEPT-ARBEITSPLATZ.md`.
+  **Stufen 2 und 3 (0.17.0, freigegeben 02.11.2026, Datenbank 0060):** Tauri-Oberfläche als Testseite (Tauri-Funktionen nachgespielt), Windows-Sandbox mit Bildschirmfoto nur des
+  Sandbox-Fensters und erst nach Gerhards Bestätigung in den Chat, Werkzeug-Konsole (lauf.yml nur mit geprüften Eingaben, nie lokal), PDF-Seiten aus der Cloud als Bilder, QR-Code ohne fremden Dienst,
+  .NET nur Stufe 2, „Auf diesen Stand zurück“ als Auftrag (nie direkt auf main); Ziele steuern Ampel und Abläufe.
 - **2026-11-02 – Programmier-Werkzeug je Projekt (0.14.0, Entwurf frei, `docs/KONZEPT-WERKZEUGE.md`):** Je Projekt wählt der Admin unter
   KI-Anbieter › Programmieren das Werkzeug: Claude Code (Standard), OpenAI Codex CLI, Gemini CLI oder OpenCode (mit Modell). **Verpflichtend:** ist es
   auf einem PC nicht installiert, nicht angemeldet oder hat es den Sperren-Test nicht bestanden, wartet der Auftrag („wartet auf <Werkzeug>“) – kein anderes

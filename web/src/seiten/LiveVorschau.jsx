@@ -175,7 +175,7 @@ export function FeatureArbeitsplatz({ f, g, d, ich, darf, toast, onZurueck, onLo
             </div>
           </div>
           <div className="hidden lg:block cursor-col-resize group" onPointerDown={ziehen} role="separator" aria-orientation="vertical" aria-label="Breite ändern"><div className="mx-auto w-1 h-full rounded bg-slate-200 dark:bg-slate-800 group-hover:bg-emerald-600" /></div>
-          <RechteHaelfte projekt={projekt} f={f} d={d} ich={ich} toast={toast} onCode={onCode}
+          <RechteHaelfte projekt={projekt} f={f} d={d} ich={ich} toast={toast} onCode={onCode} onBaustein={setBaustein} baustein={baustein} darfAuftrag={darf(g?.bereich_id, "auftraege")}
             vorschau={(ziel) => <LiveVorschau key={ziel} projekt={projekt} a={aktiv} f={f} darfMerken={darf(g?.bereich_id, "auftraege")} toast={toast} onBaustein={setBaustein} baustein={baustein} startGeraet={ziel === "handy_pwa" ? "handy" : undefined} eingebettet />} />
         </div>
       </div>

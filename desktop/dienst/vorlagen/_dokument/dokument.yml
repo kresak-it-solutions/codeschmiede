@@ -1,0 +1,49 @@
+name: Dokument
+# Seiten-Vorschau der Codeschmiede (Arbeitsplatz, Ziel PDF): baut das Dokument aus diesem Zweig (Skript „pdf“ in package.json schreibt
+# ausgabe/dokument.pdf) und legt die Seiten als Bilder ab (höchstens 60, längste Seite 1000 Pixel). Start nur per Knopf in der Codeschmiede.
+# Die Codeschmiede öffnet das PDF selbst nie – sie zeigt nur die geprüften Seitenbilder.
+run-name: ${{ inputs.kennung && format('Codeschmiede {0}', inputs.kennung) || 'Dokument' }}
+on:
+  workflow_dispatch:
+    inputs:
+      kennung:
+        description: "Kennung des Laufs (setzt die Codeschmiede, ordnet das Ergebnis zu)"
+        required: false
+        default: ""
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: dokument-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  dokument:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683   # v4.2.2
+        with: { persist-credentials: false }
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020   # v4.4.0
+        with: { node-version: 22 }
+      - name: PDF bauen
+        run: |
+          if [ -f package-lock.json ]; then npm ci --no-audit --no-fund; fi
+          node -e 'process.exit(JSON.parse(require("fs").readFileSync("package.json","utf8")).scripts?.pdf ? 0 : 1)' \
+            || { echo "::error::Im Projekt fehlt das Skript „pdf“ in package.json – es soll ausgabe/dokument.pdf schreiben"; exit 1; }
+          npm run pdf
+          test -f ausgabe/dokument.pdf || { echo "::error::ausgabe/dokument.pdf fehlt nach „npm run pdf“"; exit 1; }
+      - name: Seiten als Bilder
+        timeout-minutes: 6
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends poppler-utils
+          mkdir -p seiten
+          pdftoppm -png -l 60 -scale-to 1000 ausgabe/dokument.pdf seiten/seite
+          for f in seiten/seite-*.png; do
+            n=$(basename "$f" .png | sed -e 's/^seite-//' -e 's/^0*//'); [ -n "$n" ] || continue
+            ziel="seiten/seite-$(printf '%03d' "$n").png"; [ "$f" = "$ziel" ] || mv "$f" "$ziel"
+          done
+          ls seiten | head -n 70
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02   # v4.6.2
+        with: { name: dokument-seiten, path: seiten/, retention-days: 7, if-no-files-found: error }
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02   # v4.6.2
+        with: { name: dokument, path: ausgabe/dokument.pdf, retention-days: 30 }
