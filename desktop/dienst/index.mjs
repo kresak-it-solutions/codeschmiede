@@ -52,6 +52,10 @@ import { setupNameOk, versionOrdner, releaseVersion, releaseWahl, tagImLive, ver
 import { sicherungsName, freierName, uebersicht as sicherungenUebersicht, sicherungenLampe, aufbauPruefen, aufbauArtefakt, BUNDLE_MAX } from "./lib/sicherungen.mjs";
 import { testseiteEinrichten, lotsePruefen, Lotse } from "./lib/testseite.mjs";
 import { laufSperren, sperrListe, gefaehrlicheGitConfig, gefaehrlicheAttribute, gitdirOk, linksNachAussen } from "./lib/rechte.mjs";
+import { ordnerLesen, zipLesen, pruefen as einlesenPruefen, auswahlPruefen, kopierPlan, regelnAusEingelesen, wissenAusKonzept, strukturListe, gruppenPrompt, gruppenAntwort } from "./lib/einlesen.mjs";
+import { einsortieren, geheimnisseImOrdner } from "./lib/einlesenKopie.mjs";
+import { repoEinlesen } from "./lib/repo.mjs";
+import { pfadOk } from "./lib/projektordner.mjs";
 
 const HIER = path.dirname(fileURLToPath(import.meta.url));
 // Claude Code finden. Windows: nativer Installer (claude.exe in %USERPROFILE%\.local\bin) oder npm (cli.js) – immer OHNE Shell
@@ -2480,6 +2484,135 @@ async function repoArbeit() {
   return true;
 }
 
+// ---------- Bestehendes Projekt einlesen (0.15.0, Datenbank 0058, docs/KONZEPT-EINLESEN.md) – nur die Werkstatt des Admins ----------
+// Die Quelle (Ordner oder ZIP) wählt der Admin im Programm; den Pfad kennt nur dieser PC (<Daten>/einlesen.json, schreibt nur das Programm).
+// Die Datenbank kennt nur eine zufällige Kennung – darum nimmt nur der PC den Vorgang, auf dem gewählt wurde. Projekt-Code wird nie ausgeführt:
+// nur lesen, prüfen, kopieren, git ohne Hooks, gh. Geheimnisse werden nie kopiert, nie geloggt und nie an die KI gegeben.
+async function einlesenQuellen() {
+  let j = {}; try { j = JSON.parse(await readFile(path.join(cfg.daten_ordner, "einlesen.json"), "utf8")); } catch { return new Map(); }
+  const m = new Map(); const jetzt = Date.now() / 1000;
+  for (const [id, e] of Object.entries(j?.quellen && typeof j.quellen === "object" ? j.quellen : {}).slice(0, 50)) {
+    if (!/^[0-9a-f]{32}$/.test(id) || !e || !["ordner", "zip"].includes(e.art) || !pfadOk(e.pfad) || !(Number(e.zeit) > jetzt - 7 * 86400)) continue;
+    m.set(id, { pfad: e.pfad, art: e.art });
+  }
+  return m;
+}
+/** Hinweis für die Datenbank: ohne Geheimnisse und ohne Pfade dieses PCs. */
+function einlesenHinweis(t, q) {
+  let h = ohneGeheimnisse(String(t || "Unbekannter Fehler"));
+  if (q?.pfad) h = h.split(q.pfad).join("<Quelle>");
+  for (const p of [cfg.daten_ordner, os.homedir(), os.tmpdir()]) if (p) h = h.split(p).join("…");
+  return kuerzen(h.replace(/[A-Za-z]:[\\/][^\s"'„“]*/g, "…").replace(/(^|[\s"'(])\/(Users|home|Volumes|mnt|media|root|tmp|private|var)\/[^\s"'„“]*/g, "$1…").replace(/\\\\/g, "\\"), 900);
+}
+const einlesenLesen = (q) => (q.art === "zip" ? zipLesen(q.pfad) : ordnerLesen(q.pfad));
+async function einlesenMelden(id, stand, felder = {}) {
+  const { error } = await db.rpc("ws_einlesen_melden", { p_pc: pcId, p_id: id, p_stand: stand, p_bericht: felder.bericht ?? null, p_vorschlag: felder.vorschlag ?? null,
+    p_hinweis: felder.hinweis ?? null, p_schritt: felder.schritt ?? null });
+  if (error) throw new Error(`Einlesen melden: ${error.message}`);
+}
+async function einlesenArbeit() {
+  if (!cfg.admin || !pcId) return false;
+  const quellen = await einlesenQuellen();
+  if (!quellen.size) return false;
+  const { data, error } = await db.rpc("ws_einlesen_nehmen", { p_pc: pcId, p_quellen: [...quellen.keys()] });
+  if (error) { if (!/function .* does not exist|schema cache/i.test(error.message)) melde("fehler", ohneGeheimnisse(error.message)); return false; }
+  const v = data?.[0]; if (!v) return false;
+  const q = quellen.get(v.quelle);
+  try {
+    if (v.stand === "pruefung") {
+      melde("status", "Einlesen: Quelle wird geprüft (nur lesen)");
+      const quelle = await einlesenLesen(q);
+      const { bericht } = await einlesenPruefen(quelle.eintraege, { links: quelle.links, git: quelle.git, ausgeschlossen: quelle.ausgeschlossen });
+      await einlesenMelden(v.id, "geprueft", { bericht, hinweis: null });
+    } else if (v.stand === "einlesen_laeuft") await einlesenAusfuehren(v, q);
+    else if (v.stand === "ki_laeuft") await einlesenKi(v);
+  } catch (e) {
+    const h = einlesenHinweis(e?.stderr || e?.message || String(e), q);
+    melde("fehler", `Einlesen: ${h}`);
+    await einlesenMelden(v.id, "fehler", { hinweis: h }).catch(() => {});
+  }
+  melde("status", "Werkstatt bereit");
+  return true;
+}
+async function einlesenAusfuehren(v, q) {
+  const schritt = (t) => { melde("status", `Einlesen: ${t}`); return einlesenMelden(v.id, "einlesen_laeuft", { schritt: t }).catch(() => {}); };
+  const { data: projekt, error } = await db.from("ws_projekte").select("*").eq("id", v.projekt_id).single();
+  if (error || !projekt) throw new Error("Projekt nicht gefunden");
+  if (projekt.repo) throw new Error("Das Projekt hat schon ein Repository – abgebrochen");
+  const po = await projektOrdner(projekt.id);
+  if (po.stand !== "ok") throw new Error("Der neue Projektordner ist auf diesem PC nicht erreichbar (Festplatte?) – abgebrochen, nichts übernommen");
+  // Quelle und Ziel dürfen nicht ineinander liegen (sonst kopiert sich der Projektordner selbst)
+  const qEcht = await realpath(q.art === "zip" ? path.dirname(q.pfad) : q.pfad);
+  const innen = (a, b) => a === b || a.startsWith(b + path.sep);
+  if (q.art === "ordner" && (innen(po.wurzel, qEcht) || innen(qEcht, po.wurzel))) throw new Error("Quelle und Projektordner liegen ineinander – bitte eine andere Quelle wählen");
+  await schritt("Quelle wird noch einmal geprüft");
+  const quelle = await einlesenLesen(q);
+  const { bericht, dateien } = await einlesenPruefen(quelle.eintraege, { links: quelle.links, git: quelle.git, ausgeschlossen: quelle.ausgeschlossen });
+  let auswahl;
+  try { auswahl = auswahlPruefen(v.auswahl || {}, bericht); } catch { throw new Error("Die Quelle hat sich seit der Prüfung geändert – bitte neu einlesen"); }
+  const plan = kopierPlan(dateien, bericht, auswahl);
+  const stage = path.join(cfg.daten_ordner, "einlesen", `vorgang-${Number(v.id)}`);
+  await rm(stage, { recursive: true, force: true });
+  try {
+    await schritt("Dateien werden in den Projektordner kopiert (Original bleibt unverändert)");
+    await geruestAnlegen(po.wurzel, { projektName: projekt.name });
+    const r = await einsortieren({ plan, wurzel: po.wurzel, codeOrdner: path.join(stage, "code"), melde: (t) => melde("status", `Einlesen: ${t}`) });
+    // Projektregeln: Vorlage + gefundene CLAUDE.md/AGENTS.md als Vorschlag (gilt erst nach Bestätigung durch den Admin, Prüfsumme je PC)
+    const regelDateien = [];
+    for (const d of dateien.filter((x) => /^(CLAUDE|AGENTS)\.md$/i.test(x.rel))) regelDateien.push({ name: d.rel, text: (await d.lesen(1024 * 1024)).toString("utf8") });
+    await sicherSchreiben(po.wurzel, "regeln/REGELN.md", regelnAusEingelesen({ kopf: regelnVorlage({ projektName: projekt.name }), dateien: regelDateien }));
+    // Geheimnis-Prüfung noch einmal über den Code, unmittelbar vor dem Hochladen – findet sie etwas, wird abgebrochen
+    await schritt("Geheimnis-Prüfung vor dem Hochladen");
+    const code = path.join(stage, "code");
+    const funde = await geheimnisseImOrdner(code);
+    if (funde.length) throw new Error(`Vor dem Hochladen ${funde.length} Datei(en) mit Geheimnissen gefunden – abgebrochen, nichts hochgeladen`);
+    const raus = await linksNachAussen(code);
+    if (raus.length) throw new Error("Im Code liegen Verknüpfungen – abgebrochen, nichts hochgeladen");
+    await schritt("Privates Repository wird angelegt");
+    const keineHooks = path.join(stage, "keine-hooks"); await mkdir(keineHooks, { recursive: true });
+    const { repo } = await repoEinlesen({ sh, ordner: code, keineHooks, projekt, melde: (t) => melde("status", `Einlesen: ${t}`) });
+    const { error: er } = await db.rpc("ws_einlesen_repo", { p_pc: pcId, p_id: v.id, p_repo: repo });
+    if (er) throw new Error(`Repository ${repo} angelegt, aber nicht eingetragen: ${er.message} – bitte unter „Projekte verwalten“ selbst eintragen`);
+    await rm(stage, { recursive: true, force: true }).catch(() => {});   // Wegwerf-Kopie mit Git-Einstellungen des ersten Hochladens
+    await schritt("Arbeitskopie im Projektordner wird angelegt");
+    await repoOrt({ ...projekt, repo }).catch((e) => melde("fehler", `Einlesen: Arbeitskopie folgt beim nächsten Durchlauf (${einlesenHinweis(e?.message, q)})`));
+    // Konzept-Dateien ins Wissen (Markdown/Text, gekennzeichnet als eingelesen und ungeprüft)
+    if (auswahl.wissen) {
+      let n = 0;
+      for (const d of plan.konzept.filter((x) => /\.(md|txt)$/i.test(x.rel))) {
+        for (const w of wissenAusKonzept(d.rel, (await d.lesen(2 * 1024 * 1024)).toString("utf8"), { max: 40 - n })) {
+          const { error: ew } = await db.rpc("ws_wissen_eintragen", { p_projekt: projekt.id, p_kapitel: w.kapitel, p_text: w.text });
+          if (ew) break; n++;
+        }
+        if (n >= 40) break;
+      }
+    }
+    melde("status", `Einlesen: ${r.kopiert} Dateien übernommen${r.ausgelassen.length ? `, ${r.ausgelassen.length} ausgelassen (Name/Ziel)` : ""}`);
+    await einlesenKi({ ...v, projekt_id: projekt.id }, { ...projekt, repo });
+  } finally { await rm(stage, { recursive: true, force: true }).catch(() => {}); }
+}
+/** Gruppen und Features: die eingestellte KI (Zuständigkeit „Konzept“, verpflichtend) bekommt NUR die Strukturliste des Codes. */
+async function einlesenKi(v, projektVorher = null) {
+  const projekt = projektVorher || (await db.from("ws_projekte").select("*").eq("id", v.projekt_id).single()).data;
+  if (!projekt) throw new Error("Projekt nicht gefunden");
+  const po = await projektOrdner(projekt.id);
+  if (po.stand !== "ok" || !(await existiert(path.join(po.code, ".git")))) {
+    await einlesenMelden(v.id, "wartet_ki", { hinweis: "Wartet auf die Arbeitskopie im Projektordner (Festplatte?) – versucht es in 5 Minuten wieder" });
+    return;
+  }
+  const quelle = await ordnerLesen(po.code);
+  const leser = new Map(quelle.eintraege.map((e) => [e.rel, e]));
+  const struktur = await strukturListe([...leser.keys()], (rel) => leser.get(rel)?.lesen(2 * 1024 * 1024));
+  const { data: e } = await db.from("ws_einlesen").select("bericht").eq("id", v.id).maybeSingle();
+  try {
+    const { roh } = await kiAntwort(projekt, "konzept", gruppenPrompt({ name: projekt.name, art: projekt.technik_art || "web", technik: e?.bericht?.technik || [], struktur }));
+    await einlesenMelden(v.id, "vorschlag", { vorschlag: gruppenAntwort(roh), hinweis: null });
+  } catch (err) {
+    // KI-Anbieter verpflichtend (0.13.1): fehlt sie oder ist sie voll, wartet der Schritt – kein Ausweichen
+    await einlesenMelden(v.id, "wartet_ki", { hinweis: einlesenHinweis(err?.message || String(err)) });
+  }
+}
+
 // ---------- Anbindungen je Projekt (Datenbank 0030, Entwurf 1.0 „Neues Projekt“) – nur die Werkstatt des Admins ----------
 async function ampelMelden(p) {
   try {
@@ -2933,6 +3066,7 @@ async function naechsterAuftrag() {
   if (await repoArbeit()) return;
   if (await liveArbeit()) return;
   if (await aktionArbeit()) return;
+  if (await einlesenArbeit()) return;
   // 0. Designer- und Konzept-Chat: kurz, eigene Fragen zuerst. Auch während Claudes Abo-Pause – die KI-Reihe springt dann
   //    selbst zum nächsten Anbieter (z. B. ChatGPT) oder meldet im Chat, warum keiner antworten kann (Meldung 27.10.2026:
   //    5 Fragen im Konzept-Chat blieben ohne Antwort, obwohl ChatGPT zuständig war). Marken-Arbeit braucht Claude: nur ohne Pause.

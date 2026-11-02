@@ -192,3 +192,42 @@ export async function repoIstPrivat({ sh: shRoh, repo }) {
   if (!repoOk(repo)) return null;
   try { const { stdout } = await sh("gh", ["repo", "view", repo, "--json", "visibility", "--jq", ".visibility"]); const v = String(stdout).trim().toUpperCase(); return v === "PRIVATE" || v === "INTERNAL" ? true : v === "PUBLIC" ? false : null; } catch { return null; }
 }
+
+/**
+ * Eingelesenes Projekt (0.15.0): neues PRIVATES Repository anlegen und den Inhalt von ordner (fertig einsortierter Code, Geheimnis-Prüfung
+ * schon gelaufen) als ersten Stand „Projekt eingelesen am <TT.MM.JJJJ>“ auf main hochladen – keine Vorlage, keine Prüfungen, kein Regelwerk
+ * (die ergänzt ein eigener Auftrag). Keine vorhandene Git-Geschichte (ordner hat kein .git). Kein Projekt-Code wird ausgeführt (Hooks aus).
+ * Der Zugang kommt nur für diesen Aufruf aus gh (Credential-Helfer im Wegwerf-Ordner); die Codeschmiede speichert keine Zugangsdaten.
+ */
+export async function repoEinlesen({ sh: shRoh, ordner, keineHooks, projekt, heute = new Date(), melde = () => {} }) {
+  const sh = mitGrenze(shRoh);
+  const name = repoName(projekt.id);
+  if (!name) throw new Error("Ungültige Projekt-Kennung für GitHub");
+  const repo = `${REPO_KONTO}/${name}`;
+  if (!repoOk(repo)) throw new Error("Ungültiger Repository-Name");
+  if (await lstat(path.join(ordner, ".git")).then(() => true, () => false)) throw new Error("Im Code liegt noch eine Git-Geschichte – abgebrochen");
+  const schonDa = await sh("gh", ["repo", "view", repo, "--json", "name"]).then(() => true, () => false);
+  if (schonDa) throw new Error(`Bei GitHub gibt es ${repo} schon – bitte eine andere Kennung wählen. Nichts hochgeladen.`);
+  const g = (...a) => sh("git", ["-c", `core.hooksPath=${keineHooks}`, "-c", "core.fsmonitor=false", "-c", "protocol.ext.allow=never", ...a], { cwd: ordner });
+  await g("init", "-q", "-b", "main");
+  const { stdout: login } = await sh("gh", ["api", "user", "--jq", ".login"]).catch(() => ({ stdout: "codeschmiede" }));
+  const wer = String(login).trim().replace(/[^A-Za-z0-9-]/g, "") || "codeschmiede";
+  await g("config", "user.name", wer);
+  await g("config", "user.email", `${wer}@users.noreply.github.com`);
+  await g("config", "credential.helper", "");
+  await g("config", "--add", "credential.helper", "!gh auth git-credential");
+  await g("add", "-A");
+  const datum = heute.toLocaleDateString("de-AT", { day: "2-digit", month: "2-digit", year: "numeric" });
+  await g("commit", "-q", "--no-verify", "--allow-empty", "-m", `Projekt eingelesen am ${datum}`);
+  melde(`Lege ${repo} (privat) an und lade den ersten Stand hoch …`);
+  try {
+    await sh("gh", ["repo", "create", repo, "--private", "--description", String(projekt.name).replace(/[\u0000-\u001f\u007f]/g, " ").slice(0, 300), "--disable-wiki", "--source", ordner, "--remote", "origin", "--push"], { cwd: ordner, maxBuffer: 50 * 1024 * 1024, timeout: 600000 });
+  } catch (e) {
+    const da = await sh("gh", ["repo", "view", repo, "--json", "name"]).then(() => true, () => false);
+    if (!da) throw e;
+    melde("Hochladen beim ersten Versuch gescheitert – zweiter Versuch");
+    try { await g("remote", "add", "origin", `https://github.com/${repo}.git`); } catch { /* schon da */ }
+    await sh("git", ["-c", `core.hooksPath=${keineHooks}`, "push", "-q", "-u", "origin", "main"], { cwd: ordner, timeout: 600000 });
+  }
+  return { repo };
+}
