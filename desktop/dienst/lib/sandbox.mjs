@@ -138,8 +138,24 @@ const AUFBAU = {
     return o;
   },
 };
+// OpenCode (0.14.0): ~/.local/share/opencode/auth.json = { <anbieter>: { type: "oauth"|"api"|"wellknown", refresh/access/expires | key | token … } }
+const OC_FELDER = ["type", "refresh", "access", "expires", "key", "token", "accountId", "enterpriseUrl"];
+export function opencodeAnmeldungBereinigen(buf) {
+  let j; try { j = JSON.parse(buf.toString("utf8")); } catch { return null; }
+  if (!j || typeof j !== "object" || Array.isArray(j)) return null;
+  const o = {};
+  for (const [k, v] of Object.entries(j)) {
+    if (!/^[a-z0-9][a-z0-9._-]{0,60}$/i.test(k) || Object.keys(o).length >= 20) return null;
+    if (!v || typeof v !== "object" || Array.isArray(v) || !["oauth", "api", "wellknown"].includes(v.type)) return null;
+    const e = {}; for (const f of OC_FELDER) if (f in v) { if (!KURZ(v[f])) return null; e[f] = v[f]; }
+    o[k] = e;
+  }
+  return Buffer.from(JSON.stringify(o, null, 2));
+}
+
 /** Prüft eine zurückgeschriebene Anmeldedatei; liefert den bereinigten Inhalt oder null. */
 export function anmeldungBereinigen(name, buf, original = null) {
+  if (name === "opencode-auth.json") return opencodeAnmeldungBereinigen(buf);
   const s = buf.toString("utf8");
   if (name === "installation_id") return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\s*$/i.test(s) ? Buffer.from(s) : null;   // UUID
   const f = AUFBAU[name]; if (!f) return null;
@@ -230,4 +246,62 @@ export async function sandboxLauf({ anbieter, prog, arbeit, env, bauen = false }
   }
   const args = bwrapArgs({ frei: [...frei, ...zert], schreibbar: schreib, arbeit, home: kiHome });
   return { befehl: imPfad("bwrap"), vorne: [...args, "--", start.befehl, ...start.vorne], env: neueEnv, nachher, art };
+}
+
+// ---------- Programmier-Werkzeuge (0.14.0): Codex, Gemini CLI, OpenCode schreiben im ECHTEN Arbeitsordner ----------
+// Gleiche Sperre wie oben (macProfil/bwrapArgs), aber schreibbar sind genau zwei Ordner: der Arbeitsordner des Auftrags und der private
+// Lauf-Ordner (<Daten>/laeufe/werkzeug-…: Kopie der Anmeldung, eigenes HOME/Temp, Einstellungen). Alles andere – Projektordner (Regeln, setup,
+// regeln/REGELN.md, code/.git), andere Projekte, Daten der Codeschmiede, Benutzerordner – ist nicht schreibbar und (außer dem Arbeitsordner)
+// auch nicht lesbar. Verknüpfungen helfen nicht: macOS prüft den aufgelösten Pfad, unter Linux sind die Ziele gar nicht eingehängt.
+// Programmstarts (macOS): nur das Werkzeug selbst, die Shells und feste Leseprogramme – kein node/python/git/curl (kein Projekt-Code auf dem PC).
+export const WERKZEUG_PROGRAMME = [...BAU_PROGRAMME, "/bin/sh", "/bin/bash", "/bin/zsh", "/usr/bin/true", "/usr/bin/false", "/bin/mkdir", "/bin/cp", "/bin/mv", "/usr/bin/touch",
+  "/opt/homebrew/bin/rg", "/usr/local/bin/rg"];
+const QUELLEN = (home, env) => ({
+  codex: [[path.join(env.CODEX_HOME || path.join(home, ".codex"), "auth.json"), [".codex", "auth.json"], "auth.json"]],
+  "gemini-cli": ["oauth_creds.json", "google_accounts.json", "installation_id"].map((f) => [path.join(home, ".gemini", f), [".gemini", f], f]),
+  opencode: [[path.join(env.XDG_DATA_HOME || path.join(home, ".local", "share"), "opencode", "auth.json"), [".local", "share", "opencode", "auth.json"], "opencode-auth.json"]],
+});
+/**
+ * Sperre für einen Lauf eines Programmier-Werkzeugs vorbereiten. start = { befehl, vorne } (aufgelöst, z. B. das native Programm von Codex),
+ * nodeNoetig = darf node gestartet werden (nur wenn das Werkzeug selbst ein Node-Programm ist). Liefert { befehl, vorne, env, nachher, art } oder null.
+ */
+export async function werkzeugSandbox({ werkzeug, start, ordner, lauf, env, nodeNoetig = false, home = os.homedir(), art = sandboxArt(), quellenEnv = process.env }) {
+  if (!art || !start?.befehl) return null;
+  const haupt = echt(start.vorne?.[0] || start.befehl);
+  const progOrdner = ordnerVon(haupt);
+  const frei = [...new Set([progOrdner, ordnerVon(echt(start.befehl)), ...(nodeNoetig ? [path.dirname(path.dirname(echt(process.execPath)))] : [])].filter(Boolean))];
+  const schreib = [echt(ordner), echt(lauf)];
+  // Lieber keine Sperre als eine offene (Prüfung A2): nie den Benutzerordner, die Wurzel oder Temp als Ganzes freigeben
+  if ([...frei, ...schreib].some((p) => zuWeit(p, home) || p === "/") || frei.some((p) => zuWeit(p, os.tmpdir()))) return null;
+  if (schreib.some((s) => frei.some((f) => zuWeit(f, s)))) return null;
+  const zert = [process.env.NODE_EXTRA_CA_CERTS, process.env.SSL_CERT_FILE].filter((p) => p && existsSync(p)).map(echt);
+  const kiHome = path.join(lauf, "home"); const kiTemp = path.join(lauf, "tmp");
+  await mkdir(kiHome, { recursive: true, mode: 0o700 }); await mkdir(kiTemp, { recursive: true, mode: 0o700 });
+  const neueEnv = { ...env, HOME: kiHome, USERPROFILE: kiHome, XDG_CONFIG_HOME: path.join(kiHome, ".config"), XDG_DATA_HOME: path.join(kiHome, ".local", "share"),
+    XDG_CACHE_HOME: path.join(kiHome, ".cache"), XDG_STATE_HOME: path.join(kiHome, ".local", "state"), TMPDIR: art === "linux" ? kiTemp : kiTemp, TMP: kiTemp, TEMP: kiTemp };
+  for (const k of ["NODE_EXTRA_CA_CERTS", "SSL_CERT_FILE"]) if (process.env[k] && existsSync(process.env[k])) neueEnv[k] = echt(process.env[k]);
+  const nachher = [];
+  // Anmeldung: Kopie in den privaten Lauf-Ordner (nur für diesen Lauf, 0600), danach geprüft zurück, falls das Werkzeug sie erneuert hat
+  for (const [von, rel, art2] of QUELLEN(home, quellenEnv)[werkzeug] || []) {
+    const nach = path.join(kiHome, ...rel);
+    if (!existsSync(von)) continue;
+    await mkdir(path.dirname(nach), { recursive: true, mode: 0o700 }); await copyFile(von, nach);
+    nachher.push(async () => {
+      try {
+        const roh = await sicherLesen(nach, lauf, 256 * 1024); if (!roh) return;
+        let alt = null; try { alt = await readFile(von); } catch { /* neu */ }
+        if (alt && alt.equals(roh)) return;
+        const b = anmeldungBereinigen(art2, roh, alt); if (!b) return;
+        const tmp = `${von}.cs-${process.pid}`; await writeFile(tmp, b, { mode: 0o600, flag: "wx" }); await rename(tmp, von);
+      } catch { /* bleibt wie es war */ }
+    });
+  }
+  if (art === "macos") {
+    const profil = macProfil({ home, frei: [...frei, ...zert], schreibbar: schreib, temp: os.tmpdir(),
+      starten: progOrdner.split(path.sep).includes("node_modules") ? [progOrdner] : [],
+      startenDateien: [...WERKZEUG_PROGRAMME, echt(start.befehl), ...(nodeNoetig ? [echt(process.execPath)] : [])] });
+    return { befehl: "/usr/bin/sandbox-exec", vorne: ["-p", profil, start.befehl, ...(start.vorne || [])], env: neueEnv, nachher, art, profil };
+  }
+  const args = bwrapArgs({ frei: [...frei, ...zert], schreibbar: schreib, arbeit: ordner, home: kiHome });
+  return { befehl: imPfad("bwrap"), vorne: [...args, "--", start.befehl, ...(start.vorne || [])], env: neueEnv, nachher, art, args };
 }
