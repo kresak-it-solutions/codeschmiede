@@ -35,7 +35,14 @@ const AboLimits = lazy(() => import("./AboLimits"));
 export default function App() {
   const [sitzung, setSitzung] = useState(undefined);
   const [ich, setIch] = useState(undefined);
-  const [ansicht, setAnsicht] = useState(() => merke.lies("cs-ansicht") || "zentrale");   // zuletzt geöffnete Seite (Entwurf 1.1)
+  // zuletzt geöffnete Seite (Entwurf 1.1); ein Tipp auf eine Push-Nachricht öffnet „?ansicht=erledigen“ bzw. „zentrale“ (Befund L3)
+  const [ansicht, setAnsicht] = useState(() => {
+    try {
+      const q = new URLSearchParams(window.location.search).get("ansicht");
+      if (q && ["erledigen", "zentrale", "chat", "aufgaben"].includes(q)) { window.history.replaceState(null, "", window.location.pathname); return q; }
+    } catch { /* ohne Adresse */ }
+    return merke.lies("cs-ansicht") || "zentrale";
+  });
   const [oeffne, setOeffne] = useState(null);   // aus „Zu erledigen“: Feature-Arbeitsplatz bzw. Gruppen-Chat öffnen
   const [projekt, setProjekt] = useState(() => merke.lies("cs-projekt"));
   const [toast, setToast] = useState("");
@@ -128,7 +135,7 @@ export default function App() {
             <WerkstattSchalter ich={ich} sitzung={sitzung} d={daten} toast={setToast} />
             <button type="button" onClick={() => geh("erledigen")} className="relative p-2 rounded-xl border border-slate-200 dark:border-slate-700" aria-label={`Zu erledigen: ${offen + zuTun}`} title="Rückfragen, Freigaben und alles, was auf dich wartet">
               <Bell className="w-4 h-4" />{offen + zuTun > 0 && <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] rounded-full bg-amber-500 text-amber-950 text-xs font-bold grid place-items-center px-1">{offen + zuTun}</span>}</button>
-            <Benutzermenue ich={ich} />
+            <Benutzermenue ich={ich} toast={setToast} />
           </div>
         </header>
         <main className={`min-w-0 min-h-0 ${vollflaeche ? "overflow-hidden" : "overflow-y-auto px-4 md:px-6 pb-10"}`}>

@@ -19,3 +19,8 @@
   ! X-Frame-Options
   Content-Security-Policy: default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; font-src data: blob:; img-src data:; connect-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'
   X-Frame-Options: SAMEORIGIN
+
+# Push aufs Handy (Befund L3, 0053): Service Worker nie zwischenspeichern, sonst kommt eine neue Fassung nicht an.
+/sw.js
+  Cache-Control: no-cache
+  Service-Worker-Allowed: /

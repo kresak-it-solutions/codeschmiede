@@ -120,6 +120,47 @@ Unterhaltung und arbeitet wie im Konzept-Chat (Rückfragen, Aufträge erst nach 
 eigene Werkstatt nimmt die Werte der offiziellen Statuszeile von Claude Code (höchstens 2 Minuten alt), sonst Mini-Anfrage; Hinweis bei Fehlern.
 Seit 0.10.1 (Befund S6) liest die Werkstatt **keine** Anmeldung von Claude Code mehr und ruft keine inoffizielle Schnittstelle auf.
 
+
+## Push aufs Handy (seit 0.12.0, Befund L3, Datenbank 0053)
+**Wann:** neue Erlaubnis-Anfrage (an Admin und Entwickler mit Recht „freigeben“ im Bereich) · Rückfrage der Werkstatt (an die Person, die den
+Auftrag gestellt hat) · Auftrag fertig, Freigabe bereit (Freigeber) · Station angehalten nach 3 Fehlversuchen (Freigeber). Gleiche Meldung
+höchstens alle 2 Minuten. Nicht: Rückfragen der KI im Konzept-Chat (dort sitzt man ohnehin gerade).
+**Text:** nur Projektname, Art und Auftragsnummer – nie Titel, Befehl, Nachricht oder Namen („Trainer to go · Erlaubnis nötig“ /
+„Auftrag #12 wartet auf deine Erlaubnis.“). Tippen öffnet „Zu erledigen“ (bzw. die Zentrale bei Stationen).
+**Weg:** Trigger → `ws_push_warteschlange` → `pg_net` stößt die Edge Function `push-senden` an (ohne Inhalt) → die Funktion holt die Zeilen
+mit dem Dienst-Schlüssel (`ws_push_abholen`), verschlüsselt Ende-zu-Ende (RFC 8291) mit dem VAPID-Schlüssel und gibt sie dem Push-Dienst
+des Geräts → `ws_push_ergebnis` (404/410 = Gerät entfernt). Ohne `pg_net` oder ohne Funktion bleibt alles liegen und geht beim nächsten
+Anstoß raus (nur Meldungen der letzten Stunde). Der Anstoß braucht keine Anmeldung, kann aber nur die vorhandene Warteschlange abarbeiten.
+**Geheimnisse:** `VAPID_PRIVATE_KEY` nur als Supabase-Secret (Ablauf „Web-Push-Schlüssel erzeugen“), nie im Repository, in der Datenbank oder im Log.
+Der öffentliche Schlüssel kommt von der Funktion (`GET …/push-senden?schluessel=1`).
+**Kosten:** keine – Supabase-Gratis-Kontingent (Edge Functions, `pg_net`), Push-Dienste der Browser kostenlos.
+
+### Einrichten – was Gerhard einmalig tut (nach dem Zusammenführen des PR)
+1. **Datenbank 0053 einspielen:** GitHub › Repository `kresak-it-solutions/codeschmiede` › **Actions** › „Datenbank einspielen“ › **Run workflow**,
+   Zweig `main`, Feld „Pfad“: `migrations/0053_push.sql` › grüner Knopf „Run workflow“. Grün = fertig. (Alternativ die Zeile
+   `migrations/0053_push.sql` in `supabase/einspielen.txt` in main eintragen – die Werkstatt darf das nicht.)
+2. **Schlüssel erzeugen (= Geheimnis bestätigen):** Actions › **„Web-Push-Schlüssel erzeugen“** › Run workflow, Zweig `main`, Häkchen
+   „ueberschreiben“ **aus** lassen › Run workflow. Im Ergebnis steht „VAPID-Schlüssel gespeichert“. Prüfen: Supabase › Projekt `codeschmiede` ›
+   Edge Functions › **Secrets**: `VAPID_PUBLIC_KEY` und `VAPID_PRIVATE_KEY` sind da (Werte nicht ansehen nötig).
+3. **Funktion veröffentlichen:** läuft beim Zusammenführen von selbst („Push-Funktion veröffentlichen“). Falls nicht grün: Actions ›
+   „Push-Funktion veröffentlichen“ › Run workflow (Zweig `main`). Prüfen: Supabase › Edge Functions › `push-senden` ist da,
+   „Verify JWT“ ist **aus**.
+4. **`pg_net` prüfen:** Supabase › Database › Extensions › `pg_net` ist eingeschaltet (0053 schaltet es selbst ein; falls ausgegraut: einschalten).
+5. **Auf dem Handy erlauben:**
+   - **iPhone (ab iOS 16.4):** Safari › `https://codeschmiede.pages.dev` › unten **Teilen** › **„Zum Home-Bildschirm“** › Hinzufügen. Die
+     Codeschmiede **vom Home-Bildschirm** öffnen, anmelden, oben rechts auf deinen Kreis (Benutzermenü) › **„Push aufs Handy“** ›
+     **„Auf diesem Gerät erlauben“** › bei der Frage des iPhones **„Erlauben“**.
+   - **Android:** Chrome › `https://codeschmiede.pages.dev` › anmelden › Benutzermenü › „Push aufs Handy“ › „Auf diesem Gerät erlauben“ ›
+     „Zulassen“ (Zum Startbildschirm hinzufügen ist empfohlen, aber nicht nötig).
+6. **Testen:** im selben Dialog **„Test senden“** – nach wenigen Sekunden kommt „Test: Push-Nachrichten kommen auf diesem Gerät an.“
+Kommt nichts: Supabase › Edge Functions › `push-senden` › **Logs**; Handy-Einstellungen › Mitteilungen › Codeschmiede erlaubt?
+Schlüssel ersetzen (z. B. nach einem Leck): Schritt 2 mit Häkchen „ueberschreiben“, danach auf jedem Gerät Schritt 5 wiederholen.
+
+### Wenn es hier nicht geht – Funktion von Hand veröffentlichen
+Supabase-CLI auf einem PC (nicht nötig, wenn Schritt 3 grün ist): `supabase login`, dann im Repository
+`supabase functions deploy push-senden --project-ref mvzlbpijdvsjnemubofy --no-verify-jwt` und Secrets mit
+`supabase secrets set --project-ref mvzlbpijdvsjnemubofy VAPID_PUBLIC_KEY=… VAPID_PRIVATE_KEY=…` (Schlüssel z. B. mit `npx web-push generate-vapid-keys`).
+
 ## Rollen und Rechte
 | Rolle | Aufträge | Freigeben / Erlauben | Löschen | Claude | GitHub |
 |---|---|---|---|---|---|
@@ -197,15 +238,7 @@ Beim ersten Laden ersetzt der Fehlerzustand den Inhalt; scheitert ein späteres 
 (Toast) nur noch für Ergebnisse von Klicks, nicht für Ladefehler.
 
 ## Offene Punkte aus den Befunden vom 01.11.2026 (`docs/BEFUNDE-2026-11-01.md`)
-- **L3 Push-Nachricht aufs Handy (Pflichtregel AGENTS.md, noch nicht gebaut).** Ohne neue Infrastruktur nicht sinnvoll machbar: Jede Push-Nachricht
-  aufs Handy läuft über den Push-Dienst des Handy-Browsers (Google bzw. Apple) oder einen eigenen Server. **Plan (Empfehlung):** Web-Push für die
-  Codeschmiede als PWA (`codeschmiede.pages.dev` auf dem Handy „Zum Home-Bildschirm“, iPhone ab iOS 16.4): Service Worker, Tabelle `ws_push_abos`
-  (Endpunkt und Schlüssel je Gerät, nur eigene Person), Supabase Edge Function `push-senden` mit VAPID-Schlüssel (Geheimnis nur in Supabase),
-  Auslöser per Datenbank-Trigger bei neuer Erlaubnis-Anfrage, Rückfrage, Freigabe-bereit und angehaltener/roter Station. Inhalt nur kurz und ohne
-  Personendaten („Auftrag #12 wartet auf deine Erlaubnis“), Ende-zu-Ende verschlüsselt (RFC 8291) – der Push-Dienst sieht den Text nicht; trotzdem
-  Eintrag in `docs/DATENSCHUTZ.md` (Empfänger: Push-Dienst von Google/Apple/Mozilla, nur Gerätekennung). Aufwand etwa 1–2 Tage, Risiko NORMAL;
-  braucht Gerhard: VAPID-Schlüssel anlegen lassen und die Edge Function freigeben. Alternative ohne Google/Apple: eigener ntfy-Server (eigener
-  Rechner/Server nötig).
+- ~~L3 Push-Nachricht aufs Handy~~: gebaut in 0.12.0 (Abschnitt „Push aufs Handy“).
 - **L4 Warteschlange fürs Zusammenführen:** Seit 0.10.2 höchstens 3 Neustarts wegen eines bewegten main, dann „angehalten“. Eine echte
   Warteschlange (oder die Merge-Queue von GitHub) folgt mit L7.
 - **L7 Vorhaben mit Stufen** (ein Auftrag, mehrere PRs) und Übernahme der Nacharbeit durch einen anderen PC derselben Person (heute: Nacharbeit

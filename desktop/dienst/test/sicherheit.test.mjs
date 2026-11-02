@@ -78,3 +78,23 @@ test("H1: Geheimnisse nicht in Abläufen, die Code eines ungeprüften Zweigs aus
   const pg = wf("programm.yml");
   assert.match(pg, /name: Programm bauen \(signiert für automatische Updates\)\n\s+if: \$\{\{ github\.ref == 'refs\/heads\/main' \}\}/);
 });
+
+test("L3 Push: Abläufe mit Geheimnissen nur von main, Funktion ohne Geheimnisse im Code, Texte ohne Personendaten", () => {
+  const wf = (n) => readFileSync(new URL(`../../../.github/workflows/${n}`, import.meta.url), "utf8");
+  const fn = wf("push-funktion.yml"); const vk = wf("web-push-schluessel.yml");
+  assert.match(fn, /push:\n\s+branches: \[main\]\n\s+paths: \["supabase\/functions\/push-senden\/\*\*"\]/);
+  for (const w of [fn, vk]) assert.match(w, /if: github\.ref == 'refs\/heads\/main'/);
+  assert.match(vk, /::add-mask::\$PRIV/);
+  assert.doesNotMatch(vk, /pull_request|push:/);
+  const code = readFileSync(new URL("../../../supabase/functions/push-senden/index.ts", import.meta.url), "utf8");
+  assert.match(code, /Deno\.env\.get\("VAPID_PRIVATE_KEY"\)/);
+  assert.doesNotMatch(code, /console\.log/);   // nichts ins Protokoll
+  assert.doesNotMatch(code, /-----BEGIN|[A-Za-z0-9_-]{80,}/);   // kein Schlüssel im Code
+  const sql = readFileSync(new URL("../../../supabase/migrations/0053_push.sql", import.meta.url), "utf8");
+  // Push-Texte nur aus Auftragsnummer/Projektname – nie Titel, Befehl (eingabe), Grund oder Nachrichtentext
+  const eintraege = sql.split("perform public.ws_push_eintragen(").slice(1).map((t) => t.slice(0, t.indexOf(");")));
+  assert.ok(eintraege.length >= 4);
+  for (const e of eintraege) assert.doesNotMatch(e, /\.titel|eingabe|grund|\.text\b|name\b/);
+  const sw = readFileSync(new URL("../../../web/public/sw.js", import.meta.url), "utf8");
+  assert.doesNotMatch(sw, /caches\.|fetch"/);   // Service Worker nur für Push, kein Zwischenspeicher
+});

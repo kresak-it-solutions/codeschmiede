@@ -1,0 +1,36 @@
+name: Push-Funktion veröffentlichen
+
+# Veröffentlicht die Supabase Edge Function „push-senden“ (supabase/functions/push-senden, Befund L3, Datenbank 0053) in der
+# Codeschmiede-Datenbank. Start: automatisch, wenn sich die Funktion in main ändert, oder von Hand („Run workflow“, Zweig main).
+# Nur vom geprüften Stand (main) – ein Zweig veröffentlicht nie Code mit dem Dienst-Schlüssel. Ohne Anmeldung aufrufbar (--no-verify-jwt):
+# Die Funktion arbeitet nur die Warteschlange der Datenbank ab bzw. nennt den öffentlichen VAPID-Schlüssel.
+on:
+  push:
+    branches: [main]
+    paths: ["supabase/functions/push-senden/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  SUPABASE_PROJECT_REF: mvzlbpijdvsjnemubofy   # codeschmiede (EU, eu-west-1) – fest eingetragen
+
+jobs:
+  veroeffentlichen:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - name: Funktion veröffentlichen
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$SUPABASE_ACCESS_TOKEN" || { echo "::error::Geheimnis SUPABASE_ACCESS_TOKEN fehlt (Repository-Einstellungen → Secrets)"; exit 1; }
+          supabase functions deploy push-senden --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt --use-api
+          echo "::notice title=Fertig::push-senden veröffentlicht – https://$SUPABASE_PROJECT_REF.supabase.co/functions/v1/push-senden"
