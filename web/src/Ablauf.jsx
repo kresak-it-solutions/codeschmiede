@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { werkzeugName } from "./daten/werkzeuge";
 import {
   GitBranch, Tag, Search, Loader2, Info, ShieldCheck, CircleCheck, CircleAlert, Clock, ExternalLink, BookOpen, History, Download, FileText, RefreshCw,
 } from "lucide-react";
@@ -124,7 +125,7 @@ export function Pruefstand({ d }) {
     <div key={a.id} className="border-t border-slate-100 dark:border-slate-800 p-3 grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
       <div className="min-w-0"><div className="text-xs text-slate-500">#{a.id} · {gruppe(a.gruppe_id)}{feature(a.feature_id) ? ` › ${feature(a.feature_id)}` : ""}</div>
         <div className="font-semibold text-sm">{a.titel}</div>
-        <div className="text-xs text-slate-500 flex flex-wrap gap-x-3">{a.zweig && <span className="font-mono break-all">{a.zweig}</span>}{a.pr_nummer && ghUrl(projekt, `/pull/${a.pr_nummer}`) && <a href={ghUrl(projekt, `/pull/${a.pr_nummer}`)} target="_blank" rel="noopener noreferrer" className="text-emerald-700 dark:text-emerald-400 underline">PR #{a.pr_nummer}</a>}</div></div>
+        <div className="text-xs text-slate-500 flex flex-wrap gap-x-3">{a.zweig && <span className="font-mono break-all">{a.zweig}</span>}{a.pr_nummer && ghUrl(projekt, `/pull/${a.pr_nummer}`) && <a href={ghUrl(projekt, `/pull/${a.pr_nummer}`)} target="_blank" rel="noopener noreferrer" className="text-emerald-700 dark:text-emerald-400 underline">PR #{a.pr_nummer}</a>}{a.werkzeug && <span>Programmiert mit {werkzeugName(a.werkzeug)}</span>}</div></div>
       <div className="grid gap-2 sm:grid-cols-3">
         <Ergebnis p={a.pruefung?.lokal} titel="Bauen & Tests" />
         <Ergebnis p={a.pruefung?.sicherheit} titel="Sicherheit" />
