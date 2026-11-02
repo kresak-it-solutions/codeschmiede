@@ -44,6 +44,11 @@ pausiert für das Projekt. Rangfolge im Auftrag: Sicherheit (fest) › Projektre
 „Anbindungen“ und im Auftrag. Testseite per Knopf (Cloudflare Pages mit Git-Anbindung, kostenlos, Lotse als Rückfall), Datenbank nur als Wunsch
 (Kosten vorher bestätigen). Alles Weitere: `docs/KONZEPT-PROJEKTORDNER.md`.
 
+### Bestehendes Projekt einlesen (0.15.0, Entwurf frei von Gerhard 2026-11-02, Datenbank 0058)
+Assistent neben „Neues Projekt“ (nur Admin, im Programm): Ordner oder ZIP prüfen (ohne Ausführen), Geheimnisse/Programme/Verknüpfungen draußen, Personendaten nur nach Wahl,
+sortiert in einen **neuen** Projektordner kopieren (Original unverändert), privates Repository mit erstem Stand, Gruppen/Features aus einer reinen Strukturliste über die
+eingestellte KI. Alles Weitere: `docs/KONZEPT-EINLESEN.md`.
+
 ### Projekt-Arten (seit 0.9.0, Entwurf 1.0 vom 2026-10-24)
 | Art | Grundgerüst | Vorschau | Veröffentlichen |
 |---|---|---|---|

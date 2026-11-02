@@ -409,6 +409,124 @@ pub fn ws_ordner_oeffnen(app: tauri::AppHandle, projekt: String, unterordner: Op
     app.opener().open_path(p.to_string_lossy().to_string(), None::<&str>).map_err(|e| e.to_string())
 }
 
+// ---------- Bestehendes Projekt einlesen (0.15.0, docs/KONZEPT-EINLESEN.md) ----------
+// Die Quelle (Ordner oder ZIP) wählt der Admin über die Auswahl des Systems. Der Pfad bleibt NUR lokal in <App-Daten>/werkstatt/einlesen.json
+// (liest der Werkstatt-Dienst); die Oberfläche und die Datenbank bekommen nur eine zufällige Kennung, den Dateinamen und eine Kurzform.
+
+#[derive(Serialize, Deserialize, Default, Clone)]
+pub struct EinleseQuelle {
+    pub pfad: String,
+    pub art: String,
+    pub zeit: u64,
+}
+#[derive(Serialize, Deserialize, Default, Clone)]
+pub struct EinleseKonfig {
+    #[serde(default)]
+    pub quellen: BTreeMap<String, EinleseQuelle>,
+}
+#[derive(Serialize)]
+pub struct Gewaehlt {
+    quelle: String,
+    art: String,
+    name: String,
+    kurz: String,
+}
+/// Größte ZIP-Datei, die eingelesen wird (gleiche Grenze wie im Werkstatt-Dienst, lib/einlesen.mjs)
+const ZIP_MAX: u64 = 512 * 1024 * 1024;
+
+fn einlesen_datei(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    Ok(app.path().app_data_dir().map_err(|e| e.to_string())?.join("werkstatt").join("einlesen.json"))
+}
+fn jetzt() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+}
+/// Dateiname für die Anzeige: ohne Trenner, Doppelpunkt und Steuerzeichen, höchstens 120 Zeichen.
+pub(crate) fn anzeige_name(p: &Path) -> String {
+    let n: String = p.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default()
+        .chars().filter(|c| !c.is_control() && !matches!(c, '\\' | '/' | ':')).take(120).collect();
+    if n.trim().is_empty() { "Quelle".into() } else { n }
+}
+
+/// Quelle zum Einlesen wählen: art = "ordner" oder "zip". Gibt Kennung, Art, Dateiname und Kurzform zurück (None = abgebrochen).
+#[tauri::command]
+pub async fn ws_einlesen_quelle(app: tauri::AppHandle, art: String) -> Result<Option<Gewaehlt>, String> {
+    let pfad = match art.as_str() {
+        "ordner" => match ordner_waehlen(&app, "Projekt zum Einlesen wählen (Ordner)")? { Some(p) => p, None => return Ok(None) },
+        "zip" => {
+            let Some(f) = app.dialog().file().set_title("Projekt zum Einlesen wählen (ZIP-Datei)").add_filter("ZIP-Archiv", &["zip", "ZIP"]).blocking_pick_file() else { return Ok(None) };
+            let p = f.into_path().map_err(|e| e.to_string())?;
+            let m = std::fs::symlink_metadata(&p).map_err(|_| "Die Datei ist nicht erreichbar.".to_string())?;
+            if !m.is_file() || m.file_type().is_symlink() {
+                return Err("Bitte eine echte ZIP-Datei wählen (keine Verknüpfung).".into());
+            }
+            if !p.extension().map(|e| e.eq_ignore_ascii_case("zip")).unwrap_or(false) {
+                return Err("Bitte eine ZIP-Datei wählen.".into());
+            }
+            if m.len() > ZIP_MAX {
+                return Err("Die ZIP-Datei ist größer als 512 MB – bitte ohne node_modules, dist und build packen.".into());
+            }
+            p
+        }
+        _ => return Err("Unbekannte Art der Quelle".into()),
+    };
+    let t = pfad.to_string_lossy().to_string();
+    if !pfad_text_ok(&t) {
+        return Err("Ungültiger Pfad".into());
+    }
+    let id = neues_kennzeichen();
+    let _sperre = SPERRE.lock().map_err(|_| "Gesperrt".to_string())?;
+    let d = einlesen_datei(&app)?;
+    let mut k: EinleseKonfig = std::fs::read_to_string(&d).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
+    // Alte Einträge (über 7 Tage) fallen weg, höchstens 20 bleiben
+    let grenze = jetzt().saturating_sub(7 * 86400);
+    k.quellen.retain(|_, q| q.zeit > grenze);
+    while k.quellen.len() >= 20 {
+        let Some(alt) = k.quellen.iter().min_by_key(|(_, q)| q.zeit).map(|(i, _)| i.clone()) else { break };
+        k.quellen.remove(&alt);
+    }
+    k.quellen.insert(id.clone(), EinleseQuelle { pfad: t.clone(), art: art.clone(), zeit: jetzt() });
+    if let Some(o) = d.parent() {
+        std::fs::create_dir_all(o).map_err(|e| e.to_string())?;
+    }
+    let tmp = d.with_extension("json.neu");
+    std::fs::write(&tmp, serde_json::to_string_pretty(&k).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+    std::fs::rename(&tmp, &d).map_err(|e| e.to_string())?;
+    Ok(Some(Gewaehlt { quelle: id, art, name: anzeige_name(&pfad), kurz: kurz(&t) }))
+}
+
+/// Zielordner <Projekte-Ordner>/<kennung> für ein eingelesenes Projekt: nur prüfen (anlegen = false) oder neu anlegen und verknüpfen.
+/// Gibt es den Ordner schon (oder ist die Kennung auf diesem PC schon verknüpft), wird abgebrochen – nie in einen vorhandenen Ordner kopieren.
+#[tauri::command]
+pub async fn ws_einlesen_ziel(app: tauri::AppHandle, projekt: String, anlegen: bool) -> Result<String, String> {
+    if !kennung_ok(&projekt) {
+        return Err("Ungültige Projekt-Kennung".into());
+    }
+    let _sperre = SPERRE.lock().map_err(|_| "Gesperrt".to_string())?;
+    let mut k = laden(&app);
+    let b = k.basis.clone().filter(|b| pfad_text_ok(b)).ok_or("Zuerst den Projekte-Ordner auf der Festplatte festlegen („Ordner wählen …“).")?;
+    let basis = PathBuf::from(&b);
+    if !echter_ordner(&basis) {
+        return Err("Festplatte fehlt – der Projekte-Ordner ist gerade nicht erreichbar.".into());
+    }
+    let z = basis.join(&projekt);
+    if std::fs::symlink_metadata(&z).is_ok() {
+        return Err(format!("Den Zielordner {} gibt es schon – Einlesen abgebrochen. Bitte eine andere Kennung wählen.", kurz(&z.to_string_lossy())));
+    }
+    if k.projekte.contains_key(&projekt) {
+        return Err("Für diese Kennung ist auf diesem PC schon ein Projektordner verknüpft – bitte eine andere Kennung wählen.".into());
+    }
+    if !anlegen {
+        return Ok(kurz(&z.to_string_lossy()));
+    }
+    std::fs::create_dir(&z).map_err(|e| format!("Projektordner konnte nicht angelegt werden: {e}"))?;
+    let kennzeichen = kennung_sichern(&z, &projekt)?;
+    let t = z.to_string_lossy().to_string();
+    k.version = 1;
+    k.projekte.insert(projekt, Eintrag { pfad: t.clone(), regeln_von: Some("vorlage".into()), kennzeichen: Some(kennzeichen) });
+    speichern(&app, &k)?;
+    Ok(kurz(&t))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -482,6 +600,14 @@ mod tests {
         assert!(!im_global(&g, None));
         let k: Konfig = serde_json::from_str(r#"{"basis":"/p","projekte":{},"global_kennzeichen":"0123456789abcdef0123456789abcdef"}"#).unwrap();
         assert_eq!(k.global_kennzeichen.as_deref(), Some("0123456789abcdef0123456789abcdef"));
+    }
+
+    #[test]
+    fn einlesen_name_und_konfig() {
+        assert_eq!(anzeige_name(Path::new("/x/thermax-planer.zip")), "thermax-planer.zip");
+        assert_eq!(anzeige_name(Path::new("/")), "Quelle");
+        let k: EinleseKonfig = serde_json::from_str(r#"{"quellen":{"0123456789abcdef0123456789abcdef":{"pfad":"/p/x.zip","art":"zip","zeit":1}}}"#).unwrap();
+        assert_eq!(k.quellen.len(), 1);
     }
 
     #[test]

@@ -361,7 +361,7 @@ fn main() {
         })
         .manage(design::Schluessel(Mutex::new(None)))
         .invoke_handler(tauri::generate_handler![ws_check, ws_start, ws_token, ws_stop, ws_status, ws_statuszeile, ws_update_status, ws_update_neustart, design::ws_design_geraet, design::ws_design_signieren,
-            ordner::ws_ordner_stand, ordner::ws_ordner_basis_waehlen, ordner::ws_ordner_verknuepfen, ordner::ws_ordner_oeffnen])
+            ordner::ws_ordner_stand, ordner::ws_ordner_basis_waehlen, ordner::ws_ordner_verknuepfen, ordner::ws_ordner_oeffnen, ordner::ws_einlesen_quelle, ordner::ws_einlesen_ziel])
         .build(tauri::generate_context!())
         .expect("Codeschmiede konnte nicht starten")
         .run(move |_app, ereignis| {
