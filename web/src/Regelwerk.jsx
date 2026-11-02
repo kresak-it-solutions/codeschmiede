@@ -3,6 +3,7 @@ import { Scale, Loader2, Send, Search, FileText, Info, Hammer } from "lucide-rea
 import { supabase } from "./supabase";
 import { Markdown } from "./Markdown";
 import { Laden, Leerzustand, Fehlerzustand } from "./bausteine/zustand";
+import { RegelnRangfolge } from "./Projektordner";
 
 // Regelwerk (Entwurf „Regelwerk in der Codeschmiede“ 2026-10-22, „fertig machen“ Gerhard 2026-10-23 15:53):
 // Alle Regeldateien des Projekts lesen, mit Claude darüber sprechen (Chat-Spalte rechts) und ändern – Änderungen laufen wie jeder
@@ -62,7 +63,8 @@ export default function Regelwerk({ d, ich, toast }) {
     <section className="flex flex-col gap-3" aria-label="Regelwerk">
       <div><h2 className="font-display font-bold text-xl leading-tight flex items-center gap-2"><Scale className="w-5 h-5 text-emerald-700" />Regelwerk</h2>
         <p className="text-sm text-slate-500">Alle Regeldateien von {projekt?.name || "diesem Projekt"} lesen, rechts mit Claude darüber sprechen und ändern. Änderungen laufen wie jeder Auftrag: Freigabe → Prüfungen → live.</p></div>
-      <p className="text-xs text-slate-500 flex items-center gap-1.5"><Info className="w-3.5 h-3.5" />Übergeordnet gilt Gerhards Regelwerk <b>ai-dev-os</b> – Projektregeln dürfen es ergänzen, nie abschwächen.</p>
+      <p className="text-xs text-slate-500 flex items-center gap-1.5"><Info className="w-3.5 h-3.5" />Seit 0.13.0 gilt die Rangfolge: Sicherheit der Codeschmiede (immer) › deine Projektregeln (<span className="font-mono">regeln\REGELN.md</span> im Projektordner, Vorrang) › allgemeines Regelwerk <b>ai-dev-os</b>. Die Regeldateien des Repositorys siehst du hier.</p>
+      <details className={`${card} p-3`}><summary className="cursor-pointer text-sm font-semibold">Welche Regeln gelten? (Rangfolge)</summary><div className="mt-3"><RegelnRangfolge /></div></details>
       <div className="grid gap-3 grid-cols-[minmax(0,1fr)] lg:grid-cols-[260px_minmax(0,1fr)]">
         <div className={`${card} p-2 flex flex-col gap-1 max-h-[70vh] overflow-auto`}>
           <label className="relative mb-1"><Search className="w-4 h-4 absolute left-2.5 top-2.5 text-slate-400" /><input className={`${input} pl-8`} placeholder="Regeldatei suchen" value={q} onChange={(e) => setQ(e.target.value)} /></label>

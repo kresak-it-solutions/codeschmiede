@@ -83,7 +83,7 @@ export function ChatNachricht({ seite = "ki", kopf, ton, fuss, children, gross =
         : <span className="w-6 h-6 mt-0.5 shrink-0 rounded-md bg-slate-200 dark:bg-slate-800 grid place-items-center text-slate-600 dark:text-slate-300"><Bot className="w-3.5 h-3.5" aria-hidden="true" /></span>}
       <div className="min-w-0 flex-1">
         {kopf && <div className="text-xs text-slate-500 mb-1 flex items-center gap-1.5 flex-wrap">{kopf}</div>}
-        <div className={`rounded-2xl rounded-tl-md px-3.5 py-2 ${schrift} break-words ${frage ? "bg-amber-50 dark:bg-amber-950/40 border border-amber-400 dark:border-amber-700" : "bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800"}`}>{children}</div>
+        <div className={`rounded-2xl rounded-tl-md px-3.5 py-2 ${schrift} break-words ${frage ? "bg-amber-50 dark:bg-amber-950/40 border border-amber-400 dark:border-amber-700" : ton === "konflikt" ? "bg-red-50 dark:bg-red-950/40 border border-red-400 dark:border-red-700" : "bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800"}`}>{children}</div>
         {fuss}
       </div>
     </div>);

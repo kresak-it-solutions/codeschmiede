@@ -1,0 +1,115 @@
+<title>Projektordner Entwurf</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Semi+Condensed:wght@600;700&display=swap">
+<style>
+:root{--bg:#0b1220;--side:#0d2a22;--panel:#111a2b;--panel2:#0e1626;--line:#1f2a3d;--fg:#e6edf6;--mut:#93a3b8;--acc:#10b981;--acc-ink:#052e1f;--orange:#f97316;--red:#f87171;--amber:#fbbf24;color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:Barlow,system-ui,sans-serif;font-size:15px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:18px 40px}
+h1{font-family:"Barlow Semi Condensed",Barlow,sans-serif;font-size:24px;margin:0}
+.sub{color:var(--mut);font-size:14px;margin:4px 0 14px;max-width:80ch;line-height:1.5}
+.tabs{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px}
+.tabs button{font:inherit;font-size:14px;font-weight:600;border:1px solid var(--line);background:var(--panel);color:var(--fg);border-radius:999px;padding:8px 14px;cursor:pointer}
+.tabs button[aria-pressed=true]{background:var(--acc);color:var(--acc-ink);border-color:var(--acc)}
+.screen{display:none}.screen.on{display:block}
+.box{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:18px;max-width:880px}
+.steps{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px;font-size:13px}
+.steps span{padding:5px 11px;border-radius:999px;border:1px solid var(--line);color:var(--mut)}
+.steps .done{background:#10b98122;color:#6ee7b7;border-color:transparent}
+.steps .now{background:var(--acc);color:var(--acc-ink);font-weight:700;border-color:var(--acc)}
+.neu{outline:2px solid var(--orange);outline-offset:3px;border-radius:12px;position:relative}
+.neu::after{content:"neu";position:absolute;top:-11px;right:10px;background:var(--orange);color:#1b0b00;font-size:11px;font-weight:700;padding:1px 7px;border-radius:6px}
+label{display:flex;flex-direction:column;gap:6px;font-size:13px;color:var(--mut)}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+input{font:inherit;font-size:14px;color:var(--fg);background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:9px 11px;flex:1;min-width:220px}
+.btn{font:inherit;font-weight:700;font-size:14px;background:var(--acc);color:var(--acc-ink);border:0;border-radius:10px;padding:9px 15px;cursor:pointer;display:inline-flex;gap:7px;align-items:center}
+.ghost{font:inherit;font-weight:600;font-size:14px;background:transparent;color:var(--fg);border:1px solid var(--line);border-radius:10px;padding:8px 13px;cursor:pointer;display:inline-flex;gap:7px;align-items:center}
+.tree{font-family:ui-monospace,Consolas,monospace;font-size:13px;line-height:1.75;background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:12px 14px;overflow-x:auto}
+.tree b{color:#6ee7b7;font-weight:600}.tree i{color:var(--mut);font-style:normal}
+.note{font-size:13px;line-height:1.5;color:#c7d2e0;background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+.warn{border-color:#f9731666;background:#f9731612}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
+.amp{display:flex;gap:12px;align-items:flex-start;background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:12px}
+.dot{width:12px;height:12px;border-radius:50%;margin-top:4px;flex-shrink:0;box-shadow:0 0 0 4px #ffffff10}
+.g{background:#10b981}.y{background:#f59e0b}.r{background:#ef4444}.x{background:#64748b}
+.amp b{display:block}.amp small{color:var(--mut);font-size:12.5px;display:block;margin:2px 0 8px;line-height:1.45}
+.prog{height:6px;border-radius:99px;background:#1f2a3d;overflow:hidden;margin-top:6px}.prog i{display:block;height:100%;background:var(--acc);width:0;transition:width 1.6s}
+.rules{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
+.rcard{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:12px;font-size:13.5px;line-height:1.55}
+.rcard h4{margin:0 0 6px;font-size:14px}
+.pill{font-size:11.5px;font-weight:700;padding:2px 8px;border-radius:999px;background:#10b98122;color:#6ee7b7}
+.pill.o{background:#f9731622;color:#fdba74}
+svg{width:16px;height:16px;flex-shrink:0}
+</style>
+
+<h1>Projektordner, Regeln und Ein-Klick-Anbindungen</h1>
+<p class="sub">Entwurf zur Freigabe. Jedes Projekt braucht einen <b>Projektordner auf deiner externen Festplatte</b>: Dort liegen Code, Regeln, Konzept und Doku. Die Werkstatt arbeitet direkt darin. Die <b>Projektregeln haben Vorrang</b> vor dem allgemeinen Regelwerk, nur die Sicherheitsregeln der Codeschmiede bleiben immer. Testseite (Cloudflare, kostenlos) und später die Datenbank kommen per Knopf. Klick dich durch die vier Ansichten.</p>
+
+<div class="tabs" id="tabs">
+  <button data-s="s1" aria-pressed="true">1 · Neues Projekt: Ordner</button>
+  <button data-s="s2" aria-pressed="false">2 · Projektordner</button>
+  <button data-s="s3" aria-pressed="false">3 · Regeln</button>
+  <button data-s="s4" aria-pressed="false">4 · Anbindungen</button>
+</div>
+
+<section class="screen on" id="s1"><div class="box">
+  <div class="steps"><span class="done">1 Art</span><span class="done">2 Grunddaten</span><span class="now">3 Projektordner</span><span>4 Anbindungen</span><span>5 Anlegen</span></div>
+  <div class="neu" style="padding:14px;display:flex;flex-direction:column;gap:12px">
+    <label>Projekte-Ordner auf der externen Festplatte (einmal je PC festlegen)
+      <div class="row"><input id="basis" value="E:\Projekte"><button class="ghost" onclick="waehle()">Ordner wählen …</button></div></label>
+    <div class="note">Für dieses Projekt wird angelegt: <b id="pfad">E:\Projekte\vereinsheft</b> – Pflicht, ohne Ordner geht es nicht weiter.</div>
+    <label class="row" style="flex-direction:row;color:var(--fg);font-size:14px"><input type="checkbox" checked style="flex:0;min-width:0;width:18px;height:18px;accent-color:#10b981"> Regeln aus der Vorlage übernehmen (Regelwerk der Codeschmiede als Startpunkt, danach frei änderbar)</label>
+    <label class="row" style="flex-direction:row;color:var(--fg);font-size:14px"><input type="checkbox" style="flex:0;min-width:0;width:18px;height:18px;accent-color:#10b981"> Vorhandene Regeln-Datei aus einem anderen Projekt kopieren</label>
+    <div class="note warn">Ist die Festplatte nicht angesteckt, pausiert die Werkstatt für dieses Projekt und zeigt „Festplatte fehlt“. Nichts geht verloren – alles liegt zusätzlich bei GitHub.</div>
+  </div>
+  <div class="row" style="margin-top:14px;justify-content:space-between"><button class="ghost">Zurück</button><button class="btn" onclick="zeige('s2')">Weiter</button></div>
+</div></section>
+
+<section class="screen" id="s2"><div class="box" style="display:flex;flex-direction:column;gap:12px">
+  <div class="row" style="justify-content:space-between"><b style="font-size:17px">Projektordner · Vereinsheft</b><span class="pill">verknüpft · E:\Projekte\vereinsheft</span></div>
+  <div class="tree">
+<b>E:\Projekte\vereinsheft\</b><br>
+├─ <b>code\</b>          <i>Git-Kopie des Repositorys – hier arbeitet die Werkstatt</i><br>
+├─ <b>regeln\</b><br>
+│  ├─ REGELN.md     <i>deine Projektregeln – haben Vorrang</i><br>
+│  └─ regelwerk\    <i>Kopie des allgemeinen Regelwerks (Version festgelegt)</i><br>
+├─ <b>konzept\</b>       <i>Konzept-Dokument aus der Gruppe „Konzept“, Entwürfe</i><br>
+├─ <b>doku\</b>          <i>Handbuch, Änderungsprotokoll, PDFs</i><br>
+├─ <b>material\</b>      <i>Logos, Bilder, Vorlagen von dir</i><br>
+└─ <b>sicherungen\</b>   <i>Datenbank-Aufbau vor jedem Live-Schalten (wenn es eine gibt)</i>
+  </div>
+  <div class="note">Die Codeschmiede hält den Ordner aktuell: Konzept und Doku werden nach jedem Auftrag dorthin gespiegelt. Was du in <b>regeln\</b> oder <b>material\</b> ablegst, liest die Werkstatt bei jedem Auftrag mit.</div>
+  <div class="row"><button class="ghost">Im Explorer öffnen</button><button class="ghost">Anderen Ordner verknüpfen</button></div>
+  <div class="note">Gilt auch für <b>Trainer to go</b> und die <b>Codeschmiede</b>: Beim nächsten Start fragt die Codeschmiede einmal nach dem Ordner und zieht die Arbeitskopie dorthin um.</div>
+</div></section>
+
+<section class="screen" id="s3"><div class="box" style="display:flex;flex-direction:column;gap:12px">
+  <b style="font-size:17px">Welche Regeln gelten?</b>
+  <div class="rules">
+    <div class="rcard"><h4>1 · Sicherheit der Codeschmiede <span class="pill o">immer</span></h4>Keine Zugangsdaten, keine Personendaten an die KI, nichts ausführen auf dem Admin-PC, Prüfungen vor dem Zusammenführen, Live nur nach deiner Freigabe. Kann keine Projektregel aufheben.</div>
+    <div class="rcard"><h4>2 · Projektregeln <span class="pill">Vorrang</span></h4><span style="font-family:ui-monospace,Consolas,monospace;font-size:12.5px">regeln\REGELN.md</span> im Projektordner: Sprache, Stil, Fachliches, Abläufe. Gehen dem allgemeinen Regelwerk vor.</div>
+    <div class="rcard"><h4>3 · Allgemeines Regelwerk</h4>Gilt für alles, was die Projektregeln nicht anders festlegen. Version je Projekt fest, neue Version nur nach deiner Entscheidung.</div>
+  </div>
+  <div class="note">Widerspricht eine Projektregel einer Sicherheitsregel, zeigt die Codeschmiede das als rote Zeile unter „Anbindungen“ und im Auftrag an – die Sicherheitsregel gilt.</div>
+</div></section>
+
+<section class="screen" id="s4"><div class="box" style="display:flex;flex-direction:column;gap:12px">
+  <b style="font-size:17px">Anbindungen · Vereinsheft</b>
+  <div class="grid">
+    <div class="amp"><span class="dot g"></span><div><b>Projektordner</b><small>E:\Projekte\vereinsheft · Festplatte angesteckt</small></div></div>
+    <div class="amp"><span class="dot g"></span><div><b>GitHub</b><small>kresak-it-solutions/vereinsheft (privat)</small></div></div>
+    <div class="amp neu"><span class="dot y" id="cfdot"></span><div style="flex:1"><b>Testseite (Cloudflare)</b><small id="cftext">Noch nicht eingerichtet. Kostenlos: Cloudflare baut selbst (bis 500 Bauläufe im Monat), jeder Zweig bekommt eine eigene Testadresse.</small><button class="btn" id="cfbtn" onclick="cf()">Testseite einrichten</button><div class="prog"><i id="cfprog"></i></div></div></div>
+    <div class="amp neu"><span class="dot x"></span><div><b>Datenbank</b><small>Keine – jederzeit nachrüstbar. Kostet Supabase Pro (ca. 25 $/Monat); vor dem Anlegen fragt die Codeschmiede dich.</small><button class="ghost">Datenbank anlegen …</button></div></div>
+    <div class="amp"><span class="dot x"></span><div><b>Fehler-Meldungen</b><small>Kommen mit der Testseite automatisch dazu.</small></div></div>
+    <div class="amp"><span class="dot x"></span><div><b>Seiten-Designer</b><small>Folgt als nächste Etappe für jede Web-App.</small></div></div>
+  </div>
+</div></section>
+
+<script>
+function zeige(id){document.querySelectorAll('.screen').forEach(s=>s.classList.toggle('on',s.id===id));document.querySelectorAll('#tabs button').forEach(b=>b.setAttribute('aria-pressed',b.dataset.s===id))}
+document.getElementById('tabs').onclick=e=>{const b=e.target.closest('[data-s]');if(b)zeige(b.dataset.s)};
+function waehle(){const v=document.getElementById('basis').value.replace(/\\$/,'');document.getElementById('pfad').textContent=v+'\\vereinsheft'}
+document.getElementById('basis').oninput=waehle;
+function cf(){const b=document.getElementById('cfbtn');b.disabled=true;b.textContent='Wird eingerichtet …';document.getElementById('cfprog').style.width='100%';
+setTimeout(()=>{document.getElementById('cfdot').className='dot g';document.getElementById('cftext').textContent='https://vereinsheft.pages.dev · Zweige als <zweig>.vereinsheft.pages.dev – eingetragen.';b.style.display='none'},1700)}
+</script>

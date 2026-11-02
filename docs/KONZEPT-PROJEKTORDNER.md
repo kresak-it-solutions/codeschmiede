@@ -1,0 +1,52 @@
+# Projektordner, Regeln und Ein-Klick-Anbindungen (seit 0.13.0)
+
+**Stand:** 2026-11-02 · **Wer:** Gerhard Kresak (Entscheidungen, Entwurf freigegeben 02.11.2026 07:04), Claude (Konzept, Umsetzung)
+**Entwurf:** `docs/entwurf-1.0-projektordner.html` · **Datenbank:** 0055 (`supabase/migrations/0055_projektordner.sql`, Test `supabase/tests/t42_projektordner.sql`)
+
+## Entscheidungen (Gerhard, 02.11.2026)
+| Thema | Entscheidung |
+|---|---|
+| Projektordner | Jedes Projekt **muss** einen Projektordner haben – auch die bestehenden (trainer-to-go, codeschmiede). Alle Projekte liegen auf einer externen Festplatte. Der Projekte-Ordner wird einmal je PC per Ordner-Auswahl festgelegt, Projektordner = `<Projekte-Ordner>\<kennung>` (oder ein anderer, verknüpfter Ordner). |
+| Inhalt | `code\` (Git-Arbeitskopie, hier arbeitet die Werkstatt) · `code-arbeit\` (Auftrags-, Prüf- und Lese-Ordner) · `regeln\REGELN.md` + `regeln\regelwerk\` (Kopie des Regelwerks in der festgelegten Fassung) · `konzept\` (KONZEPT.md aus der Gruppe „Konzept“, `entwuerfe\`) · `doku\` (docs/ des Repositorys, nach jedem Auftrag gespiegelt) · `material\` (Logos, Bilder, Vorlagen; liest die Werkstatt als **Daten** mit) · `sicherungen\`. |
+| Festplatte fehlt | Die Werkstatt pausiert für dieses Projekt, zeigt „Festplatte fehlt“, nichts geht verloren (alles liegt zusätzlich bei GitHub). |
+| Regeln | Rangfolge im Auftrag: **1 Sicherheit** (fest im Programm, keine Datei kann sie aufheben) › **2 Projektregeln** (`regeln\REGELN.md`) › **3 allgemeines Regelwerk**. Widerspricht eine Projektregel erkennbar der Sicherheit: rot unter „Anbindungen“ und im Auftrag, die Sicherheitsregel gilt. |
+| Bestehende Projekte | Beim nächsten Start einmal nach dem Ordner fragen; die Arbeitskopie zieht um, wenn gerade kein Auftrag läuft – sicher: erst klonen, prüfen, dann alt aufräumen. |
+| Testseite | Knopf „Testseite einrichten“ – **kostenlos**: Cloudflare Pages mit Git-Anbindung (Cloudflare baut selbst, bis 500 Builds/Monat gratis, keine GitHub-Actions-Minuten). Geht die Git-Anbindung per Schnittstelle nicht: sauber abbrechen, Lotse zeigen, danach trägt die Codeschmiede die Adresse selbst ein. Keine kostenpflichtigen Optionen. |
+| Datenbank | Vorerst **keine**. „Datenbank anlegen …“ zeigt die Kosten (Supabase Pro ca. 25 $/Monat), vermerkt nach Bestätigung den Wunsch („gewünscht“) – angelegt wird später. |
+| Fehler-Meldungen | Beim Einrichten der Testseite setzt die Codeschmiede die Werte des Melders (`VITE_CS_FEHLER_URL`, `…_ANON`, `…_SCHLUESSEL`) als Pages-Umgebungsvariablen; das Grundgerüst „web“/„handy“ enthält den Melder (`src/lib/fehlerMelden.js`). |
+| Seiten-Designer | Nicht in diesem Schritt – Lampe grau „folgt“. |
+
+## Wo was gespeichert wird
+| Was | Wo | Warum |
+|---|---|---|
+| Projekte-Ordner und Projektordner (Pfade) | `<App-Daten>\werkstatt\projektordner.json` – schreibt nur das **Programm** (Rust, Ordner-Auswahl), liest der Werkstatt-Dienst | Pfade sind je PC verschieden; nie in der Datenbank, nie von der Oberfläche gesetzt |
+| Stand je PC und Projekt (ok · fehlt · kein · umzug · umzug_wartet · fehler, Zahl der Regel-Konflikte, Hinweis ohne Pfad) | Datenbank `ws_projektordner_stand` (nur über `ws_projektordner_melden`, eigener PC, sichtbar für Mitglieder des Projekts) | Anzeige „Festplatte fehlt“ bzw. Konflikte auch auf anderen Geräten |
+| Lampen „Projektordner“ und „Regeln“ | `ws_projekte.anbindungen` (Ampel der Werkstatt des Admins) | Sicht des Admin-PCs |
+| Testseite | `ws_projekte.vorschau_domain`, `test_url`, `live_url`, `testseite_stand` (laeuft · lotse · eingerichtet · fehler), `testseite_hinweis` | Ergebnis von `ws_testseite_melden` |
+| Datenbank-Wunsch | `ws_projekte.datenbank_wunsch`, `datenbank_wunsch_von` (`ws_datenbank_wuenschen`, nur Admin, nur mit bestätigten Kosten) | Wunsch vermerken, nichts anlegen |
+
+## Abläufe
+**Ordner-Wahl (Programm):** Befehle `ws_ordner_stand`, `ws_ordner_basis_waehlen`, `ws_ordner_verknuepfen`, `ws_ordner_oeffnen` (`desktop/src-tauri/src/ordner.rs`). Die Oberfläche übergibt nur Projekt-Kennungen (a–z, 0–9, „-“); Pfade kommen ausschließlich aus der Ordner-Auswahl des Systems (Plugin „dialog“, nur aus eigenen Befehlen – die Oberfläche hat keine Dialog-Rechte). Verknüpfen ohne eigene Wahl legt `<Projekte-Ordner>\<kennung>` an (nur wenn die Festplatte da ist; Verknüpfung/Datei an der Stelle wird abgelehnt). „Im Explorer öffnen“ öffnet nur den verknüpften Ordner bzw. einen festen Unterordner (code, regeln, konzept, doku, material, sicherungen).
+
+**Assistent „Neues Projekt“:** Art › Grunddaten › **Projektordner** (Pflicht: Projekte-Ordner gewählt und erreichbar; Regeln aus der Vorlage, leer oder aus einem anderen Projekt) › Anbindungen › Anlegen. Im Browser (ohne Programm) geht es mit Hinweis weiter – der Ordner wird beim nächsten Start im Programm festgelegt; bis dahin pausiert die Werkstatt für das Projekt.
+
+**Start (bestehende Projekte):** Dialog „Projektordner festlegen“ für alle Projekte, in denen man Admin oder Entwickler ist und die auf diesem PC noch keinen Ordner haben. „Später“ gilt bis zum nächsten Start.
+
+**Werkstatt (`desktop/dienst/index.mjs`, `lib/projektordner.mjs`):**
+- `repoOrt`: Arbeitskopie im Projektordner (`code\`, Arbeitsordner unter `code-arbeit\`); erste Kopie wird in `code.neu` geklont und dann umbenannt. Solange der Umzug aussteht, arbeiten nur laufende bzw. fortgesetzte Aufträge und Stationen in der alten Kopie weiter.
+- `ordnerSperre` vor jedem Auftrag, jeder Fortsetzung, Nacharbeit und Station: Festplatte fehlt, kein Ordner oder Umzug ausstehend → der Auftrag bleibt „wartet“ bzw. liegen (kein Fehlversuch, keine Rückfrage). Wird die Festplatte mitten im Start abgezogen, geht ein neuer Auftrag zurück auf „wartet“.
+- `projektordnerPflegen` (nach dem Start, dann jede Minute): Gerüst anlegen, **Umzug** (`umziehen`), `REGELN.md` anlegen falls sie fehlt (bestehende Projekte: Abschnitt „Projektregeln“ aus AGENTS.md als Startpunkt), Regelwerk-Kopie (`gerhardkresak-code/ai-dev-os`, Markdown ohne `project-template`, `FASSUNG.md` mit Commit; neue Fassung nur, wenn Gerhard den Ordner `regelwerk` umbenennt oder löscht), Konzept spiegeln (`konzept\KONZEPT.md` aus der Wissensdatenbank), Doku spiegeln (`docs/**` von main aus dem Abgleich-Klon nach `doku\`, nur bei neuem Stand; Endungen md, pdf, html, Bilder, txt, csv, json; ≤ 10 MB je Datei, ≤ 100 MB gesamt), Stand melden.
+- **Umzug:** nur wenn auf diesem PC nichts läuft und für das Projekt auf den eigenen PCs kein Auftrag „läuft“, „Rückfrage“ oder „Nacharbeit“ ist (Claude-Sitzungen hängen am Ordner) und in den alten Auftrags-Ordnern nichts ungesichert ist (`git status`, Commits nicht bei GitHub; abgeschlossene Aufträge zählen nicht). Dann: neu klonen nach `code.neu`, prüfen (Stand von main, Adresse des Repositorys), umbenennen in `code`, gemerkte Claude-Sitzungen der alten Ordner verwerfen (Nacharbeit startet im neuen Ordner ohne Fortsetzen), alte Kopie, Auftrags-, Prüf- und Lese-Ordner löschen. Der Abgleich-Klon (nur Git-Daten) bleibt im Daten-Ordner. Ein Auftrag, dessen Zweig es bei GitHub schon gibt, setzt im neuen Ordner auf diesem Zweig auf – nie neu von main.
+- **Bau-Auftrag:** Block „Rangfolge der Regeln“ (`lib/regeln.mjs`: feste Sicherheitsregeln, dann `REGELN.md` als Gerhards Vorgaben, dann Regelwerk mit Fassung) im Auftrag; Regelwerk-Kopie, `material\` (≤ 30 Dateien, ≤ 25 MB) und `konzept\entwuerfe\` (≤ 10 Dateien) liegen nur für diesen Lauf in `.codeschmiede-anhaenge/` des Arbeitsordners (von Git ausgeschlossen, danach gelöscht) und stehen als abgegrenzter **Datenblock** im Auftrag. Nur echte Dateien mit erlaubter Endung; Verknüpfungen, harte Links und versteckte Dateien fallen weg.
+- **Pfade:** jeder Teilpfad wird geprüft (kein „..“, keine Laufwerke, keine Sonderzeichen und reservierten Namen von Windows), jeder Ordner auf dem Weg muss ein echter Ordner sein (keine Verknüpfung/Junction); Dateien werden über eine neue Datei und Umbenennen geschrieben, nie durch eine Verknüpfung hindurch.
+
+**Konflikt-Erkennung (`lib/regeln.mjs`, `konflikteFinden`):** je Zeile der REGELN.md feste Muster zu sieben Themen – Prüfungen überspringen, direkt auf main / ohne Pull Request, Zugangsdaten speichern, Live ohne Freigabe, Code auf dem PC ausführen, Personendaten verwenden, Sicherheitsregeln aufheben. Eine Verneinung im selben Satzteil („nie ohne Prüfung“, „ist nicht erlaubt“, „Passwörter nie speichern“) hebt den Treffer auf; Code-Blöcke zählen nicht. Anzeige: rote Lampe „Projektregeln“ (Admin-PC), rote Zeile oben unter „Anbindungen“, rote Werkstatt-Nachricht „Achtung – Regel-Konflikt …“ einmal je Auftrag, Live-Log „fehler“. Die Erkennung ist bewusst einfach – sie hebt nichts auf, die Sicherheitsregeln stehen ohnehin immer zuerst im Auftrag und gelten technisch (Einstufung, Sperren, Stationen) unabhängig vom Text.
+
+**Testseite (`lib/testseite.mjs`, nur Werkstatt des Admins):** Aktion `testseite` (`ws_projekt_aktion_anfordern`, nur Web-/Handy-Apps mit Repository). Token aus der Wrangler-Anmeldung über den offiziellen Befehl `wrangler auth token --json` (Wrangler aus dem festen Katalog, ohne Shell, Einrichtungs-Umgebung) – nur im Speicher für diesen Aufruf, nie gespeichert, nie geloggt, aus Fehlermeldungen entfernt. Aufrufe nur an `api.cloudflare.com`: Konto (genau eines, sonst Lotse) → gibt es das Pages-Projekt `<kennung>` schon? (nur übernehmen, wenn mit genau diesem Repository verbunden) → sonst anlegen mit `source.type = "github"` (owner/repo, Produktionszweig main, Vorschau für alle Zweige, Build `npm run build`, Ausgabe `dist`) und den Werten des Fehler-Melders → ersten Bau anstoßen. Ergebnis über `ws_testseite_melden` (trägt `vorschau_domain`, `test_url`, `live_url` ein, wenn leer). Scheitert die Git-Anbindung (z. B. Cloudflare-App für GitHub fehlt in der Organisation): Stand „lotse“ mit Schritten und Link ins Dashboard; die Ampel (alle 10 Minuten bzw. „Jetzt prüfen“) sucht das Pages-Projekt über die Schnittstelle und trägt die Adresse ein, sobald es mit dem Repository verbunden ist.
+
+## Nicht in diesem Schritt / offen
+- Seiten-Designer für jede Web-App (nächste Etappe).
+- Datenbank tatsächlich anlegen (nur Wunsch vermerkt).
+- `sicherungen\`: Ordner und Hinweis sind da; das Ablegen des Datenbank-Aufbaus folgt mit der ersten Projekt-Datenbank (heute in `codeschmiede.sicherungen`).
+- Neue Fassung des Regelwerks per Knopf (heute: Ordner `regelwerk` umbenennen/löschen).
+- Chat und Prüfung per Knopf lesen `REGELN.md` noch nicht mit (nur Bau-Aufträge).

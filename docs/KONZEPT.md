@@ -1,6 +1,6 @@
 # Codeschmiede – Konzept
 
-**Stand:** 2026-11-02 (zuletzt: Chat-Baustein, Zustände, Push, Design-Kennungen, Vorhaben – Rest der Befunde vom 01.11.) · angelegt 2026-10-22 · Wer: Gerhard Kresak (Anweisungen und Freigaben 2026-10-22 12:06–13:39), Claude (Konzept, Umsetzung)
+**Stand:** 2026-11-02 (zuletzt: Projektordner, Regeln und Ein-Klick-Anbindungen 0.13.0 – `docs/KONZEPT-PROJEKTORDNER.md`) · angelegt 2026-10-22 · Wer: Gerhard Kresak (Anweisungen und Freigaben 2026-10-22 12:06–13:39), Claude (Konzept, Umsetzung)
 **Herkunft:** entstanden als „Trainer-to-go Programmierumgebung“ im Repo `trainer-to-go` (Zweig `feature/auftrags-zentrale`, Entwurf 0.4 freigegeben 12:37);
 seit 13:16 eigenes Programm für alle Projekte. Entwurf: `docs/entwurf-0.4.html`.
 
@@ -29,13 +29,20 @@ seit 13:16 eigenes Programm für alle Projekte. Entwurf: `docs/entwurf-0.4.html`
 | Programm-Hülle | `desktop/src-tauri` (Tauri 2), Windows + Mac | automatisches Update (signiert) über `codeschmiede-updates.pages.dev`: im Hintergrund geladen, beim nächsten Start aktiv |
 | Werkstatt-Dienst | `desktop/dienst` (Node; startet das offizielle Claude Code mit dem Abo-Login der Person) | mit dem Programm |
 | Daten | Supabase, Tabellen `ws_*` mit RLS und Live-Abgleich | live |
-| Code der Projekte | GitHub-Repository je Projekt | Pull Request je Auftrag |
+| Code der Projekte | GitHub-Repository je Projekt; auf jedem Werkstatt-PC im **Projektordner** auf der externen Festplatte (seit 0.13.0) | Pull Request je Auftrag |
 
 ## Projekte
 Jedes Projekt hat eigene Bereiche, Gruppen, Features, Mitglieder (Rolle je Projekt) und Rechte je Bereich. Neues Projekt per Assistent
 (Name, Kennung, Beschreibung, GitHub-Repository, Symbol) mit Vorlage: App (Oberfläche & Design, Funktionen), Daten & Rechte (Datenbank,
 Anmeldung & Rechte), Betrieb (Handbuch & Texte, Einstellungen & Datenschutz). Für jedes Projekt gilt das AI-Dev-OS-Regelwerk; die Werkstatt
 stellt beim ersten Auftrag eines neuen Projekts zuerst ihre Fragen (Pflicht-Start).
+
+### Projektordner, Regeln und Ein-Klick-Anbindungen (seit 0.13.0, Entwurf 1.0 frei von Gerhard 2026-11-02 07:04, Datenbank 0055)
+Jedes Projekt hat auf jedem Werkstatt-PC einen Projektordner auf der externen Festplatte (`<Projekte-Ordner>\<kennung>`: code, code-arbeit,
+regeln, konzept, doku, material, sicherungen), festgelegt im Programm (Pfade nur lokal, nie in der Datenbank). Festplatte fehlt → die Werkstatt
+pausiert für das Projekt. Rangfolge im Auftrag: Sicherheit (fest) › Projektregeln (`regeln\REGELN.md`) › Regelwerk; Konflikte rot unter
+„Anbindungen“ und im Auftrag. Testseite per Knopf (Cloudflare Pages mit Git-Anbindung, kostenlos, Lotse als Rückfall), Datenbank nur als Wunsch
+(Kosten vorher bestätigen). Alles Weitere: `docs/KONZEPT-PROJEKTORDNER.md`.
 
 ### Projekt-Arten (seit 0.9.0, Entwurf 1.0 vom 2026-10-24)
 | Art | Grundgerüst | Vorschau | Veröffentlichen |
@@ -236,7 +243,7 @@ dem Klick „Verstanden, Vorschau anzeigen“ und zeigen dauerhaft „hier nicht
 ## Werkstatt (Schritt 2)
 - Läuft im Programm, wenn „Werkstatt an“; holt den nächsten wartenden Auftrag aus Gruppen, in denen der Benutzer Auftragsrecht hat.
 - Startet das offizielle Claude Code (`claude -p … --output-format stream-json`) mit dem Abo-Login der Person; Umgebungsschlüssel
-  (`ANTHROPIC_API_KEY` u. a.) werden entfernt. Erlaubnis-Anfragen laufen über ein eigenes MCP-Werkzeug (`erlaubnis-mcp.mjs`) in die Zentrale. Im Arbeitsordner `<Daten>/projekte/<projekt>/auftrag-<nr>` (git worktree)
+  (`ANTHROPIC_API_KEY` u. a.) werden entfernt. Erlaubnis-Anfragen laufen über ein eigenes MCP-Werkzeug (`erlaubnis-mcp.mjs`) in die Zentrale. Im Arbeitsordner `<Projektordner>/code-arbeit/auftrag-<nr>` (git worktree; bis 0.12 `<Daten>/projekte/<projekt>/auftrag-<nr>`)
   auf Zweig `feature/cs-<nr>-<kurz>`; Regeln aus dem Projekt (AGENTS.md/CLAUDE.md) gelten.
 - **Modellwahl:** Text-Auftrag oder kleine Änderung → kleines Modell; normale Funktion → mittleres; Datenbank, Rechte, Login, Migration,
   Ausbau oder Risiko HOCH → großes Modell; Fehlschlag → eine Stufe höher. Gewähltes Modell steht am Auftrag.

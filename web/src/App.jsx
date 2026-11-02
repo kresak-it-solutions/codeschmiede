@@ -11,6 +11,7 @@ import CodeEditor from "./CodeEditor";
 import CodeschmiedeZeichen from "./Zeichen";
 import Designer from "./Designer";
 import Einrichtung, { EinrichtungChip } from "./Einrichtung";
+import { ProjektordnerAbfrage, ProjektordnerHinweis } from "./Projektordner";
 import { EinrichtungAuto, WerkstattSchalter } from "./seiten/Werkstatt";
 import Fehler from "./Fehler";
 import KiAnbieter from "./KiAnbieter";
@@ -146,6 +147,7 @@ export default function App() {
               <i className={`w-2 h-2 rounded-full ${daten.live === "an" ? "bg-green-600" : daten.live === "getrennt" ? "bg-red-600" : "bg-amber-500 animate-pulse"}`} aria-hidden="true" />
               {daten.live === "an" ? "Live synchronisiert" : daten.live === "getrennt" ? "Live-Verbindung getrennt" : "Verbinde …"}</span>
           </div>}
+          {!vollflaeche && !daten.laden && aktuell && <ProjektordnerHinweis projekt={aktuell} />}
           {aboOffen && <Suspense fallback={null}><AboLimits d={daten} ich={ich} toast={setToast} onSchliessen={() => setAboOffen(false)} onVerbrauch={() => { setAboOffen(false); geh("verbrauch"); }} /></Suspense>}
           {daten.ladeFehler && !daten.geladen ? <Fehlerzustand titel="Die Daten der Codeschmiede konnten nicht geladen werden" fehler={daten.ladeFehler} onErneut={daten.holen} />
             : daten.laden ? <Laden zeilen={5} text="Daten der Codeschmiede werden geladen" />
@@ -181,8 +183,9 @@ export default function App() {
       {einrichtung && !daten.laden && <Einrichtung ich={ich} d={daten} toast={setToast} onClose={() => setEinrichtung(false)} />}
       {!daten.laden && daten.projektId && <EinrichtungAuto ich={ich} d={daten} onOeffnen={() => setEinrichtung(true)} />}
       {!daten.laden && daten.projektId && <KonzeptAuto d={daten} ich={ich} />}
+      {!daten.laden && daten.projektId && <ProjektordnerAbfrage d={daten} ich={ich} toast={setToast} />}
       {projekteVerwalten && <ProjekteVerwalten toast={setToast} aktiv={daten.projektId} onClose={() => setProjekteVerwalten(false)} onWeg={(id) => { if (id === daten.projektId) { const n = daten.projekte.find((p) => p.id !== id); if (n) waehle(n.id); } }} />}
-      {neuesProjekt && <NeuesProjektAssistent toast={setToast} onClose={() => setNeuesProjekt(false)} onFertig={(id) => { waehle(id); geh("anbindungen"); }} />}
+      {neuesProjekt && <NeuesProjektAssistent projekte={daten.projekte} toast={setToast} onClose={() => setNeuesProjekt(false)} onFertig={(id) => { waehle(id); geh("anbindungen"); }} />}
       <Toast text={toast} onDone={() => setToast("")} />
     </div>
     </BestaetigenRahmen>
