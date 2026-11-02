@@ -4,6 +4,7 @@ import { supabase } from "./supabase";
 import { Logo, LogoZeichen, ZEICHEN, marke as markeAus } from "./Logo";
 import { BausteinListe } from "./BausteinInspektor";
 import { useVerzeichnis } from "./verzeichnis";
+import { Laden } from "./bausteine/zustand";
 
 // App-Designer · Etappe 4 (Baustein-Bibliothek) und Etappe 5 (Marke) – KONZEPT-BAUSTEINE.md, Entscheidungen Gerhard 2026-10-22 22:33,
 // 2026-10-23 10:34 (Tabellen-Varianten, Zuweisung je Tabelle über eine Liste, ein Icon-Stil für alle, Chat beim Anlegen), 15:53 („fertig machen“).
@@ -100,7 +101,7 @@ export function BausteineModus({ w, aendere, bearbeitbar, darf = false, projekt,
           <Feld label="Suchfeld">{wahl(["tabellen", vari, "suche"], [[false, "Nein"], [true, "Ja"]], v.suche)}</Feld>
         </Abschnitt>
         <Abschnitt titel={`Zuweisung je Tabelle (${Object.keys(t.zuweisung).length})`} offen={false}>
-          {!verz ? <Loader2 className="w-4 h-4 animate-spin text-emerald-700" /> : verz.fehlt ? <p className="text-xs text-slate-500">Noch kein Baustein-Verzeichnis (docs/BAUSTEINE.md) – kommt mit dem nächsten Abgleich.</p>
+          {!verz ? <Laden zeilen={2} klein /> : verz.fehlt ? <p className="text-xs text-slate-500">Noch kein Baustein-Verzeichnis (docs/BAUSTEINE.md) – kommt mit dem nächsten Abgleich.</p>
             : <div className="max-h-[320px] overflow-auto space-y-1">{tabellen.map((x) => (
               <Feld key={x.id} label={<span className="min-w-0"><span className="font-mono text-xs block truncate" title={x.datei}>{x.id}</span></span>}>
                 <select value={t.zuweisung[x.id] || ""} disabled={dis} onChange={(e) => zuweisen(x.id, e.target.value)} className={`${input} w-28`}><option value="">Standard</option>{VARIANTEN.map((y) => <option key={y} value={y}>{y}</option>)}</select>
@@ -113,10 +114,10 @@ export function BausteineModus({ w, aendere, bearbeitbar, darf = false, projekt,
         </Abschnitt>
         {darf && <div className="pt-2 flex flex-col gap-1.5">
           <button type="button" className={ghost} onClick={() => setNeu(true)}><Plus className="w-4 h-4" />{bsEntwurf?.name?.trim() || bsEntwurf?.text?.trim() ? "Neuer Baustein (angefangen) …" : "Neuer Baustein …"}</button>
-          <p className="text-xs text-slate-500">Assistent in 4 Schritten: Was? · Gestalten · Zuweisen · Als Auftrag bauen lassen. Neuer Code läuft immer über einen Auftrag mit Prüfungen.</p>
+          <p className="text-xs text-slate-500">Assistent in 4 Schritten: Was? · Gestalten · Zuweisen · Als Auftrag. Neuer Code läuft immer über einen Auftrag mit Prüfungen.</p>
         </div>}
         <Abschnitt titel="Neue Bausteine (Aufträge)" offen={false}>
-          <Suspense fallback={<Loader2 className="w-4 h-4 animate-spin text-emerald-700" />}><BausteinAuftraege d={d} projekt={projekt} max={8} /></Suspense>
+          <Suspense fallback={<Laden zeilen={2} klein />}><BausteinAuftraege d={d} projekt={projekt} max={8} /></Suspense>
         </Abschnitt>
       </section>
       <section className={`${card} min-w-0 flex flex-col`}>
@@ -125,7 +126,7 @@ export function BausteineModus({ w, aendere, bearbeitbar, darf = false, projekt,
             <button key={id} type="button" role="tab" aria-selected={mitte === id} onClick={() => setMitte(id)} className={`inline-flex items-center gap-1.5 h-8 px-3 rounded-lg text-sm font-semibold ${mitte === id ? "bg-emerald-50 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300" : "text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"}`}><I className="w-4 h-4" />{tt}</button>))}
         </div>
         <div className="p-3 bg-slate-100 dark:bg-slate-950 flex-1 overflow-auto min-h-[520px] flex flex-col gap-3">
-          {umdesign && <Suspense fallback={<Loader2 className="w-5 h-5 animate-spin text-emerald-700" />}>
+          {umdesign && <Suspense fallback={<Laden art="flaeche" />}>
             <Umdesign key={`${umdesign.art}-${umdesign.name}`} projekt={projekt} d={d} ich={ich} toast={toast} ziel={umdesign} verz={verz} icons={w.icons} onSchliessen={() => setUmdesign(null)} /></Suspense>}
           {mitte === "vorschau" && (
             <div className="flex flex-col gap-4" style={{ background: f.hintergrund, color: f.text, padding: 16, borderRadius: 12 }}>
@@ -140,7 +141,7 @@ export function BausteineModus({ w, aendere, bearbeitbar, darf = false, projekt,
             <div className={`${card} overflow-hidden`}>
               <div className="p-2 flex flex-wrap items-center gap-2 border-b border-slate-200 dark:border-slate-800"><label className="relative flex-1 min-w-[200px]"><Search className="w-4 h-4 absolute left-2.5 top-2 text-slate-400" /><input className={`${input} pl-8`} placeholder="Baustein suchen" value={q} onChange={(e) => setQ(e.target.value)} /></label>
                 <span className="text-xs text-slate-500">{verz?.bausteine ? `${verz.bausteine.length} Bausteine · ${verz.tabellen?.length || 0} Tabellen · Stand ${verz.stand}` : ""}</span></div>
-              {!verz ? <Loader2 className="w-5 h-5 animate-spin text-emerald-700 m-4" /> : verz.fehlt ? <p className="p-4 text-sm text-slate-500">Noch kein Baustein-Verzeichnis.</p> : (
+              {!verz ? <Laden zeilen={5} text="Baustein-Verzeichnis wird geladen" /> : verz.fehlt ? <p className="p-4 text-sm text-slate-500">Noch kein Baustein-Verzeichnis.</p> : (
                 <div className="overflow-x-auto"><table className="w-full text-sm"><thead className="text-xs text-slate-500 bg-slate-50 dark:bg-slate-950"><tr><th className="text-left px-3 py-2">Baustein</th><th className="text-left px-3 py-2">Gruppe</th><th className="text-right px-3 py-2">Verwendet</th><th className="text-left px-3 py-2">Datei</th></tr></thead>
                   <tbody>{gefiltert.slice(0, 200).map((b) => <tr key={b.id} className={`border-t border-slate-100 dark:border-slate-800 ${b.gruppe === "grund" && kannUmdesign ? "cursor-context-menu hover:bg-emerald-50 dark:hover:bg-emerald-950/40" : ""}`}
                     {...(b.gruppe === "grund" && kannUmdesign ? { tabIndex: 0, title: "Rechtsklick: Grundbaustein umdesignen", onContextMenu: (e) => { e.preventDefault(); setUmdesign({ art: "baustein", name: b.id }); },
@@ -257,7 +258,7 @@ export function MarkeModus({ w, aendere, bearbeitbar, projekt, ich, toast }) {
     <>
       <section className={`${card} p-3 self-start`} aria-label="Einstellungen Marke">
         <Abschnitt titel="Zeichen">
-          <div className="grid grid-cols-3 gap-1.5">{ZEICHEN.map(([z, t]) => <button key={z} type="button" disabled={dis || (z === "eigen" && !m.vektor)} title={z === "eigen" && !m.vektor ? "Zuerst unten ein Logo einlesen" : undefined} aria-pressed={m.zeichen === z} onClick={() => setze("zeichen", z)} className={`rounded-lg border p-1.5 flex flex-col items-center gap-1 text-[11px] ${m.zeichen === z ? "border-emerald-600 bg-emerald-50 dark:bg-emerald-950" : "border-slate-200 dark:border-slate-800"}`}>
+          <div className="grid grid-cols-3 gap-1.5">{ZEICHEN.map(([z, t]) => <button key={z} type="button" disabled={dis || (z === "eigen" && !m.vektor)} title={z === "eigen" && !m.vektor ? "Zuerst unten ein Logo einlesen" : undefined} aria-pressed={m.zeichen === z} onClick={() => setze("zeichen", z)} className={`rounded-lg border p-1.5 flex flex-col items-center gap-1 text-xs ${m.zeichen === z ? "border-emerald-600 bg-emerald-50 dark:bg-emerald-950" : "border-slate-200 dark:border-slate-800"}`}>
             {z === "bild" ? <Stamp className="w-7 h-7 text-slate-400" /> : z === "eigen" && !m.vektor ? <Upload className="w-7 h-7 text-slate-400" /> : <LogoZeichen werte={{ ...m, zeichen: z }} groesse={30} />}{t}</button>)}</div>
           {[["farbe", "Hauptfarbe"], ["farbe2", "Zweitfarbe"]].map(([k, t]) => <Feld key={k} label={t}><span className="flex items-center gap-1.5"><input type="color" aria-label={t} value={m[k]} disabled={dis} onChange={(e) => setze(k, e.target.value)} className="w-8 h-7 rounded border border-slate-300 dark:border-slate-700 bg-transparent" /><input aria-label={`${t} Farbwert`} value={m[k]} disabled={dis} onChange={(e) => /^#[0-9a-fA-F]{6}$/.test(e.target.value) && setze(k, e.target.value.toLowerCase())} className={`${input} w-[84px] font-mono text-xs`} /></span></Feld>)}
           <Feld label="Kürzel (1–3)"><Eingabe className={`${input} w-24`} wert={m.kuerzel} disabled={dis} max={3} muster={/^[A-Za-z0-9ÄÖÜäöü]{1,3}$/} onWert={(v) => setze("kuerzel", v)} /></Feld>

@@ -1,3 +1,8 @@
+// Seit 0.12.1 (Datenbank 0054): Kennungen des Design-Systems 2.0 – gleich wie Trainer to go src/lib/design/bausteine.js (BAUSTEINE, 25 Kennungen).
+// Alte Kennungen (App-Designer 2.0) werden abgebildet: knopf-neben → knopf-zweit, knopf-leise → knopf-text, knopf-symbol → symbolknopf.
+// Neu: status-pill-ok/-warn/-bad/-info (zentraler Baustein StatusPill) und hauptkarte. status-zugesagt/-offen bleiben eigene Galerie-Muster
+// (wie in der App, Review M1 dort: sie hatten nie Wirkung). Der App-Designer 3.0 nimmt Bausteine/Tokens/Regler aus dem Design-System-Paket
+// (web/src/designSystem.js); dieser Katalog trägt die Werte je Baustein (Galerie, Baustein-Chat, Datenbank 0054, desktop/dienst/lib/design.mjs).
 // Baustein-Katalog des App-Designers 2.0 (Etappe 1 „Bausteine“, Entwurf freigegeben von Gerhard 2026-10-24 22:08).
 // Jedes Muster der Galerie (Testseite /bausteine von Trainer to go) trägt data-cs-baustein="<id>" mit einer dieser Kennungen.
 // Die Werte landen als tokens.bausteine.<id> im Design-Paket der App (DesignPackage) und wirken dort SOFORT nach der Freigabe.
@@ -15,7 +20,7 @@ export const ZUSTAENDE = [["normal", "Normal"], ["darueber", "Darüber"], ["gedr
 export const SEITE = Object.freeze({ hell: "#ffffff", dunkel: "#0a0a0a" });
 
 const f = (bg, text, rand) => ({ bg, text, rand });
-const HAUPT = { hell: f("#059669", "#ffffff", "#059669"), dunkel: f("#34d399", "#022c22", "#34d399") };
+const HAUPT = { hell: f("#1d4ed8", "#ffffff", "#1d4ed8"), dunkel: f("#6d9bff", "#0a0f1c", "#6d9bff") };   // Design 2.0 (Blau)
 const NEBEN = { hell: f("#f5f5f5", "#171717", "#f5f5f5"), dunkel: f("#262626", "#fafafa", "#262626") };
 const UMRISS = { hell: f("#ffffff", "#0a0a0a", "#e5e5e5"), dunkel: f("#0a0a0a", "#fafafa", "#262626") };
 const LEISE = { hell: f("#ffffff", "#0a0a0a", "#ffffff"), dunkel: f("#0a0a0a", "#fafafa", "#0a0a0a") };
@@ -27,14 +32,14 @@ const FARBE = ["farben", "ecken"]; const MIT_GROESSE = ["farben", "ecken", "groe
 // interaktiv: Zustände (Darüber/Gedrückt/Gesperrt) und Prüfung „Form hebt sich ab“; rahmen: Rand ist Pflicht (Eingabefelder)
 export const KATALOG = [
   { id: "knopf-haupt", name: "Knopf · Hauptaktion", gruppe: "knoepfe", quelle: "ui-button", wirkt: "app", interaktiv: true, felder: MIT_GROESSE, std: { ...HAUPT, ecken: 6, groesse: "mittel" } },
-  { id: "knopf-neben", name: "Knopf · Neben", gruppe: "knoepfe", quelle: "ui-button", wirkt: "app", interaktiv: true, felder: MIT_GROESSE, std: { ...NEBEN, ecken: 6, groesse: "mittel" } },
+  { id: "knopf-zweit", alt: ["knopf-neben"], name: "Knopf · Zweit", gruppe: "knoepfe", quelle: "ui-button", wirkt: "app", interaktiv: true, felder: MIT_GROESSE, std: { ...NEBEN, ecken: 6, groesse: "mittel" } },
   { id: "knopf-umriss", name: "Knopf · Umriss", gruppe: "knoepfe", quelle: "ui-button", wirkt: "app", interaktiv: true, felder: MIT_GROESSE, std: { ...UMRISS, ecken: 6, groesse: "mittel" } },
-  { id: "knopf-leise", name: "Knopf · Leise", gruppe: "knoepfe", quelle: "ui-button", wirkt: "app", interaktiv: true, felder: MIT_GROESSE, std: { ...LEISE, ecken: 6, groesse: "mittel" } },
+  { id: "knopf-text", alt: ["knopf-leise"], name: "Knopf · Text", gruppe: "knoepfe", quelle: "ui-button", wirkt: "app", interaktiv: true, felder: MIT_GROESSE, std: { ...LEISE, ecken: 6, groesse: "mittel" } },
   { id: "knopf-gefahr", name: "Knopf · Gefahr", gruppe: "knoepfe", quelle: "ui-button", wirkt: "app", interaktiv: true, felder: MIT_GROESSE, std: { ...GEFAHR, ecken: 6, groesse: "mittel" } },
-  { id: "knopf-symbol", name: "Knopf · nur Symbol", gruppe: "knoepfe", quelle: "ui-button", wirkt: "app", interaktiv: true, felder: MIT_GROESSE, std: { ...UMRISS, ecken: 6, groesse: "mittel" } },
+  { id: "symbolknopf", alt: ["knopf-symbol"], name: "Symbolknopf", gruppe: "knoepfe", quelle: "ui-button", wirkt: "app", interaktiv: true, felder: MIT_GROESSE, std: { ...UMRISS, ecken: 6, groesse: "mittel" } },
   { id: "eingabe", name: "Eingabefeld", gruppe: "eingaben", quelle: "ui-input", wirkt: "app", interaktiv: true, rahmen: true, felder: MIT_GROESSE, std: { ...UMRISS, ecken: 6, groesse: "mittel" } },
   { id: "schalter", name: "Schalter", gruppe: "eingaben", quelle: "ui-switch", wirkt: "app", interaktiv: true, rahmen: true, felder: ["farben"],
-    std: { hell: f("#059669", "#ffffff", "#e5e5e5"), dunkel: f("#34d399", "#0a0a0a", "#262626") }, farbNamen: { bg: "Eingeschaltet", text: "Knopf", rand: "Ausgeschaltet" } },
+    std: { hell: f("#1d4ed8", "#ffffff", "#8390a5"), dunkel: f("#6d9bff", "#0a0a0a", "#546b96") }, farbNamen: { bg: "Eingeschaltet", text: "Knopf", rand: "Ausgeschaltet" } },
   { id: "abzeichen-haupt", name: "Abzeichen · Haupt", gruppe: "abzeichen", quelle: "ui-badge", wirkt: "app", felder: MIT_GROESSE, std: { ...HAUPT, ecken: 6, groesse: "mittel" } },
   { id: "abzeichen-neben", name: "Abzeichen · Neben", gruppe: "abzeichen", quelle: "ui-badge", wirkt: "app", felder: MIT_GROESSE, std: { ...NEBEN, ecken: 6, groesse: "mittel" } },
   { id: "abzeichen-umriss", name: "Abzeichen · Umriss", gruppe: "abzeichen", quelle: "ui-badge", wirkt: "app", felder: MIT_GROESSE, std: { ...UMRISS, ecken: 6, groesse: "mittel" } },
@@ -43,7 +48,17 @@ export const KATALOG = [
     std: { hell: f("#ecfdf5", "#065f46", "#ecfdf5"), dunkel: f("#022c22", "#6ee7b7", "#022c22"), ecken: 32, groesse: "mittel", symbol: "Check" } },
   { id: "status-offen", name: "Status · Offen", gruppe: "abzeichen", quelle: null, wirkt: "galerie", felder: ["farben", "ecken", "groesse", "symbol"],
     std: { hell: f("#fffbeb", "#92400e", "#fffbeb"), dunkel: f("#451a03", "#fcd34d", "#451a03"), ecken: 32, groesse: "mittel", symbol: "AlertTriangle" } },
+  // Design-System 2.0: Status-Pill je Ton (src/components/ds/StatusPill.jsx) – Status nie in der Hauptfarbe (Blau)
+  { id: "status-pill-ok", name: "Status-Pill · ok", gruppe: "abzeichen", quelle: "ds-statuspill", wirkt: "app", felder: ["farben", "ecken", "groesse"],
+    std: { hell: f("#ecfdf5", "#065f46", "#ecfdf5"), dunkel: f("#0b2a20", "#a7f3d0", "#0b2a20"), ecken: 32, groesse: "mittel" } },
+  { id: "status-pill-warn", name: "Status-Pill · warn", gruppe: "abzeichen", quelle: "ds-statuspill", wirkt: "app", felder: ["farben", "ecken", "groesse"],
+    std: { hell: f("#fffbeb", "#92400e", "#fffbeb"), dunkel: f("#33240a", "#fde68a", "#33240a"), ecken: 32, groesse: "mittel" } },
+  { id: "status-pill-bad", name: "Status-Pill · bad", gruppe: "abzeichen", quelle: "ds-statuspill", wirkt: "app", felder: ["farben", "ecken", "groesse"],
+    std: { hell: f("#fef2f2", "#991b1b", "#fef2f2"), dunkel: f("#3a1414", "#fecaca", "#3a1414"), ecken: 32, groesse: "mittel" } },
+  { id: "status-pill-info", name: "Status-Pill · info", gruppe: "abzeichen", quelle: "ds-statuspill", wirkt: "app", felder: ["farben", "ecken", "groesse"],
+    std: { hell: f("#f1f5f9", "#334155", "#f1f5f9"), dunkel: f("#1e293b", "#e2e8f0", "#1e293b"), ecken: 32, groesse: "mittel" } },
   { id: "karte", name: "Karte", gruppe: "kacheln", quelle: "ui-card", wirkt: "app", felder: FARBE, std: { ...KARTE, ecken: 12 } },
+  { id: "hauptkarte", name: "Hauptkarte", gruppe: "kacheln", quelle: null, wirkt: "app", felder: FARBE, std: { ...KARTE, ecken: 16 } },
   { id: "kachel-kennzahl", name: "Kennzahl-Kachel", gruppe: "kacheln", quelle: null, wirkt: "galerie", felder: FARBE, std: { ...KARTE, ecken: 12 } },
   { id: "tabelle", name: "Tabelle", gruppe: "tabellen", quelle: "ui-table", wirkt: "app", felder: FARBE, std: { ...TABELLE, ecken: 16 } },
   { id: "liste", name: "Liste", gruppe: "listen", quelle: null, wirkt: "galerie", felder: FARBE, std: { ...KARTE, ecken: 12 } },
@@ -52,7 +67,14 @@ export const KATALOG = [
     std: { ...UMRISS, ecken: 12, symbol: "FileDown" } },
 ];
 export const KATALOG_IDS = KATALOG.map((b) => b.id);
-export const bausteinVon = (id) => KATALOG.find((b) => b.id === id) || null;
+/** Alte Kennung → neue (App-Designer 2.0 → Design-System 2.0), gleich wie Trainer to go ALT_ZU_NEU. */
+export const ALT_ZU_NEU = Object.freeze(Object.fromEntries(KATALOG.flatMap((b) => (b.alt || []).map((a) => [a, b.id]))));
+/** Alle angenommenen Kennungen (neu + alt). */
+export const BAUSTEIN_KENNUNGEN = Object.freeze([...KATALOG_IDS, ...Object.keys(ALT_ZU_NEU)]);
+export const neueKennung = (id) => (Object.prototype.hasOwnProperty.call(ALT_ZU_NEU, id) ? ALT_ZU_NEU[id] : id);
+/** Kennung, die die Galerie der App trägt (sie hat bei umbenannten Bausteinen noch die alte; die App nimmt beide an). */
+export const galerieKennung = (id) => { const b = bausteinVon(id); return b ? (b.alt?.[0] || b.id) : id; };
+export const bausteinVon = (id) => { const n = neueKennung(id); return KATALOG.find((b) => b.id === n) || null; };
 
 const HEX = /^#[0-9a-f]{6}$/i;
 const SYMBOL = /^[A-Z][A-Za-z0-9]{1,40}$/;
@@ -80,11 +102,15 @@ export function bausteinWerteBereinigen(id, w) {
 export function bausteineBereinigen(alle) {
   const r = {};
   if (!alle || typeof alle !== "object" || Array.isArray(alle)) return r;
-  for (const id of KATALOG_IDS) if (eigen(alle, id)) { const w = bausteinWerteBereinigen(id, alle[id]); if (Object.keys(w).length) r[id] = w; }
+  // alte Kennungen zuerst, neue danach – gibt es beide, gewinnt die neue (wie in der App)
+  for (const quelle of [...Object.keys(ALT_ZU_NEU), ...KATALOG_IDS]) if (eigen(alle, quelle)) {
+    const id = neueKennung(quelle); const w = bausteinWerteBereinigen(id, alle[quelle]);
+    if (Object.keys(w).length) r[id] = { ...(r[id] || {}), ...w };
+  }
   return r;
 }
 // Bausteine in der Akzentfarbe der App (Prüfbefund Etappe 1: Kontrast-Wächter mit der gewählten statt der festen Smaragd-Farbe)
-const IN_AKZENT = { "knopf-haupt": ["bg", "text", "rand"], "abzeichen-haupt": ["bg", "text", "rand"], schalter: ["bg"] };
+const IN_AKZENT = { "knopf-haupt": ["bg", "text", "rand"], "abzeichen-haupt": ["bg", "text", "rand"], schalter: ["bg"] };   // neue Kennungen (0.12.1)
 /** Akzentfarbe aus der App (Trainer to go: tokens.accent → Stufe 600 hell, 400 dunkel) streng prüfen → { hell:{bg,text}, dunkel:{bg,text} } oder null. */
 export function akzentBereinigen(a) {
   if (!a || typeof a !== "object") return null;

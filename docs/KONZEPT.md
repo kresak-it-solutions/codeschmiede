@@ -1,6 +1,6 @@
 # Codeschmiede – Konzept
 
-**Stand:** 2026-10-22 · Wer: Gerhard Kresak (Anweisungen und Freigaben 2026-10-22 12:06–13:39), Claude (Konzept, Umsetzung)
+**Stand:** 2026-11-02 (zuletzt: Chat-Baustein, Zustände, Push, Design-Kennungen, Vorhaben – Rest der Befunde vom 01.11.) · angelegt 2026-10-22 · Wer: Gerhard Kresak (Anweisungen und Freigaben 2026-10-22 12:06–13:39), Claude (Konzept, Umsetzung)
 **Herkunft:** entstanden als „Trainer-to-go Programmierumgebung“ im Repo `trainer-to-go` (Zweig `feature/auftrags-zentrale`, Entwurf 0.4 freigegeben 12:37);
 seit 13:16 eigenes Programm für alle Projekte. Entwurf: `docs/entwurf-0.4.html`.
 
@@ -70,6 +70,15 @@ App → `ws_fehler_melden(schluessel, daten)` (auch ohne Anmeldung, nur mit Meld
 aus Text ohne Zahlen, Stelle ohne Zeile, Umgebung). Grenze 300/Stunde je App (`ws_fehler_grenze`), Löschung 30 Tage nach der letzten Meldung.
 Lesen: Projektmitglieder; Stand ändern und „Als Auftrag“: Admin und Entwickler (Auftrag nur mit Auftrags-Recht in der Gruppe).
 
+### App-Designer 3.0 (seit 0.11.0, Anweisung Gerhard 2026-11-01 22:18/22:38)
+Für Projekte mit **Design-System-Paket** (Trainer to go: `docs/design-2/DESIGN-SYSTEM.md`, erzeugt von `tools/design-system.mjs` aus Entwurf 2.0,
+Konzept §4/§5/§8, `src/index.css`, Routen) sieht der App-Designer aus wie der Design-Entwurf 2.0: Leiste Rolle · PC/Handy · Hell/Dunkel ·
+Bausteine zeigen · Begründung; links Seiten je Rolle, Mitte Vorschau, rechts Inspektor (Baustein · Tokens · Prüfungen). Reiter **Entwurf**
+(Masken des Entwurfs in der Rahmen-Seite `/entwurf-rahmen/` mit Sandbox und eigener CSP – ein `srcdoc` würde die strenge CSP der Oberfläche erben) und **Echte App (Testfassung)** (Vorschau-Protokoll der App). Das Paket ist die einzige Quelle –
+die Codeschmiede hat keine Kopie von Tokens, Bausteinen, Seiten oder Begründungen (`web/src/designSystem.js` prüft es streng). Token-Änderungen
+gehen als Entwurf ins Design-Paket der App (`tokens.ds`) über deren Rechteprüfung; Kontrast-Wächter mit Paaren und Regeln aus dem Paket
+(„Blau nie Status“, „Terminart ≠ Status“). Projekte ohne Paket behalten Grunddesign/Bausteine (Ausgangswerte jetzt Design 2.0, Blau).
+
 ### App-Designer 2.0 (seit 0.9.7, Entwurf frei 2026-10-24 22:08)
 Ein Designer, der sofort wirkt: Aussehen geht über die Design-Pakete der App (Trainer to go: `DesignPackage`), nur neue Bausteine laufen als
 Auftrag, Farben frei mit Kontrast-Wächter (`web/src/kontrast.js`). Etappe 1 „Bausteine“: Galerie in der Mitte, Linksklick wählt,
@@ -80,6 +89,19 @@ Etappe 3 „Neuer Baustein“: Assistent (Was? → Gestalten → Zuweisen → Al
 Einrichtung › **Dieser PC** (0.9.8, Datenbank 0040): Seiten-Designer-Freigabe, weitere KI-Anbieter, Sandbox, alte Werkstatt-PCs (Entfernen nur Admin).
 Etappe 4 „Übernehmen“: alle offenen Design-Änderungen an einer Stelle (`web/src/Uebernehmen.jsx`) – „wirkt sofort“ (Freigabe-Reiter der App,
 Einzelzeilen, Ausrollen sofort/schrittweise/nur Testfassung, „Zurück auf Version N“) und „braucht Auftrag“ (Grunddesign, neue Bausteine).
+
+### Design-Chat und Baustein-Kennungen (seit 0.12.1, Datenbank 0054)
+Kennungen wie Trainer to go `src/lib/design/bausteine.js` (25): knopf-haupt · knopf-zweit · knopf-umriss · knopf-text · knopf-gefahr · symbolknopf ·
+eingabe · schalter · abzeichen-haupt/-neben/-umriss/-gefahr · status-zugesagt · status-offen · status-pill-ok/-warn/-bad/-info · karte · hauptkarte ·
+kachel-kennzahl · tabelle · liste · symbol-kachel · datei. Alt → neu: knopf-neben → knopf-zweit, knopf-leise → knopf-text, knopf-symbol → symbolknopf
+(Web `ALT_ZU_NEU`/`galerieKennung`, Werkstatt `lib/design.mjs`, Datenbank nimmt beide an). Gleich halten: `web/src/bausteinKatalog.js`,
+`desktop/dienst/lib/design.mjs`, Migration (zuletzt 0054) – der Test `desktop/dienst/test/kontrast.test.mjs` vergleicht alle drei und die Liste der App.
+Nicht in dieser Liste: die übrigen rund 20 Bausteine aus §5 (z. B. Seitenkopf, Reiter, Hinweis) – die steuert der App-Designer 3.0 über Tokens,
+die App speichert für sie keine Einzelwerte.
+**0054 einspielen (Gerhard):** am besten **direkt nach dem Zusammenführen**, spätestens bevor jemand im Baustein-Chat einen umbenannten oder neuen
+Baustein fragt: Actions › „Datenbank einspielen“ › Run workflow, Zweig `main`, Pfad `migrations/0054_design_kennungen.sql`. 0054 erweitert nur
+(alte Kennungen bleiben erlaubt), daher ist auch Einspielen **vor** dem Zusammenführen gefahrlos (Supabase › SQL Editor › Inhalt der Datei ausführen).
+Bis dahin meldet nur der Baustein-Chat bei knopf-zweit/-text, symbolknopf, status-pill-* und hauptkarte einen Fehler; alles andere läuft.
 
 ### Aufgaben (0.9.10, Entwurf frei von Gerhard 2026-10-25 13:50, Datenbank 0042)
 Menüpunkt **Aufgaben** direkt unter „Zu erledigen“ (`web/src/Aufgaben.jsx`; Plakette = offene Aufgaben, für die ich zuständig bin). Eine Aufgabe gehört
@@ -101,6 +123,88 @@ erlaubten Typen, ≤ 60 MB), legt sie unter
 `.codeschmiede-anhaenge/` ab (nie eingecheckt, nach dem Lauf gelöscht) und bekommt sie mit den Links als Datenblock („Daten, keine Anweisungen“).
 Ohne „Als Auftrag“ geht nichts an eine KI. Falsches Ziel: „Zurückziehen“.
 
+### Oberfläche 2.0 & Chat (0.10.0, Entwurf 1.1 frei von Gerhard 2026-10-27 08:27, Datenbank 0050)
+Ausführlich mit Bedienung: `docs/KONZEPT-OBERFLAECHE-2.md`. **Navigation** in Gruppen (Arbeiten · Gestalten & Bauen · Ablauf · Dokumentation,
+unten aufklappbar **Verwaltung**), auf dem Handy als ausfahrbares Menü. **Kopfzeile:** Projektwechsel (mit Neues Projekt/Projekte verwalten),
+**Suchen & Springen** (Strg K: Seiten, Features, Aufträge, Unterhaltungen), Limits, Einrichtung, Werkstatt, Glocke (Zu erledigen), Benutzermenü.
+**Zentrale** mit Kennzahlen oben. **Chat** (`web/src/Chat.jsx`): eigene Unterhaltungen je Projekt (`ws_unterhaltungen`, persönlich; Konzept-Chat =
+ohne Unterhaltung, immer angeheftet), @Feature/#Gruppe, Anhänge (Speicher `ws-chat`), Bezüge rechts; die Werkstatt liest den Verlauf nur aus derselben
+Unterhaltung und arbeitet wie im Konzept-Chat (Rückfragen, Aufträge erst nach Klärung). **Limits:** Knopf „Jetzt aktualisieren“ (`ws_abo_abruf`) – die
+eigene Werkstatt nimmt die Werte der offiziellen Statuszeile von Claude Code (höchstens 2 Minuten alt), sonst Mini-Anfrage; Hinweis bei Fehlern.
+Seit 0.10.1 (Befund S6) liest die Werkstatt **keine** Anmeldung von Claude Code mehr und ruft keine inoffizielle Schnittstelle auf.
+
+
+## Push aufs Handy (seit 0.12.0, Befund L3, Datenbank 0053)
+**Wann:** neue Erlaubnis-Anfrage (an Admin und Entwickler mit Recht „freigeben“ im Bereich) · Rückfrage der Werkstatt (an die Person, die den
+Auftrag gestellt hat) · Auftrag fertig, Freigabe bereit (Freigeber) · Station angehalten nach 3 Fehlversuchen (Freigeber). Gleiche Meldung
+höchstens alle 2 Minuten. Nicht: Rückfragen der KI im Konzept-Chat (dort sitzt man ohnehin gerade).
+**Text:** nur Projektname, Art und Auftragsnummer – nie Titel, Befehl, Nachricht oder Namen („Trainer to go · Erlaubnis nötig“ /
+„Auftrag #12 wartet auf deine Erlaubnis.“). Tippen öffnet „Zu erledigen“ (bzw. die Zentrale bei Stationen).
+**Weg:** Trigger → `ws_push_warteschlange` → `pg_net` stößt die Edge Function `push-senden` an (ohne Inhalt) → die Funktion holt die Zeilen
+mit dem Dienst-Schlüssel (`ws_push_abholen`), verschlüsselt Ende-zu-Ende (RFC 8291) mit dem VAPID-Schlüssel und gibt sie dem Push-Dienst
+des Geräts → `ws_push_ergebnis` (404/410 = Gerät entfernt). Ohne `pg_net` oder ohne Funktion bleibt alles liegen und geht beim nächsten
+Anstoß raus (nur Meldungen der letzten Stunde). Der Anstoß braucht keine Anmeldung, kann aber nur die vorhandene Warteschlange abarbeiten; höchstens ein Lauf je 2 Sekunden (`ws_push_bremse`), Antwort nur `{ok:true}`. Empfänger von Erlaubnis/Freigabe/Station: Admin und wer im Bereich „freigeben“ darf **und im Projekt Entwickler** ist (wie `ws_darf`). Ein Gerät, das schon einer anderen Person gehört, lässt sich nur mit denselben Geräteschlüsseln übernehmen.
+**Geheimnisse:** `VAPID_PRIVATE_KEY` nur als Supabase-Secret (Ablauf „Web-Push-Schlüssel erzeugen“), nie im Repository, in der Datenbank oder im Log.
+Der öffentliche Schlüssel kommt von der Funktion (`GET …/push-senden?schluessel=1`).
+**Kosten:** keine – Supabase-Gratis-Kontingent (Edge Functions, `pg_net`), Push-Dienste der Browser kostenlos.
+
+### Einrichten – was Gerhard einmalig tut (nach dem Zusammenführen des PR)
+1. **Datenbank 0053 einspielen:** GitHub › Repository `kresak-it-solutions/codeschmiede` › **Actions** › „Datenbank einspielen“ › **Run workflow**,
+   Zweig `main`, Feld „Pfad“: `migrations/0053_push.sql` › grüner Knopf „Run workflow“. Grün = fertig. (Alternativ die Zeile
+   `migrations/0053_push.sql` in `supabase/einspielen.txt` in main eintragen – die Werkstatt darf das nicht.)
+2. **Schlüssel erzeugen (= Geheimnis bestätigen):** Actions › **„Web-Push-Schlüssel erzeugen“** › Run workflow, Zweig `main`, Häkchen
+   „ueberschreiben“ **aus** lassen › Run workflow. Im Ergebnis steht „VAPID-Schlüssel gespeichert“. Prüfen: Supabase › Projekt `codeschmiede` ›
+   Edge Functions › **Secrets**: `VAPID_PUBLIC_KEY` und `VAPID_PRIVATE_KEY` sind da (Werte nicht ansehen nötig).
+3. **Funktion veröffentlichen:** läuft beim Zusammenführen von selbst („Push-Funktion veröffentlichen“). Falls nicht grün: Actions ›
+   „Push-Funktion veröffentlichen“ › Run workflow (Zweig `main`). Prüfen: Supabase › Edge Functions › `push-senden` ist da,
+   „Verify JWT“ ist **aus**.
+4. **`pg_net` prüfen:** Supabase › Database › Extensions › `pg_net` ist eingeschaltet (0053 schaltet es selbst ein; falls ausgegraut: einschalten).
+5. **Auf dem Handy erlauben:**
+   - **iPhone (ab iOS 16.4):** Safari › `https://codeschmiede.pages.dev` › unten **Teilen** › **„Zum Home-Bildschirm“** › Hinzufügen. Die
+     Codeschmiede **vom Home-Bildschirm** öffnen, anmelden, oben rechts auf deinen Kreis (Benutzermenü) › **„Push aufs Handy“** ›
+     **„Auf diesem Gerät erlauben“** › bei der Frage des iPhones **„Erlauben“**.
+   - **Android:** Chrome › `https://codeschmiede.pages.dev` › anmelden › Benutzermenü › „Push aufs Handy“ › „Auf diesem Gerät erlauben“ ›
+     „Zulassen“ (Zum Startbildschirm hinzufügen ist empfohlen, aber nicht nötig).
+6. **Testen:** im selben Dialog **„Test senden“** – nach wenigen Sekunden kommt „Test: Push-Nachrichten kommen auf diesem Gerät an.“
+Kommt nichts: Supabase › Edge Functions › `push-senden` › **Logs**; Handy-Einstellungen › Mitteilungen › Codeschmiede erlaubt?
+Schlüssel ersetzen (z. B. nach einem Leck): Schritt 2 mit Häkchen „ueberschreiben“, danach auf jedem Gerät Schritt 5 wiederholen.
+
+### Wenn es hier nicht geht – Funktion von Hand veröffentlichen
+Supabase-CLI auf einem PC (nicht nötig, wenn Schritt 3 grün ist): `supabase login`, dann im Repository
+`supabase functions deploy push-senden --project-ref mvzlbpijdvsjnemubofy --no-verify-jwt` und Secrets mit
+`supabase secrets set --project-ref mvzlbpijdvsjnemubofy VAPID_PUBLIC_KEY=… VAPID_PRIVATE_KEY=…` (Schlüssel z. B. mit `npx web-push generate-vapid-keys`).
+
+## Vorhaben mit Stufen (Konzept-Entwurf 1.2, 02.11.2026 – Befund L7, wartet auf Freigabe)
+**Warum:** Ein Auftrag = eine Gruppe = ein Zweig = ein PR. Große Umbauten wie Design 2.0 (Konzept → Prüfungen → Entscheidungen → 12 Stufen
+mit je eigenem PR quer durch 30+ Gruppen) passen da nicht hinein und liefen deshalb im Claude-Chat statt in der Codeschmiede
+(`docs/BEFUNDE-2026-11-01.md` Abschnitt 7). Klickbarer Entwurf: `docs/entwurf-1.2-vorhaben.html`.
+
+**Grundsatz (schlank):** Ein **Vorhaben** ist eine Klammer um mehrere **normale Aufträge** („Stufen“). Jede Stufe läuft den bekannten Weg
+(Werkstatt → Freigabe → Sicherheitsprüfung → Zusammenführen → Feature-Prüfung → live) mit eigenem Zweig und eigenem PR. Neu ist nur:
+die Reihenfolge, die Übergabe zwischen den Stufen und eine gemeinsame Ansicht. Kein zweiter Auftragsweg, keine neuen Rechte.
+
+| Teil | Entscheidung (Vorschlag) |
+|---|---|
+| Anlegen | Im Konzept-Chat: die KI schlägt mit `VORHABEN` Titel, Ziel, Träger-Gruppe und 2–12 Stufen vor (je Titel, Was, betroffene Gruppen, Risikostufe). Karte „Vorhaben freigeben“ (Admin oder Recht „freigeben“ in der Träger-Gruppe) legt es an – wie heute „Konzept freigeben & bauen“. |
+| Reihenfolge | **Nacheinander auf main:** Stufe n+1 startet erst, wenn Stufe n **live in main** ist, und zweigt vom neuesten main ab. Keine gestapelten PR-Zweige (kein Rebase-Stau, die Prüfungen sehen immer den echten Stand). Das ist zugleich die Warteschlange fürs Zusammenführen (L4) innerhalb eines Vorhabens. |
+| Gruppen | Jede Stufe hat **eine Träger-Gruppe** (dort Auftragsrecht nötig, dort zählt „ein Auftrag je Gruppe“) und eine Liste **betroffener Gruppen** (nur Anzeige und Hinweis an deren Features). Querschnitts-Vorhaben laufen in „App-weit“/„Globale Einstellungen“. |
+| Übergabe | Am Ende jeder Stufe schreibt die Werkstatt `docs/vorhaben/<nr>-<kurz>.md` (Stand, Entscheidungen, offene Punkte, nächste Stufe) in ihren PR. Die nächste Stufe bekommt diese Datei und das Vorhaben-Ziel als Datenblock. |
+| Haltepunkte | Je Stufe „danach anhalten“ (Standard: nach Stufen mit Risiko HOCH/KRITISCH und vor der letzten Stufe). Dann Push (L3) „Vorhaben #4: Stufe 3 von 6 live – weiter?“ und Knopf „Nächste Stufe starten“. Ohne Haltepunkt startet die nächste Stufe von selbst. |
+| Änderungen am Plan | Stufen, die noch nicht begonnen haben, lassen sich im Vorhaben-Chat ändern, einfügen, löschen (gleiche Karte „Plan ändern?“ zum Bestätigen). Laufende/fertige Stufen bleiben. |
+| Rot / Abbruch | Rot an einer Prüfung = Nacharbeit wie heute; das Vorhaben wartet. „Vorhaben abbrechen“ bricht nur die nicht begonnenen Stufen ab, fertige bleiben live. |
+| Prüfungen | Wie heute je Stufe; zusätzlich am Vorhaben „Abschlussprüfung“ (unabhängige Prüfung des ganzen Vorhabens, gibt es als Knopf schon für Feature/Gruppe/App). Mehrere Blickwinkel (Code, Logik, Bedienbarkeit, Kinderschutz) sind ein eigener Punkt. |
+| Andere PCs | Nacharbeit und nächste Stufe darf jeder PC **derselben Person** übernehmen, die das Vorhaben angelegt hat (heute schon für Nacharbeit über `erstellt_von`); nie fremde PCs. |
+| Modell | Je Stufe nach ihrer Risikostufe (L6). |
+
+**Datenbank (Skizze, nächste Nummer):** `ws_vorhaben` (id, projekt_id, titel, ziel, traeger_gruppe, stand `entwurf|laeuft|wartet|fertig|abgebrochen`,
+erstellt_von, plan jsonb mit den Stufen, Zeitstempel; RLS wie Aufträge, Anlegen/Ändern nur über Funktionen mit Protokoll);
+`ws_auftraege` + `vorhaben_id`, `stufe` (1–12), `anhalten` (bool), `betroffen` (Gruppen-Kennungen). Trigger: Stufe live → nächste Stufe
+`wartet` (bzw. Haltepunkt + Push). Werkstatt: `naechsterAuftrag` nimmt Stufen wie Aufträge; Prompt bekommt Ziel, Plan und Übergabe als Datenblock.
+**Oberfläche:** Zentrale-Karte „Vorhaben“ mit Stufen-Leiste (fertig · läuft · wartet), Klick = Vorhaben-Ansicht (Plan, Stufen mit Stand und PR,
+Übergaben, Chat mit Bezug-Chip „Vorhaben“, Knöpfe „Nächste Stufe starten“, „Plan ändern“, „Abbrechen“). Zu erledigen: „Vorhaben wartet“.
+**Aufwand/Risiko:** etwa 2–3 Tage, Risiko **HOCH** (Auftragsweg, Datenbank) → Bau in drei PRs (Datenbank + Werkstatt · Oberfläche · Konzept-Chat-Vorschlag)
+mit unabhängigem Review. **Erst nach Gerhards Freigabe des Entwurfs 1.2** (Projektregel „sichtbare Neuerungen zuerst als klickbarer Entwurf“).
+
 ## Rollen und Rechte
 | Rolle | Aufträge | Freigeben / Erlauben | Löschen | Claude | GitHub |
 |---|---|---|---|---|---|
@@ -111,17 +215,23 @@ Ohne „Als Auftrag“ geht nichts an eine KI. Falsches Ziel: „Zurückziehen�
 Neue Projekte, Gruppen, Mitglieder, Abo-Schwellen: nur Admin.
 
 ## Weg eines Auftrags (seit 0.3.0, Entwurf 0.7 freigegeben 2026-10-22 20:41)
-Auftrag → In Arbeit (Werkstatt-PC, eigener Zweig, danach Bauen & Tests auf dem PC) → **Freigabe** (Klick; Admin oder Recht) →
+Auftrag → In Arbeit (Werkstatt-PC, eigener Zweig; seit 0.10.1 **keine** Bauen & Tests auf dem PC, Befund S1) → **Freigabe** (Klick; Admin oder Recht) →
 **Sicherheitsprüfung** (automatisch auf dem Admin-PC: Bauen & Tests + unabhängige Claude-Prüfung der Änderung) → **Zusammenführen** (Klick) →
 **Feature-Prüfung** (automatisch: Testfassung = Zweig + neuester main, Bauen & Tests, unabhängige Prüfung des ganzen Features) →
-bei Grün Pull Request in main = **live** → **Live & Wissen**. Rot an einer Prüfung → **Nacharbeit** (Werkstatt behebt, dann wieder Freigabe);
+bei Grün Pull Request in main = **live** → **Live & Wissen**. Seit 0.10.2 (Befund L2) sind **alle Prüfläufe auf GitHub** (z. B. „Prüfung“) ein Tor:
+die Stationen warten darauf (höchstens 45 Min.), rot = Nacharbeit, und prüfen sie unmittelbar vor dem Zusammenführen noch einmal. Scheitert eine Station
+an etwas anderem (z. B. GitHub nicht angemeldet), startet sie nach 1, 5 und 30 Minuten neu und ist danach **angehalten** – „Erneut versuchen“ in der
+Stationen-Übersicht (Datenbank 0052, Recht „freigeben“). Ein grün geprüfter Stand wird nicht noch einmal geprüft (Befund L1). Ab Abo-Schwelle
+„klein“ prüft Sonnet das ganze Feature, die Sicherheitsprüfung bleibt Opus (L6). Rot an einer Prüfung → **Nacharbeit** (Werkstatt behebt, dann wieder Freigabe);
 live geht dabei nichts. Reine Fragen → beantwortet, „erledigt“. Stationen oben in der Zentrale anklickbar (Übersicht nach Feature, einzeln oder alle).
-Solange GitHub-Prüfungen nicht laufen (Gratis-Minuten), gelten Bauen & Tests auf dem PC als Prüfung (Entscheidung 20:36).
+Bauen & Tests laufen nur in GitHub („Prüfung“) und Cloudflare – auf keinem PC der Codeschmiede läuft Projekt-Code (seit 0.10.1, Befund S1;
+die frühere Ausnahme „Bauen & Tests auf dem PC“ vom 22.10. 20:36 ist aufgehoben).
 
 ## Feature-Arbeitsplatz (seit 0.3.0)
 Klick auf ein Feature = Kurzinfo; Doppelklick = Chat links, Live-Vorschau rechts (Trennlinie verschiebbar). Vorschau = Testseite des Zweigs
 (`<zweig>.<vorschau_domain>`), sonst die App; „Neuer Stand da“ über `version.json`; „Zeigen & kommentieren“ über den Vorschau-Helfer der App
-(nur Testseiten). Nachrichten aus Gruppen-Chat und Claude-Chat erscheinen beim Feature mit Herkunft.
+(nur Testseiten; seit 0.10.1 nur Name, Seite und Pfad des Elements – nie sein sichtbarer Text, Befund S4). Zweig-Testseiten laden erst nach
+dem Klick „Verstanden, Vorschau anzeigen“ und zeigen dauerhaft „hier nicht anmelden“ (Befund S5), im Rahmen mit Sandbox (S7). Nachrichten aus Gruppen-Chat und Claude-Chat erscheinen beim Feature mit Herkunft.
 
 ## Werkstatt (Schritt 2)
 - Läuft im Programm, wenn „Werkstatt an“; holt den nächsten wartenden Auftrag aus Gruppen, in denen der Benutzer Auftragsrecht hat.
@@ -145,3 +255,41 @@ Klick auf ein Feature = Kurzinfo; Doppelklick = Chat links, Live-Vorschau rechts
 | 2 | Programm (Tauri) + Werkstatt-Dienst | in Arbeit |
 | 3 | Live-Vorschau mit „Zeigen & kommentieren“ | erledigt 2026-10-23 (Feature-Arbeitsplatz und eigener Menüpunkt) |
 | 4 | Zusammenführen / Sicherheitsprüfung / Wissen auf dem Admin-PC; Zweige & Versionen, Prüfstand, Wissensdatenbank, Änderungsprotokoll, Dokumentation | erledigt 2026-10-23 (0.6.0, Projekt-Abgleich) |
+
+## Aufbau der Oberfläche im Code (seit 0.10.3, Befund B1)
+`web/src/App.jsx` = Rahmen, Kopfzeile, Navigation, Ansichten-Weiche · `web/src/seiten/*.jsx` = Seiten (Zentrale, Zu erledigen & Live, Live-Vorschau,
+Verwaltung, Verbrauch, Werkstatt, Anmelden, Kopfzeile) · `web/src/bausteine/grund.jsx` = Knopf-Klassen, Hilfen, `Badge`, `Toast`, `Dialog` (mit
+Fokusfalle), `BestaetigenRahmen`/`useBestaetigen`, `useFokusfalle` · `web/src/bausteine/chat.jsx` = **ein Chat-Baustein** für alle Chats (seit 0.11.1, B4) ·
+`web/src/bausteine/zustand.jsx` = Lade-, Leer- und Fehlerzustand (seit 0.11.1, B9) · `web/src/daten/werkstattDaten.js` = Live-Daten und Rechte. Übrige Bereiche
+(Chat, Aufgaben, Designer …) haben wie bisher eigene Dateien.
+
+### Ein Chat-Baustein (seit 0.11.1, Befund B4)
+| Ort | Bezug-Chip | Knöpfe | Wohin |
+|---|---|---|---|
+| Menü „Chat“ | Projekt bzw. Konzept | Besprechen | `ws_claude_chat` (Unterhaltung), Anhänge `ws-chat` |
+| Konzept-Chat | Projekt · Konzept | Besprechen | `ws_claude_chat` ohne Unterhaltung |
+| Gruppen-/Feature-Chat (Zentrale, Live-Vorschau) | Gruppe bzw. Feature (+ Baustein) | Besprechen · Antworten (offene Rückfrage) · Als Auftrag (nur mit Baustein aus „Zeigen & kommentieren“) | Konzept-Chat · `ws_nachrichten` · `ws_auftraege` |
+| Design-Chat | Projekt · Design/Marke/Bausteine | Besprechen (Entwurf oben „Als Auftrag“) | `ws_design_chat` |
+| Baustein-Chat (Inspektor) | Baustein | Besprechen | `ws_design_chat` mit `[Baustein …]` |
+| Umdesign | Symbol bzw. Baustein | Besprechen (Entwurf unten „Als Auftrag …“) | `ws_design_chat` mit `[Umdesign …]` |
+| Chat zur Kachel | Kachel | Als Auftrag (Bestätigung in der Codeschmiede) | `ws_design_auftrag` |
+Begriffe fest: **Besprechen** = die KI antwortet, gebaut wird nichts; **Als Auftrag** = geht an die Werkstatt mit Freigabe und Prüfungen;
+**Antworten** = nur auf eine Rückfrage eines laufenden Auftrags. Enter = Hauptknopf, Umschalt+Enter = neue Zeile. Neue Chats nur mit diesem Baustein.
+
+### Lade-, Leer- und Fehlerzustand (seit 0.11.1, Befund B9)
+`Laden` (Skeleton, erst nach 300 ms) · `Leerzustand` (Symbol, ein Satz, höchstens eine Aktion) · `Fehlerzustand` (Meldung und „Erneut versuchen“).
+Beim ersten Laden ersetzt der Fehlerzustand den Inhalt; scheitert ein späteres Neuladen, bleibt der letzte Stand mit Hinweis stehen. Meldungen unten
+(Toast) nur noch für Ergebnisse von Klicks, nicht für Ladefehler.
+
+## Offene Punkte aus den Befunden vom 01.11.2026 (`docs/BEFUNDE-2026-11-01.md`)
+- ~~L3 Push-Nachricht aufs Handy~~: gebaut in 0.12.0 (Abschnitt „Push aufs Handy“).
+- **L4 Warteschlange fürs Zusammenführen:** Seit 0.10.2 höchstens 3 Neustarts wegen eines bewegten main, dann „angehalten“. Eine echte
+  Warteschlange (oder die Merge-Queue von GitHub) folgt mit L7.
+- **L7 Vorhaben mit Stufen:** Konzept und klickbarer Entwurf 1.2 stehen (Abschnitt „Vorhaben mit Stufen“, `docs/entwurf-1.2-vorhaben.html`) –
+  **offen:** Freigabe des Entwurfs durch Gerhard, danach Bau in drei PRs (Risiko HOCH).
+- **L2 Schutzregel auf GitHub:** Die Codeschmiede wartet jetzt selbst auf alle Prüfläufe. Zusätzlich empfohlen: Schutzregel für `main` mit
+  Pflicht-Prüflauf „Prüfung“ (Einstellung in GitHub, macht Gerhard bzw. der zusammenführende Chat).
+- ~~B4 ein Chat-Baustein~~ und ~~B9 Lade-/Leer-/Fehlerzustand~~: erledigt in 0.11.1. Rest: der Chat zur Kachel ist Oberfläche von Trainer to go
+  (`src/components/design/KachelChat.jsx`) – dort „Besprechen“/„Als Auftrag“ nachziehen (Auftrag im Projekt Trainer to go).
+- **L9 geprüft:** Der Kopplungs-Abgleich macht keine Mini-Anfragen (nur `--version`, `auth status`/`login status`, Limits von Codex ohne Anfrage).
+

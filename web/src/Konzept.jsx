@@ -2,7 +2,8 @@ import React, { useCallback, useEffect, useState } from "react";
 import { Lightbulb, CircleCheck, Circle, Plus, Trash2, Loader2, BookOpen, Palette, MessageSquare, FileText, Download } from "lucide-react";
 import { Markdown } from "./Markdown";
 import { supabase } from "./supabase";
-import ClaudeChat, { KAPITEL } from "./ClaudeSpalte";
+import ClaudeChat, { KAPITEL } from "./KonzeptChat";
+import { Laden, Fehlerzustand } from "./bausteine/zustand";
 
 // Konzept-Arbeitsplatz (Entwurf „Konzept zuerst“ 1.0, freigegeben von Gerhard 2026-10-23 18:06):
 // erste Gruppe im Bereich App. Hier wird das Grundkonzept besprochen, bevor gebaut wird; geklärte Entscheidungen gehen
@@ -12,18 +13,20 @@ const fehler = (e) => (e?.message || "Unbekannter Fehler").replace(/^.*?ERROR:\s
 const input = "w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30";
 
 export function useWissen(projektId) {
-  const [liste, setListe] = useState(null);
+  const [liste, setListe] = useState(null); const [ladeFehler, setLadeFehler] = useState(null);
   const holen = useCallback(async () => {
     if (!projektId) return;
     const { data, error } = await supabase.from("ws_wissen").select("*").eq("projekt_id", projektId).order("id");
-    setListe(error ? [] : data || []);
+    // Befund B9: Fehler sichtbar mit „Erneut versuchen“ statt still eine leere Liste
+    if (error) { setLadeFehler(error); setListe((l) => l ?? null); return; }
+    setLadeFehler(null); setListe(data || []);
   }, [projektId]);
   useEffect(() => {
     holen();
     const ch = supabase.channel(`cs-wissen-${projektId}`).on("postgres_changes", { event: "*", schema: "public", table: "ws_wissen" }, holen).subscribe();
     return () => { supabase.removeChannel(ch); };
   }, [holen, projektId]);
-  return { liste, holen };
+  return { liste, holen, ladeFehler };
 }
 
 /** Konzept-Dokument aus dem Konzept-Stand (Gerhard 2026-10-23 18:33: „alles Relevante ins Wissen und als Konzept gespeichert“) – immer aktuell. */
@@ -50,7 +53,7 @@ const speichern = (name, text) => {
 
 export default function KonzeptArbeitsplatz({ g, d, ich, toast, onDesigner }) {
   const projekt = d.projekte.find((p) => p.id === d.projektId);
-  const { liste } = useWissen(d.projektId);
+  const { liste, holen: wissenHolen, ladeFehler } = useWissen(d.projektId);
   const [ansicht, setAnsicht] = useState("gespraech");
   const rolle = ich.rolle === "admin" ? "admin" : d.mitglieder.find((m) => m.projekt_id === d.projektId && m.benutzer_id === ich.id)?.rolle;
   const darf = rolle === "admin" || rolle === "entwickler";
@@ -69,6 +72,7 @@ export default function KonzeptArbeitsplatz({ g, d, ich, toast, onDesigner }) {
                 className={`inline-flex items-center gap-1.5 h-8 px-3 rounded-lg text-sm font-semibold ${ansicht === id ? "bg-white dark:bg-slate-900 shadow-sm text-emerald-800 dark:text-emerald-300" : "text-slate-600 dark:text-slate-300"}`}><I className="w-4 h-4" />{t}</button>))}
           </div>
         </div>
+        {ladeFehler && <div className="p-3"><Fehlerzustand titel="Das Wissen zum Konzept konnte nicht geladen werden" fehler={ladeFehler} onErneut={wissenHolen} klein /></div>}
         {ansicht === "gespraech" ? <ClaudeChat d={d} ich={ich} ort="konzept" kontext={kontext} toast={toast} />
           : <KonzeptDokument projekt={projekt} liste={liste} d={d} />}
       </section>
@@ -77,7 +81,7 @@ export default function KonzeptArbeitsplatz({ g, d, ich, toast, onDesigner }) {
 }
 
 function KonzeptDokument({ projekt, liste, d }) {
-  if (liste === null) return <div className="p-4"><Loader2 className="w-5 h-5 animate-spin text-emerald-700" /></div>;
+  if (liste === null) return <Laden art="text" zeilen={6} text="Konzept wird geladen" />;
   const md = konzeptMarkdown(projekt, liste, d.benutzer);
   const datei = `Konzept-${(projekt?.name || "Projekt").normalize("NFKD").replace(/[^A-Za-z0-9]+/g, "-").replace(/^-|-$/g, "")}.md`;
   return (
@@ -99,7 +103,7 @@ function KonzeptStand({ liste, d, ich, darf, toast, onDesigner }) {
     setBusy(false); if (error) toast(fehler(error)); else { toast("Ins Wissen eingetragen"); setNeu(null); }
   };
   const loeschen = async (w) => { const { error } = await supabase.rpc("ws_wissen_loeschen", { p_id: w.id }); if (error) toast(fehler(error)); else toast("Aus dem Wissen entfernt"); };
-  if (liste === null) return <aside className={`${card} p-4`}><Loader2 className="w-5 h-5 animate-spin text-emerald-700" /></aside>;
+  if (liste === null) return <aside className={card}><Laden zeilen={4} klein text="Konzept-Stand wird geladen" /></aside>;
   return (
     <aside className={`${card} p-4 flex flex-col gap-3 min-w-0 xl:sticky xl:top-4`} aria-label="Konzept-Stand">
       <h3 className="font-display font-bold text-lg flex items-center gap-2"><BookOpen className="w-5 h-5 text-emerald-700" />Konzept-Stand</h3>
@@ -111,7 +115,7 @@ function KonzeptStand({ liste, d, ich, darf, toast, onDesigner }) {
           <div key={k} className="rounded-xl border border-slate-200 dark:border-slate-800 p-2.5 flex flex-col gap-1.5">
             <div className="flex items-center gap-1.5 text-sm font-semibold">
               {fertig ? <CircleCheck className="w-4 h-4 text-emerald-700" /> : <Circle className="w-4 h-4 text-slate-400" />}{titel}
-              <span className={`ml-auto text-[11px] font-semibold rounded-full px-2 py-0.5 ${k === "offen" ? (eintraege.length ? "bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300" : "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300") : fertig ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300" : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"}`}>
+              <span className={`ml-auto text-xs font-semibold rounded-full px-2 py-0.5 ${k === "offen" ? (eintraege.length ? "bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300" : "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300") : fertig ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300" : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"}`}>
                 {k === "offen" ? (eintraege.length || "keine") : fertig ? "im Wissen" : "offen"}</span>
             </div>
             {eintraege.map((w) => (

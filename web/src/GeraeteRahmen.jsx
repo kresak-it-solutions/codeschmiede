@@ -56,7 +56,7 @@ export default function GeraeteRahmen({ geraet = "pc", hoehe = "geraet", einpass
             {children}
           </div>
         </div>
-        <p className="flex items-center justify-center gap-1.5 text-[11px] text-slate-500 mt-1 h-4 whitespace-nowrap overflow-hidden">
+        <p className="flex items-center justify-center gap-1.5 text-xs text-slate-500 mt-1 h-4 whitespace-nowrap overflow-hidden">
           <Symbol className="w-3.5 h-3.5" aria-hidden="true" />{m.name} · {m.breite} × {Math.round(h)} px · Maßstab {Math.round(s * 100)} %{text ? ` · ${text}` : ""}
         </p>
       </div>

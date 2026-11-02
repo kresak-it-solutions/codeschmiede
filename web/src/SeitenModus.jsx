@@ -10,6 +10,8 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { LayoutGrid, Send, Loader2, RefreshCw, ExternalLink, Hammer, X } from "lucide-react";
 import { supabase } from "./supabase";
 import GeraeteRahmen from "./GeraeteRahmen";
+import { useFokusfalle } from "./bausteine/grund";
+import { BEGRIFFE, BezugChip } from "./bausteine/chat";
 import { designFrageBeantworten, designFreigabeMerken } from "./designFrage";
 import { isDesktop } from "./desktop";
 import { kiAnzeigename } from "./kiName";
@@ -112,6 +114,7 @@ export default function SeitenModus({ projekt, d, ich, werte, dunkel, darf, toas
     return () => { aus = true; supabase.removeChannel(ch); };
   }, [kcAbo, kcTick, projekt.id, ich?.id, kcKi, kcBereit, kcHinweis, anRahmen]);
   const [kcBestaetigung, setKcBestaetigung] = useState(null);   // { schluessel, titel, text } – Dialog „Auftrag stellen?“
+  const fokusKc = useFokusfalle();   // Fokusfalle im Bestätigungs-Dialog (Review #58)
   const [kcStellt, setKcStellt] = useState(false);
   const [kcFrei, setKcFrei] = useState(false);   // „Auftrag stellen“ erst nach 1 s (kein versehentlicher Klick)
   const kcRuheBis = useRef(0);
@@ -203,15 +206,16 @@ export default function SeitenModus({ projekt, d, ich, werte, dunkel, darf, toas
         <div className="flex flex-wrap items-center gap-2">
           <label htmlFor="sd-wunsch" className="text-sm text-slate-600 dark:text-slate-300">Eine Kachel-Art fehlt?</label>
           <input id="sd-wunsch" className={`${input} flex-1 min-w-[220px]`} maxLength={300} placeholder="z. B. Geburtstage der Woche, Wetter am Platz …" value={wunsch} onChange={(e) => setWunsch(e.target.value)} />
-          <button type="button" className={btn} disabled={busy || wunsch.trim().length < 10} onClick={auftrag}>{busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}Als Auftrag wünschen</button>
+          <button type="button" className={btn} disabled={busy || wunsch.trim().length < 10} onClick={auftrag}>{busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Hammer className="w-4 h-4" />}{BEGRIFFE.auftrag}</button>
         </div>)}
       {kcBestaetigung && (
         <div className="fixed inset-0 z-50 bg-black/40 grid place-items-center p-4" role="dialog" aria-modal="true" aria-labelledby="kc-auftrag-titel"
           onKeyDown={(e) => { if (e.key === "Escape" && !kcStellt) auftragAbbrechen(); }}>
-          <div className={`${card} w-full max-w-2xl max-h-[85vh] flex flex-col shadow-xl`}>
+          <div ref={fokusKc} className={`${card} w-full max-w-2xl max-h-[85vh] flex flex-col shadow-xl`}>
             <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-200 dark:border-slate-800">
               <Hammer className="w-4 h-4 text-emerald-700" aria-hidden="true" />
-              <h3 id="kc-auftrag-titel" className="font-display font-bold flex-1">Auftrag stellen?</h3>
+              <h3 id="kc-auftrag-titel" className="font-display font-bold">Als Auftrag stellen?</h3>
+              <span className="flex-1 min-w-0"><BezugChip art="kachel" name={kcBestaetigung.schluessel} /></span>
               <button type="button" className={ghost} aria-label="Abbrechen" disabled={kcStellt} onClick={auftragAbbrechen}><X className="w-4 h-4" /></button>
             </div>
             <div className="px-4 py-3 overflow-auto flex flex-col gap-2 text-sm">

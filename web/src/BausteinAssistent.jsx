@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { supabase } from "./supabase";
 import { pruefeBaustein, zusammenfassung, verhaeltnis, kontrast, lesbarMachen, istHex, SOLL } from "./kontrast";
+import { Laden } from "./bausteine/zustand";
 const SymbolWahl = lazy(() => import("./SymbolWahl"));
 const SymbolZeichen = lazy(() => import("./SymbolWahl").then((m) => ({ default: m.SymbolZeichen })));
 
@@ -64,7 +65,7 @@ const bestText = (bg) => (kontrast("#ffffff", bg) >= kontrast("#111111", bg) ? "
 export function gestaltungVoll(g, werte, art) {
   const hell = werte?.farben?.hell || {}; const dunkel = werte?.farben?.dunkel || {};
   const seite = { hell: istHex(hell.hintergrund) ? hell.hintergrund : "#ffffff", dunkel: istHex(dunkel.hintergrund) ? dunkel.hintergrund : "#0a0a0a" };
-  const farbe = istHex(g.farbe) ? g.farbe : istHex(hell.primaer) ? hell.primaer : "#059669";
+  const farbe = istHex(g.farbe) ? g.farbe : istHex(hell.primaer) ? hell.primaer : "#1d4ed8";
   const farbe_dunkel = istHex(g.farbe_dunkel) ? g.farbe_dunkel : istHex(dunkel.primaer) && !istHex(g.farbe) ? dunkel.primaer : lesbarMachen(farbe, seite.dunkel, SOLL.bedien);
   const variante = VARIANTEN.some(([v]) => v === g.variante) ? g.variante : "voll";
   const text = istHex(g.text) ? g.text : bestText(farbe);
@@ -204,7 +205,7 @@ export default function BausteinAssistent({ projekt, d, toast, werte, dunkel = f
           <ol className="ml-auto hidden md:flex items-center gap-1" aria-label="Schritte">{SCHRITTE.map((t, i) => (
             <li key={t}><button type="button" disabled={!!ergebnis} onClick={() => { if (i <= w.schritt || (i === w.schritt + 1 && weiterOk)) setze("schritt", i); }} aria-current={w.schritt === i ? "step" : undefined}
               className={`inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-sm font-semibold ${w.schritt === i ? "bg-emerald-50 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300" : i < w.schritt ? "text-emerald-700 dark:text-emerald-400" : "text-slate-500"}`}>
-              <span className={`w-5 h-5 grid place-items-center rounded-full text-[11px] ${w.schritt === i ? "bg-emerald-700 text-white" : i < w.schritt ? "bg-emerald-100 dark:bg-emerald-900" : "bg-slate-100 dark:bg-slate-800"}`}>{i < w.schritt ? <Check className="w-3 h-3" /> : i + 1}</span>{t}</button></li>))}</ol>
+              <span className={`w-5 h-5 grid place-items-center rounded-full text-xs ${w.schritt === i ? "bg-emerald-700 text-white" : i < w.schritt ? "bg-emerald-100 dark:bg-emerald-900" : "bg-slate-100 dark:bg-slate-800"}`}>{i < w.schritt ? <Check className="w-3 h-3" /> : i + 1}</span>{t}</button></li>))}</ol>
           <button type="button" className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 md:ml-1 ml-auto" onClick={onClose} aria-label="Schließen"><X className="w-4 h-4" /></button>
         </div>
 
@@ -272,10 +273,10 @@ export default function BausteinAssistent({ projekt, d, toast, werte, dunkel = f
                     <li key={i} className="flex items-center gap-1.5 text-xs">
                       {x.ok ? <CircleCheck className="w-3.5 h-3.5 text-green-600 shrink-0" aria-label="in Ordnung" /> : x.stufe === "pflicht" ? <CircleAlert className="w-3.5 h-3.5 text-red-600 shrink-0" aria-label="zu wenig Kontrast" /> : <TriangleAlert className="w-3.5 h-3.5 text-amber-600 shrink-0" aria-label="Hinweis" />}
                       <span className="flex-1 min-w-0">{x.modus === "hell" ? "Hell" : "Dunkel"}: {x.was} <span className="text-slate-500">{verhaeltnis(x.wert)} (mind. {String(x.soll).replace(".", ",")})</span></span>
-                      {!x.ok && x.vorschlag && <button type="button" className="text-[11px] font-semibold rounded-md border border-slate-300 dark:border-slate-700 px-1.5 py-0.5 hover:bg-white dark:hover:bg-slate-900 inline-flex items-center gap-1" onClick={() => lesbar(x)}>
+                      {!x.ok && x.vorschlag && <button type="button" className="text-xs font-semibold rounded-md border border-slate-300 dark:border-slate-700 px-1.5 py-0.5 hover:bg-white dark:hover:bg-slate-900 inline-flex items-center gap-1" onClick={() => lesbar(x)}>
                         <i className="w-3 h-3 rounded-sm border border-black/10" style={{ background: x.vorschlag }} aria-hidden="true" />lesbar machen</button>}
                     </li>))}</ul>
-                  <p className="text-[10px] text-slate-500">Text mind. 4,5 : 1, Bedienelemente mind. 3 : 1 (WCAG 2.1 AA), hell und dunkel. Bauen geht trotzdem – Claude setzt es lesbar um.</p>
+                  <p className="text-xs text-slate-500">Text mind. 4,5 : 1, Bedienelemente mind. 3 : 1 (WCAG 2.1 AA), hell und dunkel. Bauen geht trotzdem – Claude setzt es lesbar um.</p>
                 </section>
               </section>
               <aside className="flex flex-col gap-3 text-sm" aria-label="Einstellungen">
@@ -308,7 +309,7 @@ export default function BausteinAssistent({ projekt, d, toast, werte, dunkel = f
                     const bereich = d.bereiche.find((b) => b.id === gr.bereich_id); return (
                       <div key={gr.id} className="rounded-lg border border-slate-200 dark:border-slate-800 p-2">
                         <label className="flex items-center gap-2 font-semibold text-sm"><input type="checkbox" className="accent-emerald-700 w-4 h-4" checked={w.zuweisung.gruppen.includes(gr.id)} onChange={() => umschalten("gruppen", gr.id)} />
-                          <span className="flex-1 min-w-0 truncate">{gr.name}</span>{bereich && <span className="text-[11px] text-slate-500 font-normal truncate max-w-[40%]">{bereich.global ? "Global" : bereich.name}</span>}</label>
+                          <span className="flex-1 min-w-0 truncate">{gr.name}</span>{bereich && <span className="text-xs text-slate-500 font-normal truncate max-w-[40%]">{bereich.global ? "Global" : bereich.name}</span>}</label>
                         {fs.length > 0 && <ul className="mt-1 pl-6 flex flex-col gap-0.5">{fs.filter((f) => passt(f.name) || passt(f.id) || passt(gr.name)).slice(0, 30).map((f) => (
                           <li key={f.id}><label className="flex items-center gap-2 text-xs"><input type="checkbox" className="accent-emerald-700" checked={w.zuweisung.features.includes(f.id)} onChange={() => umschalten("features", f.id)} />
                             <span className="font-mono text-slate-500">{f.id}</span><span className="truncate">{f.name}</span></label></li>))}</ul>}
@@ -319,7 +320,7 @@ export default function BausteinAssistent({ projekt, d, toast, werte, dunkel = f
           ) : (
             <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]" aria-label="Bauen lassen">
               <div className="flex flex-col gap-3">
-                <h4 className="font-display font-bold text-[17px]">4 · Als Auftrag bauen lassen</h4>
+                <h4 className="font-display font-bold text-[17px]">4 · Als Auftrag</h4>
                 <p className="text-sm text-slate-600 dark:text-slate-300 flex items-start gap-2"><Hammer className="w-4 h-4 shrink-0 mt-0.5 text-emerald-700" aria-hidden="true" />Ein neuer Baustein ist neuer Code: Claude baut ihn als Auftrag in der Design-Gruppe, mit Prüfungen und deiner Freigabe. Erst danach ist er in der App verfügbar.</p>
                 <dl className="text-sm grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1">
                   <dt className="text-slate-500">Name</dt><dd className="font-semibold break-words">{w.name}</dd>
@@ -330,7 +331,7 @@ export default function BausteinAssistent({ projekt, d, toast, werte, dunkel = f
                 </dl>
                 {!g && <p className="text-sm text-red-700 dark:text-red-300">Der App-Designer ist für dieses Projekt noch nicht eingerichtet.</p>}
                 <div className="flex flex-wrap gap-2 items-center">
-                  <button type="button" className={btn} disabled={busy || !g || w.name.trim().length < 2} onClick={bauen}>{busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}Als Auftrag bauen lassen</button>
+                  <button type="button" className={btn} disabled={busy || !g || w.name.trim().length < 2} onClick={bauen}>{busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Hammer className="w-4 h-4" />}Als Auftrag</button>
                   <span className="text-xs text-slate-500 flex items-center gap-1"><ShieldCheck className="w-3.5 h-3.5" aria-hidden="true" />Freigabe → Sicherheitsprüfung → Zusammenführen → Testfassung → live</span>
                 </div>
                 <BausteinAuftraege d={d} projekt={projekt} />
@@ -364,7 +365,7 @@ export const standText = (s) => STAND[s]?.[0] || s;
 export function BausteinAuftraege({ d, projekt, nur = null, offen = false, max = 6 }) {
   const liste = d.auftraege.filter((a) => istDesignAuftrag(a, projekt) && (nur == null || a.id === nur) && (!offen || !["wissen", "erledigt"].includes(a.stand)))
     .sort((a, b) => b.id - a.id).slice(0, max);
-  if (!liste.length) return nur == null ? <p className="text-xs text-slate-500">Noch keine neuen Bausteine als Auftrag.</p> : <p className="text-xs text-slate-500 inline-flex items-center gap-1"><Loader2 className="w-3.5 h-3.5 animate-spin" />Auftrag wird geladen …</p>;
+  if (!liste.length) return nur == null ? <p className="text-xs text-slate-500">Noch keine neuen Bausteine als Auftrag.</p> : <Laden zeilen={1} klein text="Auftrag wird geladen" />;
   return (
     <ul className="flex flex-col gap-1 w-full text-left" aria-label="Aufträge für neue Bausteine">{liste.map((a) => { const [t, c] = STAND[a.stand] || [a.stand, "amber"]; return (
       <li key={a.id} className="flex items-center gap-2 text-xs rounded-lg border border-slate-200 dark:border-slate-800 px-2 py-1.5">

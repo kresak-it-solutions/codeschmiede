@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vorhaben Entwurf</title>
+<!-- Entwurf 1.2 „Vorhaben mit Stufen“ (Befund L7, 02.11.2026) – Claude, Anweisung Gerhard 01.11.2026 22:18/22:38. Wartet auf Freigabe.
+     Nur zum Anschauen: keine Verbindung, keine fremden Dateien (Schrift Barlow, falls installiert, sonst Systemschrift). Symbole: Lucide (inline). -->
+<style>
+:root{--bg:#f6f8f7;--panel:#fff;--line:#e2e8f0;--fg:#0f172a;--mut:#64748b;--acc:#047857;--acc2:#ecfdf5;--ink:#fff;--amber:#b45309;--amberbg:#fffbeb;--red:#b91c1c;--blue:#1d4ed8;color-scheme:light}
+@media (prefers-color-scheme:dark){:root{--bg:#020617;--panel:#0f172a;--line:#1e293b;--fg:#e2e8f0;--mut:#94a3b8;--acc:#34d399;--acc2:#022c22;--ink:#022c22;--amber:#fbbf24;--amberbg:#2a1d05;--red:#f87171;--blue:#93c5fd;color-scheme:dark}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:Barlow,system-ui,sans-serif;font-size:15px;line-height:1.45;padding:16px}
+h1{font-size:22px;margin:0 0 4px}h2{font-size:18px;margin:0}h3{font-size:15px;margin:0}
+.sub{color:var(--mut);font-size:14px;margin:0 0 14px;max-width:80ch}
+.reiter{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px}
+.reiter button{font:inherit;font-size:14px;font-weight:600;border:1px solid var(--line);background:var(--panel);color:var(--fg);border-radius:10px;padding:7px 12px;cursor:pointer}
+.reiter button[aria-selected=true]{background:var(--acc);border-color:var(--acc);color:var(--ink)}
+.flaeche{display:none}.flaeche.an{display:block}
+.karte{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:10px;max-width:900px}
+.reihe{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.chip{display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 10px;border-radius:999px;border:1px solid #a7f3d0;background:var(--acc2);color:var(--acc);font-size:12px;font-weight:700}
+.pill{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:700;padding:2px 8px;border-radius:999px}
+.ok{background:#dcfce7;color:#166534}.laeuft{background:#dbeafe;color:#1e3a8a}.wartet{background:#f1f5f9;color:#475569}.halt{background:var(--amberbg);color:var(--amber)}
+@media (prefers-color-scheme:dark){.ok{background:#052e16;color:#86efac}.laeuft{background:#172554;color:#bfdbfe}.wartet{background:#1e293b;color:#cbd5e1}}
+.leiste{display:flex;gap:4px}.leiste i{flex:1;height:8px;border-radius:4px;background:var(--line)}.leiste i.f{background:var(--acc)}.leiste i.l{background:var(--blue)}
+.stufe{display:grid;grid-template-columns:28px minmax(0,1fr) auto;gap:10px;align-items:start;padding:10px 0;border-top:1px solid var(--line)}
+.nr{width:28px;height:28px;border-radius:8px;display:grid;place-items:center;font-weight:700;font-size:13px;background:var(--line)}
+.nr.f{background:var(--acc);color:var(--ink)}.nr.l{background:var(--blue);color:#fff}
+.mut{color:var(--mut);font-size:13px}
+button.p{font:inherit;font-weight:700;font-size:14px;background:var(--acc);color:var(--ink);border:0;border-radius:10px;padding:9px 14px;cursor:pointer;display:inline-flex;gap:6px;align-items:center}
+button.g{font:inherit;font-weight:600;font-size:14px;background:transparent;color:var(--fg);border:1px solid var(--line);border-radius:10px;padding:8px 12px;cursor:pointer;display:inline-flex;gap:6px;align-items:center}
+button:disabled{opacity:.5;cursor:default}
+.ki{display:flex;gap:10px}.ki .z{width:24px;height:24px;border-radius:6px;background:#0f2a22;flex:none}
+.blase{border:1px solid var(--line);border-radius:16px;border-top-left-radius:6px;padding:10px 12px;background:var(--panel);flex:1;min-width:0}
+.ich{align-self:flex-end;background:var(--acc2);border:1px solid #a7f3d0;border-radius:16px;border-top-right-radius:6px;padding:8px 12px;max-width:80%}
+.vorschlag{border:1px solid #6ee7b7;border-radius:12px;padding:10px;margin-top:8px;display:flex;flex-direction:column;gap:6px}
+ol{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:3px;font-size:14px}
+svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.hinweis{font-size:13px;border:1px dashed var(--line);border-radius:10px;padding:8px 10px;color:var(--mut);max-width:900px;margin-top:14px}
+</style>
+</head>
+<body>
+<h1>Vorhaben mit Stufen</h1>
+<p class="sub">Entwurf 1.2 (Befund L7). Ein Vorhaben bündelt mehrere normale Aufträge, die nacheinander gebaut, geprüft und live geschaltet werden – jede Stufe mit eigenem PR. Zum Klicken: Plan im Chat freigeben, Stufen ansehen, nach einem Haltepunkt weitermachen.</p>
+<div class="reiter" role="tablist">
+  <button role="tab" aria-selected="true" data-f="chat">1 · Plan im Konzept-Chat</button>
+  <button role="tab" aria-selected="false" data-f="zentrale">2 · Karte in der Zentrale</button>
+  <button role="tab" aria-selected="false" data-f="detail">3 · Vorhaben-Ansicht</button>
+</div>
+
+<section class="flaeche an" id="f-chat" role="tabpanel">
+  <div class="karte">
+    <div class="reihe"><span class="chip"><svg viewBox="0 0 24 24"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></svg>Konzept</span><span class="chip">Projekt · Trainer to go</span></div>
+    <div class="ich">Ich will Design 2.0 in die ganze App bringen – in Stufen, jede mit eigenem PR.</div>
+    <div class="ki"><span class="z" aria-hidden="true"></span><div class="blase">Gerne. Mein Vorschlag für das Vorhaben (6 Stufen, nacheinander auf main):
+      <div class="vorschlag">
+        <div class="reihe"><b>Vorhaben: Design 2.0 überall</b><span class="pill halt">Risiko HOCH</span></div>
+        <span class="mut">Träger-Gruppe: App-weit · Ziel: einheitliches Aussehen nach Konzept §4/§5</span>
+        <ol>
+          <li>Tokens und Grundbausteine <span class="mut">· NORMAL</span></li>
+          <li>Seitenkopf und Kontextleiste <span class="mut">· NORMAL</span></li>
+          <li>Termine und Zusagen <span class="mut">· HOCH · danach anhalten</span></li>
+          <li>Mannschaft und Statistik <span class="mut">· NORMAL</span></li>
+          <li>Verwaltung und Finanzen <span class="mut">· HOCH · danach anhalten</span></li>
+          <li>Aufräumen, Handbuch <span class="mut">· KLEIN · vor der letzten anhalten</span></li>
+        </ol>
+        <div class="reihe"><button class="p" id="freigeben"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>Vorhaben freigeben</button><button class="g">Plan ändern</button></div>
+        <span class="mut" id="freigabe-text">Freigeben dürfen der Admin und wer in „App-weit“ das Recht „Freigeben“ hat.</span>
+      </div></div></div>
+  </div>
+</section>
+
+<section class="flaeche" id="f-zentrale" role="tabpanel">
+  <div class="karte" style="max-width:520px">
+    <div class="reihe"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="m7 15 4-4 4 4 5-5"/></svg><h2>Vorhaben #4 · Design 2.0 überall</h2></div>
+    <div class="leiste" aria-label="Stufen: 2 fertig, 1 läuft, 3 warten"><i class="f"></i><i class="f"></i><i class="l"></i><i></i><i></i><i></i></div>
+    <div class="reihe"><span class="pill ok">2 live</span><span class="pill laeuft">Stufe 3 in Arbeit</span><span class="pill wartet">3 warten</span></div>
+    <span class="mut">Stufe 3 „Termine und Zusagen“ · PR #241 · Werkstatt PC-Gerhard</span>
+    <div class="reihe"><button class="g" data-geh="detail">Öffnen</button></div>
+  </div>
+</section>
+
+<section class="flaeche" id="f-detail" role="tabpanel">
+  <div class="karte">
+    <div class="reihe"><h2>Vorhaben #4 · Design 2.0 überall</h2><span class="pill halt" id="stand-pill">Wartet auf dich</span></div>
+    <span class="mut">Ziel: einheitliches Aussehen nach Konzept §4/§5 · Träger-Gruppe App-weit · angelegt von Gerhard</span>
+    <div id="stufen"></div>
+    <div class="reihe"><button class="p" id="weiter"><svg viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg>Nächste Stufe starten</button><button class="g">Plan ändern</button><button class="g">Abschlussprüfung</button><button class="g">Vorhaben abbrechen</button></div>
+    <span class="mut" id="weiter-text">Stufe 3 ist live. Haltepunkt: Übergabe lesen, dann weiter. Push ans Handy kam um 14:12.</span>
+  </div>
+</section>
+
+<p class="hinweis">Nicht im Entwurf, aber im Konzept: Übergabe-Datei je Stufe (<code>docs/vorhaben/…</code>), nächste Stufe zweigt immer vom neuesten main ab, Nacharbeit und nächste Stufe nur auf PCs derselben Person, Modell je Stufe nach Risikostufe. Bau nach Freigabe in drei PRs.</p>
+
+<script>
+const STUFEN=[["Tokens und Grundbausteine","live","PR #236"],["Seitenkopf und Kontextleiste","live","PR #238"],["Termine und Zusagen","live","PR #241 · Übergabe docs/vorhaben/4-termine.md"],["Mannschaft und Statistik","wartet",""],["Verwaltung und Finanzen","wartet","danach anhalten"],["Aufräumen, Handbuch","wartet","vor dieser Stufe anhalten"]];
+const zeichne=()=>{document.getElementById("stufen").innerHTML=STUFEN.map(([t,s,x],i)=>`<div class="stufe"><span class="nr ${s==="live"?"f":s==="laeuft"?"l":""}">${i+1}</span><div><h3>${t}</h3><span class="mut">${x||"&nbsp;"}</span></div><span class="pill ${s==="live"?"ok":s==="laeuft"?"laeuft":"wartet"}">${s==="live"?"live":s==="laeuft"?"in Arbeit":"wartet"}</span></div>`).join("");};
+zeichne();
+document.querySelectorAll(".reiter button").forEach((b)=>b.onclick=()=>zeige(b.dataset.f));
+document.querySelectorAll("[data-geh]").forEach((b)=>b.onclick=()=>zeige(b.dataset.geh));
+function zeige(f){document.querySelectorAll(".reiter button").forEach((x)=>x.setAttribute("aria-selected",x.dataset.f===f));document.querySelectorAll(".flaeche").forEach((x)=>x.classList.toggle("an",x.id==="f-"+f));}
+document.getElementById("freigeben").onclick=(e)=>{e.currentTarget.disabled=true;document.getElementById("freigabe-text").textContent="Vorhaben #4 angelegt – Stufe 1 wartet auf die Werkstatt. Die übrigen Stufen starten nacheinander.";};
+document.getElementById("weiter").onclick=(e)=>{const i=STUFEN.findIndex((s)=>s[1]==="wartet");if(i<0)return;STUFEN[i][1]="laeuft";STUFEN[i][2]="Werkstatt PC-Gerhard · zweigt vom neuesten main ab";zeichne();e.currentTarget.disabled=true;document.getElementById("stand-pill").className="pill laeuft";document.getElementById("stand-pill").textContent="Stufe "+(i+1)+" läuft";document.getElementById("weiter-text").textContent="Gestartet. Nächster Haltepunkt nach Stufe 5.";};
+</script>
+</body>
+</html>

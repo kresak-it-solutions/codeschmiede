@@ -20,7 +20,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: 22 }
-      - run: npm install --no-audit --no-fund
+      - run: npm ci --no-audit --no-fund   # Lock-Datei (Befund S3, 01.11.2026)
       - name: Oberfläche bauen
         env:
           VITE_SUPABASE_URL: https://mvzlbpijdvsjnemubofy.supabase.co
@@ -34,7 +34,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: 22 }
-      - run: npm install --no-audit --no-fund
+      - run: npm ci --no-audit --no-fund   # Lock-Datei (Befund S3, 01.11.2026)
       - name: Syntax und Tests
         run: |
           node --check index.mjs

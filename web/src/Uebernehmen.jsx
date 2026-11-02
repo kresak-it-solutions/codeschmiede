@@ -8,6 +8,7 @@
 import React, { Suspense, lazy } from "react";
 import { CheckCheck, Hammer, Zap, Palette, Send, FlaskConical, Rocket, Info, ExternalLink } from "lucide-react";
 import { BausteinAuftraege, istDesignAuftrag } from "./BausteinAssistent";
+import { Laden } from "./bausteine/zustand";
 const SeitenModus = lazy(() => import("./SeitenModus"));
 
 const card = "rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900";
@@ -40,7 +41,7 @@ export default function Uebernehmen({ projekt, d, ich, werte, dunkel, darf, toas
 
       <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="min-w-0 flex flex-col gap-2">
-          <Suspense fallback={<p className="text-sm text-slate-500 p-4">Lädt …</p>}>
+          <Suspense fallback={<Laden zeilen={4} />}>
             <SeitenModus key="uebernehmen" tab="freigabe" titel="Wirkt sofort nach Freigabe (Design-Paket)" kompakt projekt={projekt} d={d} ich={ich} werte={werte} dunkel={dunkel} darf={darf} toast={toast} onFreigabeOffen={onFreigabeOffen} />
           </Suspense>
         </div>
@@ -48,7 +49,7 @@ export default function Uebernehmen({ projekt, d, ich, werte, dunkel, darf, toas
           <section className={`${card} p-3 flex flex-col gap-2`} aria-label="Braucht neuen Code">
             <h3 className="font-display font-bold flex items-center gap-1.5"><Hammer className="w-4 h-4 text-amber-600" aria-hidden="true" />Braucht neuen Code (Auftrag mit Prüfungen)</h3>
             <p className="text-xs text-slate-500">Wird gebaut, geprüft und ist erst nach dem Zusammenführen verfügbar (Testfassung, dann live).</p>
-            <h4 className="text-[11px] font-bold uppercase tracking-wider text-slate-500 pt-1">Grunddesign (Farben, Schrift, Menü, Marke)</h4>
+            <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 pt-1">Grunddesign (Farben, Schrift, Menü, Marke)</h4>
             {!offenEntwuerfe.length ? <p className="text-xs text-slate-500">Kein offener Grunddesign-Entwurf.</p> : (
               <ul className="flex flex-col gap-1">{offenEntwuerfe.map((e) => (
                 <li key={e.id} className="flex items-center gap-2 text-xs rounded-lg border border-slate-200 dark:border-slate-800 px-2 py-1.5">
@@ -58,7 +59,7 @@ export default function Uebernehmen({ projekt, d, ich, werte, dunkel, darf, toas
                     ? <span className="rounded-full px-2 py-0.5 font-semibold bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300 whitespace-nowrap">{e.auftrag_id ? `Auftrag #${e.auftrag_id}` : "gesendet"}</span>
                     : <button type="button" className={`${ghost} h-7 text-xs`} onClick={() => onGrunddesign?.(e)} title={`geändert ${fmt(e.geaendert)}`}><Send className="w-3.5 h-3.5" />Öffnen &amp; senden</button>}
                 </li>))}</ul>)}
-            <h4 className="text-[11px] font-bold uppercase tracking-wider text-slate-500 pt-1">Neue Bausteine und Kachel-Arten</h4>
+            <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 pt-1">Neue Bausteine und Kachel-Arten</h4>
             <BausteinAuftraege d={d} projekt={projekt} max={10} />
           </section>
 

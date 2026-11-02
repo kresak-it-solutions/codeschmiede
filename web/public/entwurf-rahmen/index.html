@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="robots" content="noindex">
+<title>Design-Entwurf</title>
+</head>
+<body>
+<!--
+  App-Designer 3.0 der Codeschmiede: Rahmen für den eingebetteten Design-Entwurf eines Projekts (Trainer to go: docs/design-2/DESIGN-SYSTEM.md).
+  Läuft NUR abgeschottet (iframe sandbox="allow-scripts", ohne allow-same-origin → eigene, leere Herkunft: kein Zugriff auf Anmeldung,
+  Speicher oder Programm der Codeschmiede). Eigene CSP in web/public/_headers (nur eingebettete Skripte/Stile, nichts nachladen).
+  Die Seite nimmt genau EIN Dokument vom Elternfenster an und schreibt es hinein; der Entwurf bringt zusätzlich seine eigene CSP mit.
+  Ein srcdoc-Rahmen ginge nicht: er erbt die strenge CSP der Oberfläche (script-src 'self') und dürfte keine eingebetteten Skripte ausführen.
+-->
+<script>
+(function () {
+  if (window.parent === window) return;
+  function nimm(e) {
+    if (e.source !== window.parent || !e.data || e.data.cs !== "entwurf-html" || typeof e.data.html !== "string") return;
+    if (e.data.html.length > 1500000 || !/^<!doctype html>/i.test(e.data.html)) return;
+    window.removeEventListener("message", nimm);
+    document.open(); document.write(e.data.html); document.close();
+  }
+  window.addEventListener("message", nimm);
+  window.parent.postMessage({ cs: "rahmen-bereit" }, "*");
+})();
+</script>
+</body>
+</html>

@@ -10,11 +10,13 @@ import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useStat
 import { Search, Shapes, Bot, PenLine, Loader2, CircleCheck, CircleAlert, TriangleAlert, RotateCcw, Send, Check, X, Sparkles, ShieldCheck, ExternalLink, Layers, Link2, MousePointerClick, Contrast } from "lucide-react";
 import { supabase } from "./supabase";
 import { useKiName } from "./kiName";
-import { useAutoHoehe } from "./autoHoehe";
 import { Markdown } from "./Markdown";
 import { useVerzeichnis } from "./verzeichnis";
-import { GRUPPEN, GROESSEN, ZUSTAENDE, SEITE, KATALOG, bausteinVon, bausteinWerteBereinigen, bausteineBereinigen, mitStandard, nurAbweichung } from "./bausteinKatalog";
+import { GRUPPEN, GROESSEN, ZUSTAENDE, SEITE, KATALOG, bausteinVon, bausteinWerteBereinigen, bausteineBereinigen, galerieKennung, mitStandard, nurAbweichung } from "./bausteinKatalog";
 import { pruefeBaustein, zusammenfassung, verhaeltnis, SOLL } from "./kontrast";
+import { useBestaetigen } from "./bausteine/grund";
+import { ChatRahmen, ChatKopf, ChatVerlauf, ChatNachricht, ChatWartet, ChatEingabe } from "./bausteine/chat";
+import { Laden } from "./bausteine/zustand";
 const SymbolWahl = lazy(() => import("./SymbolWahl"));
 const SymbolZeichen = lazy(() => import("./SymbolWahl").then((m) => ({ default: m.SymbolZeichen })));
 
@@ -45,6 +47,7 @@ function zusammen(geerbt, eigen) {
  * bruecke.current = (nachricht) => postMessage an die Galerie (setzt die Testseite).
  */
 export function useBausteinDesigner({ dunkel }) {
+  const bestaetigen = useBestaetigen();   // statt window.confirm (Review #58) – Rahmen <BestaetigenRahmen> in App.jsx
   const bruecke = useRef(null);
   const [wahl, setWahl] = useState(null);
   const [zustand, setZustand] = useState("normal");
@@ -78,15 +81,16 @@ export function useBausteinDesigner({ dunkel }) {
   // Nachricht aus der Galerie (Herkunft und Absender prüft die Testseite)
   const onNachricht = useCallback((m) => {
     if (m.cs === "geladen") { setGalerieDa(true); laden(); return; }
-    if (m.cs === "baustein-wahl") { if (typeof m.id === "string" && bausteinVon(m.id)) { setWahl(m.id); setZustand("normal"); } return; }
+    // Galerie meldet ggf. noch die alte Kennung (knopf-neben …) – intern immer die neue (Datenbank 0054)
+    if (m.cs === "baustein-wahl") { const b = typeof m.id === "string" ? bausteinVon(m.id) : null; if (b) { setWahl(b.id); setZustand("normal"); } return; }
     if ((m.cs === "baustein-stand" || m.cs === "baustein-gespeichert") && warte.current.has(Number(m.nr))) {
       const w = warte.current.get(Number(m.nr)); warte.current.delete(Number(m.nr));
       if (m.ok) w.ok(m); else { const f = new Error(String(m.fehler || "Fehler").slice(0, 300)); f.freigabe = !!m.freigabe; w.fehl(f); }
     }
   }, [laden]);
 
-  const setEbene = (e) => {
-    if (Object.keys(offen).length && !window.confirm("Noch nicht gespeicherte Änderungen verwerfen?")) return;
+  const setEbene = async (e) => {
+    if (Object.keys(offen).length && !(await bestaetigen({ titel: "Änderungen verwerfen?", text: "Für diese Ebene gibt es noch nicht gespeicherte Baustein-Änderungen.", ja: "Verwerfen", nein: "Behalten", gefahr: true }))) return;
     Object.values(timer.current).forEach(clearTimeout); timer.current = {};
     setEbeneRoh(e); setEigen({}); setOffen({}); setSpeichert(null);
     if (ebeneFertig(e)) laden(e); else setStand((s) => ({ ...s, eigen: {}, entwurf: null, live: null }));
@@ -116,9 +120,9 @@ export function useBausteinDesigner({ dunkel }) {
   const alle = useMemo(() => zusammen(stand.geerbt, eigen), [stand.geerbt, eigen]);
   // Sofort-Vorschau in der Galerie: alle Werte (geerbt + eigen), gewählter Baustein und Zustand, Hell/Dunkel
   useEffect(() => {
-    try { bruecke.current?.({ cs: "baustein-vorschau", bausteine: alle, id: wahl, zustand, modus: dunkel ? "dunkel" : "hell" }); } catch { /* egal */ }
+    try { bruecke.current?.({ cs: "baustein-vorschau", bausteine: alle, id: wahl ? galerieKennung(wahl) : null, zustand, modus: dunkel ? "dunkel" : "hell" }); } catch { /* egal */ }
   }, [alle, wahl, zustand, dunkel, galerieDa]);
-  const markieren = (id) => { setWahl(id); setZustand("normal"); try { bruecke.current?.({ cs: "baustein-markieren", id }); } catch { /* egal */ } };
+  const markieren = (id) => { setWahl(id); setZustand("normal"); try { bruecke.current?.({ cs: "baustein-markieren", id: galerieKennung(id) }); } catch { /* egal */ } };
 
   return { bruecke, onNachricht, wahl, setWahl: markieren, zustand, setZustand, ebene, setEbene, stand, laden, eigen, alle, setze, offen, speichert, galerieDa };
 }
@@ -133,13 +137,13 @@ export function BausteinListe({ bs }) {
       <label className="relative"><Search className="w-4 h-4 absolute left-2.5 top-2 text-slate-400" aria-hidden="true" /><span className="sr-only">Baustein suchen</span>
         <input className={`${input} pl-8`} placeholder="Baustein suchen" value={q} onChange={(e) => setQ(e.target.value)} /></label>
       {GRUPPEN.map(([g, t]) => { const liste = treffer.filter((b) => b.gruppe === g); if (!liste.length) return null; return (
-        <div key={g}><div className="text-[11px] font-bold uppercase tracking-wider text-slate-500 px-1 pb-0.5">{t}</div>
+        <div key={g}><div className="text-xs font-bold uppercase tracking-wider text-slate-500 px-1 pb-0.5">{t}</div>
           <ul className="flex flex-col">{liste.map((b) => (
             <li key={b.id}><button type="button" onClick={() => bs.setWahl(b.id)} aria-current={bs.wahl === b.id}
               className={`w-full text-left flex items-center gap-2 px-2 py-1 rounded-md text-sm ${bs.wahl === b.id ? "bg-orange-50 text-orange-900 dark:bg-orange-950/50 dark:text-orange-200 font-semibold" : "hover:bg-slate-50 dark:hover:bg-slate-800"}`}>
               <span className="w-3 h-3 rounded-sm border border-black/10 shrink-0" style={{ background: mitStandard(b.id, bs.alle[b.id], bs.stand.akzent).hell.bg }} aria-hidden="true" />
               <span className="flex-1 min-w-0 truncate">{b.name}</span>
-              {bs.eigen[b.id] && <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400" title="Auf dieser Ebene angepasst">angepasst</span>}
+              {bs.eigen[b.id] && <span className="text-xs font-bold text-emerald-700 dark:text-emerald-400" title="Auf dieser Ebene angepasst">angepasst</span>}
               {bs.offen[b.id] && <Loader2 className="w-3 h-3 animate-spin text-slate-400" aria-label="wird gespeichert" />}
             </button></li>))}</ul></div>); })}
       <p className="text-xs text-slate-500 flex items-start gap-1.5 pt-1"><MousePointerClick className="w-3.5 h-3.5 shrink-0 mt-0.5" aria-hidden="true" />Linksklick auf ein Muster in der Galerie wählt es aus. Rechtsklick öffnet wie bisher „Umdesignen“ (neuer Code als Auftrag).</p>
@@ -198,7 +202,7 @@ function EbeneWahl({ bs }) {
         <option value="">Verein wählen …</option>{(z.clubs || []).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>}
       {e.level === "role" && <select aria-label="Rolle" className={input} value={e.role_key || ""} onChange={(x) => setze({ ...e, role_key: x.target.value })}>
         <option value="">Rolle wählen …</option>{ROLLEN.map(([k, t]) => <option key={k} value={k}>{t}</option>)}</select>}
-      {(e.level === "club" || e.level === "role") && <p className="text-[11px] text-slate-500">Individualdesign: freigeben lässt sich erst, wenn der Verein es gebucht hat.</p>}
+      {(e.level === "club" || e.level === "role") && <p className="text-xs text-slate-500">Individualdesign: freigeben lässt sich erst, wenn der Verein es gebucht hat.</p>}
     </fieldset>);
 }
 
@@ -220,7 +224,7 @@ function Bearbeiten({ b, bs, darf, dunkel, projekt, onFreigabe }) {
     <div className="p-3 overflow-auto flex flex-col gap-3 text-sm">
       <div className="flex items-start gap-2">
         <div className="min-w-0 flex-1"><h3 className="font-display font-bold text-[16px] leading-tight">{b.name}</h3>
-          <p className="text-[11px] text-slate-500 font-mono">{b.id}</p></div>
+          <p className="text-xs text-slate-500 font-mono">{b.id}</p></div>
         {eigen && !gesperrt && <button type="button" className={ghost} title="Alle Änderungen dieser Ebene an diesem Baustein entfernen (erbt wieder)" onClick={() => bs.setze(b.id, grundlage)}><RotateCcw className="w-3.5 h-3.5" />Zurücksetzen</button>}
       </div>
       {b.wirkt === "galerie" && <p className="text-xs rounded-lg px-2.5 py-1.5 bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-900">Dieses Muster gibt es in der App noch nicht als zentralen Baustein – die Werte gelten in der Galerie und wirken in der App, sobald er zentral gebaut ist (neuer Code = Auftrag, Rechtsklick „Umdesignen“ oder „Neuer Baustein“).</p>}
@@ -233,7 +237,7 @@ function Bearbeiten({ b, bs, darf, dunkel, projekt, onFreigabe }) {
         <div className="flex items-center justify-between"><h4 className="text-xs font-bold uppercase tracking-wider text-slate-500">Farben</h4>
           <div className="flex rounded-lg bg-slate-100 dark:bg-slate-800 p-0.5 text-xs font-semibold">{[["hell", "Hell"], ["dunkel", "Dunkel"]].map(([m, t]) => <button key={m} type="button" aria-pressed={modus === m} onClick={() => setModus(m)} className={`px-2 py-0.5 rounded-md ${modus === m ? "bg-white dark:bg-slate-900 shadow-sm" : ""}`}>{t}</button>)}</div></div>
         {["bg", "text", "rand"].map((k) => <label key={k} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">{namen[k]}<Farbfeld name={`${namen[k]} (${modus})`} wert={voll[modus][k]} gesperrt={gesperrt} onWert={(v) => aendern([modus, k], v)} /></label>)}
-        <p className="text-[11px] text-slate-500">Farben frei wählbar – der Kontrast-Wächter prüft hell und dunkel.</p>
+        <p className="text-xs text-slate-500">Farben frei wählbar – der Kontrast-Wächter prüft hell und dunkel.</p>
       </section>}
 
       <section aria-label="Kontrast-Wächter" className={`rounded-lg border p-2 flex flex-col gap-1 ${sum.pflicht ? "border-red-300 dark:border-red-900 bg-red-50/60 dark:bg-red-950/30" : sum.hinweise ? "border-amber-300 dark:border-amber-900 bg-amber-50/60 dark:bg-amber-950/30" : "border-green-300 dark:border-green-900 bg-green-50/60 dark:bg-green-950/30"}`}>
@@ -242,10 +246,10 @@ function Bearbeiten({ b, bs, darf, dunkel, projekt, onFreigabe }) {
           <li key={i} className="flex items-center gap-1.5 text-xs">
             {x.ok ? <CircleCheck className="w-3.5 h-3.5 text-green-600 shrink-0" aria-label="in Ordnung" /> : x.stufe === "pflicht" ? <CircleAlert className="w-3.5 h-3.5 text-red-600 shrink-0" aria-label="zu wenig Kontrast" /> : <TriangleAlert className="w-3.5 h-3.5 text-amber-600 shrink-0" aria-label="Hinweis" />}
             <span className="flex-1 min-w-0">{x.modus === "hell" ? "Hell" : "Dunkel"}: {x.was} <span className="text-slate-500">{verhaeltnis(x.wert)} (mind. {String(x.soll).replace(".", ",")})</span></span>
-            {!x.ok && x.vorschlag && !gesperrt && <button type="button" className="text-[11px] font-semibold rounded-md border border-slate-300 dark:border-slate-700 px-1.5 py-0.5 hover:bg-white dark:hover:bg-slate-900 inline-flex items-center gap-1" title={`Vorschlag: ${x.vorschlag}`} onClick={() => lesbar(x)}>
+            {!x.ok && x.vorschlag && !gesperrt && <button type="button" className="text-xs font-semibold rounded-md border border-slate-300 dark:border-slate-700 px-1.5 py-0.5 hover:bg-white dark:hover:bg-slate-900 inline-flex items-center gap-1" title={`Vorschlag: ${x.vorschlag}`} onClick={() => lesbar(x)}>
               <i className="w-3 h-3 rounded-sm border border-black/10" style={{ background: x.vorschlag }} aria-hidden="true" />lesbar machen</button>}
           </li>))}</ul>
-        <p className="text-[10px] text-slate-500">Text mind. {String(SOLL.text).replace(".", ",")} : 1, große Schrift und Bedienelemente mind. {SOLL.bedien} : 1 (WCAG 2.1 AA). Speichern geht trotzdem.
+        <p className="text-xs text-slate-500">Text mind. {String(SOLL.text).replace(".", ",")} : 1, große Schrift und Bedienelemente mind. {SOLL.bedien} : 1 (WCAG 2.1 AA). Speichern geht trotzdem.
           {" "}Geprüft mit der {bs.stand.akzent ? "gewählten Akzentfarbe der App" : "Akzentfarbe ab Werk (Smaragd)"}; Vereinsfarben im Kopfbereich können abweichen.</p>
       </section>
 
@@ -255,7 +259,7 @@ function Bearbeiten({ b, bs, darf, dunkel, projekt, onFreigabe }) {
         <div className="flex rounded-lg bg-slate-100 dark:bg-slate-800 p-0.5 text-xs font-semibold" role="radiogroup" aria-label="Größe">{GROESSEN.map(([g, t]) => <button key={g} type="button" role="radio" aria-checked={voll.groesse === g} disabled={gesperrt} onClick={() => aendern(["groesse"], g)} className={`px-2 py-0.5 rounded-md ${voll.groesse === g ? "bg-white dark:bg-slate-900 shadow-sm" : ""}`}>{t}</button>)}</div></div>}
       {b.interaktiv && <div className="flex flex-col gap-1">Zustand in der Vorschau
         <div className="flex flex-wrap rounded-lg bg-slate-100 dark:bg-slate-800 p-0.5 text-xs font-semibold w-max" role="radiogroup" aria-label="Zustand">{ZUSTAENDE.map(([z, t]) => <button key={z} type="button" role="radio" aria-checked={bs.zustand === z} onClick={() => bs.setZustand(z)} className={`px-2 py-0.5 rounded-md ${bs.zustand === z ? "bg-white dark:bg-slate-900 shadow-sm" : ""}`}>{t}</button>)}</div>
-        <span className="text-[11px] text-slate-500">„Darüber“ und „Gedrückt“ werden aus der Hintergrundfarbe abgeleitet, „Gesperrt“ ist halb durchsichtig.</span></div>}
+        <span className="text-xs text-slate-500">„Darüber“ und „Gedrückt“ werden aus der Hintergrundfarbe abgeleitet, „Gesperrt“ ist halb durchsichtig.</span></div>}
       {b.felder.includes("symbol") && <div className="flex flex-col gap-1"><span className="flex items-center gap-2">Symbol <span className="text-xs text-slate-500 font-mono">{voll.symbol}</span>
         <Suspense fallback={null}><SymbolZeichen name={voll.symbol} /></Suspense></span>
         <Suspense fallback={<Loader2 className="w-4 h-4 animate-spin text-emerald-700" />}><SymbolWahl wert={voll.symbol} gesperrt={gesperrt} onWahl={(n) => aendern(["symbol"], n)} /></Suspense></div>}
@@ -263,9 +267,9 @@ function Bearbeiten({ b, bs, darf, dunkel, projekt, onFreigabe }) {
       <section aria-label="Verwendet in" className="flex flex-col gap-1">
         <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1"><Link2 className="w-3.5 h-3.5" aria-hidden="true" />Verwendet in …</h4>
         {!b.quelle ? <p className="text-xs text-slate-500">Nur in der Galerie (noch kein zentraler Baustein).</p>
-          : !verz ? <Loader2 className="w-4 h-4 animate-spin text-emerald-700" /> : !quelle ? <p className="text-xs text-slate-500">Im Baustein-Verzeichnis nicht gefunden ({b.quelle}).</p>
+          : !verz ? <Laden zeilen={2} klein /> : !quelle ? <p className="text-xs text-slate-500">Im Baustein-Verzeichnis nicht gefunden ({b.quelle}).</p>
           : <><p className="text-xs">{quelle.verwendet} Stellen · <span className="font-mono">{quelle.datei}</span></p>
-            <ul className="text-[11px] font-mono text-slate-500 max-h-24 overflow-auto">{(quelle.stellen || []).slice(0, 12).map((s) => <li key={s} className="truncate" title={s}>{s}</li>)}{quelle.verwendet > 12 && <li>… und weitere</li>}</ul></>}
+            <ul className="text-xs font-mono text-slate-500 max-h-24 overflow-auto">{(quelle.stellen || []).slice(0, 12).map((s) => <li key={s} className="truncate" title={s}>{s}</li>)}{quelle.verwendet > 12 && <li>… und weitere</li>}</ul></>}
       </section>
 
       <div className={`text-xs rounded-lg px-2.5 py-1.5 flex items-center gap-1.5 ${bs.speichert?.ok === false ? "bg-red-50 dark:bg-red-950/40 text-red-800 dark:text-red-300" : "bg-slate-50 dark:bg-slate-950 text-slate-600 dark:text-slate-300"}`} aria-live="polite">
@@ -277,7 +281,7 @@ function Bearbeiten({ b, bs, darf, dunkel, projekt, onFreigabe }) {
       </div>
       <button type="button" className={ghost} onClick={() => onFreigabe("freigabe")} title="Freigeben über den bestehenden Weg (App-Designer › Seiten › Freigabe & Versionen), ab Werk „Sofort“">
         <ShieldCheck className="w-4 h-4" />Zur Freigabe<ExternalLink className="w-3.5 h-3.5" aria-hidden="true" /></button>
-      <p className="text-[11px] text-slate-500">Freigeben wirkt sofort in der App (alle Nutzer der gewählten Ebene). Neue Bausteine (neuer Code) laufen weiter als Auftrag.</p>
+      <p className="text-xs text-slate-500">Freigeben wirkt sofort in der App (alle Nutzer der gewählten Ebene). Neue Bausteine (neuer Code) laufen weiter als Auftrag.</p>
     </div>);
 }
 
@@ -285,21 +289,25 @@ function Bearbeiten({ b, bs, darf, dunkel, projekt, onFreigabe }) {
 // Die KI darf als übernehmbaren Vorschlag NUR die Werte dieses Bausteins ändern (Werkstatt und Datenbank prüfen das Schema).
 const IDEEN = ["Besser lesbar machen", "Passend zur Hauptfarbe", "Freundlicher, runder", "Gut fürs Handy draußen", "Dunkelmodus abstimmen"];
 function BausteinChat({ b, bs, d, ich, projekt, darf, toast, ki }) {
-  const [text, setText] = useState(""); const feld = useRef(null); useAutoHoehe(feld, text);
-  const [liste, setListe] = useState([]); const [sende, setSende] = useState(false); const ende = useRef(null);
+  const [text, setText] = useState("");
+  const [liste, setListe] = useState([]); const [sende, setSende] = useState(false);
   const praefix = `[Baustein ${b.id}]`;
+  // ältere Gespräche mit der alten Kennung (z. B. „[Baustein knopf-neben]“) gehören dazu
+  const praefixe = useMemo(() => [b.id, ...(b.alt || [])].map((k) => `[Baustein ${k}]`), [b.id, b.alt]);
+  const ohnePraefix = (t) => { const p = praefixe.find((x) => String(t).startsWith(x)); return p ? String(t).slice(p.length).trim() : String(t); };
   const holen = useCallback(async () => {
     const { data } = await supabase.from("ws_design_chat").select("*").eq("projekt_id", projekt.id).is("entwurf_id", null).order("id", { ascending: false }).limit(200);
-    const fragen = new Set((data || []).filter((m) => !m.frage_id && String(m.text).startsWith(praefix)).map((m) => m.id));
+    const fragen = new Set((data || []).filter((m) => !m.frage_id && praefixe.some((p) => String(m.text).startsWith(p))).map((m) => m.id));
     setListe((data || []).filter((m) => fragen.has(m.id) || fragen.has(m.frage_id)).reverse());
-  }, [projekt.id, praefix]);
+  }, [projekt.id, praefixe]);
   useEffect(() => {
     holen();
     const ch = supabase.channel(`cs-baustein-chat-${projekt.id}-${b.id}`).on("postgres_changes", { event: "*", schema: "public", table: "ws_design_chat" }, holen).subscribe();
     return () => { supabase.removeChannel(ch); };
   }, [holen, projekt.id, b.id]);
-  useEffect(() => { ende.current?.scrollIntoView({ block: "end" }); }, [liste.length]);
   const voll = mitStandard(b.id, bs.alle[b.id], bs.stand.akzent);
+  // Vorschlag unter der neuen oder (ältere Antworten) einer alten Kennung
+  const vorschlagWerte = (m) => [b.id, ...(b.alt || [])].map((k) => m.werte?.bausteine?.[k]).find(Boolean) || null;
   const werkstattAn = d.pcs.some((p) => p.benutzer_id === ich.id && p.an);
   const wartet = liste.some((m) => !m.frage_id && m.von === ich.id && ["offen", "laeuft"].includes(m.stand));
   const schicke = async (t) => {
@@ -315,7 +323,7 @@ function BausteinChat({ b, bs, d, ich, projekt, darf, toast, ki }) {
   };
   const entscheide = async (m, e) => {
     if (e === "uebernommen") {
-      const w = bausteinWerteBereinigen(b.id, m.werte?.bausteine?.[b.id]);
+      const w = bausteinWerteBereinigen(b.id, vorschlagWerte(m));
       if (!Object.keys(w).length) { toast("Der Vorschlag enthält keine gültigen Werte für diesen Baustein"); return; }
       if (!darf || !bs.stand.darf?.edit) { toast("Kein Recht zum Gestalten auf dieser Ebene"); return; }
       const n = JSON.parse(JSON.stringify(voll)); for (const x of ["hell", "dunkel"]) if (w[x]) n[x] = { ...n[x], ...w[x] }; for (const x of ["ecken", "groesse", "symbol"]) if (x in w) n[x] = w[x];
@@ -326,34 +334,24 @@ function BausteinChat({ b, bs, d, ich, projekt, darf, toast, ki }) {
   };
   const fragen = Object.fromEntries(liste.filter((m) => !m.frage_id).map((m) => [m.id, m]));
   return (
-    <div className="flex flex-col flex-1 min-h-0">
-      <div className="flex-1 overflow-auto p-3 space-y-2.5 text-sm">
-        {!liste.length && <p className="text-slate-500">Frag {ki.name} zu „{b.name}“. {ki.name} kennt die aktuellen Werte und schlägt nur Werte dieses Bausteins vor – übernommen wird nur, was du anklickst.</p>}
+    <ChatRahmen className="flex-1" label={`Chat zu ${b.name}`}>
+      <ChatKopf bezug={{ art: "baustein", name: b.name }} />
+      <ChatVerlauf anzahl={liste.length}>
+        {!liste.length && <p className="text-sm text-slate-500">Frag {ki.name} zu „{b.name}“. {ki.name} kennt die aktuellen Werte und schlägt nur Werte dieses Bausteins vor – übernommen wird nur, was du anklickst.</p>}
         {liste.map((m) => m.frage_id ? (
-          <div key={m.id} className="rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 p-2.5 max-w-[95%]">
-            <div className="text-[11px] font-bold text-slate-500 flex items-center gap-1"><Bot className="w-3.5 h-3.5" />{ki.von(m.ki)}</div>
+          <ChatNachricht key={m.id} seite="ki" kopf={ki.von(m.ki)}>
             <Markdown text={m.text} klein />
-            {m.werte?.bausteine?.[b.id] && <VorschlagBaustein b={b} voll={voll} w={m.werte.bausteine[b.id]} m={m} kann={fragen[m.frage_id]?.von === ich.id && darf} onEntscheid={(e) => entscheide(m, e)} />}
-          </div>
+            {vorschlagWerte(m) && <VorschlagBaustein b={b} voll={voll} w={vorschlagWerte(m)} m={m} kann={fragen[m.frage_id]?.von === ich.id && darf} onEntscheid={(e) => entscheide(m, e)} />}
+          </ChatNachricht>
         ) : (
-          <div key={m.id} className="ml-auto rounded-xl bg-emerald-50 dark:bg-emerald-950/50 p-2.5 max-w-[90%]">
-            <div className="text-[11px] font-bold text-slate-500">{m.von === ich.id ? "Du" : d.benutzer.find((u) => u.id === m.von)?.name || "Mitglied"} · {fmt(m.erstellt)}</div>
-            <Markdown text={String(m.text).slice(praefix.length).trim()} klein />
-            {m.stand === "fehler" && <p className="text-xs text-red-600 mt-1">Nicht beantwortet</p>}
-          </div>))}
-        {wartet && <div className="flex items-center gap-2 text-slate-500">{werkstattAn ? <><Loader2 className="w-4 h-4 animate-spin" />{ki.name} denkt nach … (über deine Werkstatt)</> : <span className="text-amber-700 dark:text-amber-400">Deine Werkstatt ist aus – schalte sie oben ein.</span>}</div>}
-        <div ref={ende} />
-      </div>
-      {darf ? (
-        <form className="border-t border-slate-200 dark:border-slate-800 p-2.5 space-y-2" onSubmit={(e) => { e.preventDefault(); schicke(); }}>
-          <div className="flex flex-wrap gap-1">{IDEEN.map((i) => <button key={i} type="button" disabled={sende} onClick={() => schicke(i)} className="text-xs rounded-full border border-slate-300 dark:border-slate-700 px-2 py-0.5 hover:bg-slate-50 dark:hover:bg-slate-800">{i}</button>)}</div>
-          <div className="flex gap-1.5">
-            <textarea ref={feld} value={text} onChange={(e) => setText(e.target.value)} rows={3} maxLength={3000} placeholder={`Was soll sich an „${b.name}“ ändern?`} className={`${input} resize-none`}
-              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); schicke(); } }} />
-            <button className={`${btn} self-end`} disabled={sende || !text.trim()} title="Senden"><Send className="w-4 h-4" /></button>
-          </div>
-        </form>) : <p className="border-t border-slate-200 dark:border-slate-800 p-3 text-xs text-slate-500">Mitlesen möglich – fragen dürfen Entwickler mit Design-Recht.</p>}
-    </div>);
+          <ChatNachricht key={m.id} seite="ich" ton={m.stand === "fehler" ? "fehler" : undefined} kopf={<>{m.von === ich.id ? "Du" : d.benutzer.find((u) => u.id === m.von)?.name || "Mitglied"} · {fmt(m.erstellt)}</>}>
+            <Markdown text={ohnePraefix(m.text)} klein />
+          </ChatNachricht>))}
+        {wartet && <ChatWartet an={werkstattAn} ki={ki.name} text={`${ki.name} denkt nach … (über deine Werkstatt)`} aus="Deine Werkstatt ist aus – schalte sie oben ein." />}
+      </ChatVerlauf>
+      <ChatEingabe value={text} onChange={setText} busy={sende} aktionen={{ besprechen: () => schicke() }} maxLength={3000} platzhalter={`Was soll sich an „${b.name}“ ändern?`}
+        gesperrt={darf ? null : "Mitlesen möglich – fragen dürfen Entwickler mit Design-Recht."} ideen={IDEEN} onIdee={(i) => schicke(i)} />
+    </ChatRahmen>);
 }
 
 function VorschlagBaustein({ b, voll, w, m, kann, onEntscheid }) {

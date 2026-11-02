@@ -5,6 +5,7 @@ import { supabase } from "./supabase";
 import { useKiName } from "./kiName";
 import { Markdown } from "./Markdown";
 import { MitErwaehnung } from "./Bezuege";
+import { ChatRahmen, ChatKopf, ChatVerlauf, ChatNachricht, ChatWartet, ChatEingabe } from "./bausteine/chat";
 
 // Chat mit Claude – seit 2026-10-23 18:06 (Entwurf „Konzept zuerst“) im Konzept-Arbeitsplatz statt als Spalte auf jeder Seite.
 // Persönliches Gespräch; die eingestellte KI antwortet über die eigene Werkstatt und liest das Projekt nur (nichts ändern, nichts ausführen).
@@ -17,17 +18,17 @@ const fehler = (e) => (e?.message || "Unbekannter Fehler").replace(/^.*?ERROR:\s
 const zeit = (d) => new Date(d).toLocaleString("de-AT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
 // Kapitel des Konzepts (gleich wie in der Werkstatt, lib/assistent.mjs, und in der Datenbank, 0020)
 export const KAPITEL = { ziel: "Ziel & Zielgruppe", funktionen: "Kernfunktionen", daten: "Daten & Datenschutz", design: "Design-Vorgaben", ablauf: "Abläufe & Rollen", offen: "Offene Fragen", sonstiges: "Sonstiges" };
-const ORT_NAME = (o) => o.startsWith("feature:") ? `Feature ${o.slice(8)}` : o.startsWith("gruppe:") ? `Gruppe ${o.slice(7)}` : { zentrale: "Auftrags-Zentrale", global: "Globale Einstellungen", designer: "App-Designer", vorschau: "Live-Vorschau", benutzer: "Benutzer & Rechte", verbrauch: "Verbrauch & Limits" }[o] || o;
+export const ORT_NAME = (o) => o.startsWith("feature:") ? `Feature ${o.slice(8)}` : o.startsWith("gruppe:") ? `Gruppe ${o.slice(7)}` : { zentrale: "Auftrags-Zentrale", global: "Globale Einstellungen", designer: "App-Designer", vorschau: "Live-Vorschau", benutzer: "Benutzer & Rechte", verbrauch: "Verbrauch & Limits" }[o] || o;
 
 export default function ClaudeChat({ d, ich, ort = "konzept", kontext, toast, leer }) {
   const ki = useKiName(d.projektId, ort === "konzept" ? "konzept" : "chat");
   const [liste, setListe] = useState([]);
   const [text, setText] = useState("");
   const [senden, setSenden] = useState(false);
-  const ende = useRef(null);
   const holen = useCallback(async () => {
     if (!d.projektId) return;
-    const { data } = await supabase.from("ws_claude_chat").select("*").eq("projekt_id", d.projektId).order("id", { ascending: false }).limit(150);
+    // Nur der Konzept-Chat (ohne Unterhaltung, 0050) – weitere Unterhaltungen laufen im Menüpunkt „Chat“
+    const { data } = await supabase.from("ws_claude_chat").select("*").eq("projekt_id", d.projektId).is("unterhaltung_id", null).order("id", { ascending: false }).limit(150);
     setListe((data || []).reverse());
   }, [d.projektId]);
   useEffect(() => {
@@ -35,8 +36,7 @@ export default function ClaudeChat({ d, ich, ort = "konzept", kontext, toast, le
     const ch = supabase.channel(`cs-claude-${d.projektId}`).on("postgres_changes", { event: "*", schema: "public", table: "ws_claude_chat" }, holen).subscribe();
     return () => { supabase.removeChannel(ch); };
   }, [holen, d.projektId]);
-  // Chats starten immer beim letzten Eintrag
-  useEffect(() => { requestAnimationFrame(() => ende.current?.scrollIntoView({ block: "nearest" })); }, [liste.length]);
+  // Chats starten immer beim letzten Eintrag (ChatVerlauf)
 
   const werkstattAn = d.pcs.some((p) => p.benutzer_id === ich.id && p.an);
   const wartet = liste.some((m) => !m.frage_id && ["offen", "laeuft"].includes(m.stand));
@@ -51,35 +51,29 @@ export default function ClaudeChat({ d, ich, ort = "konzept", kontext, toast, le
   };
   const IDEEN = liste.length ? ["Was fehlt noch im Konzept?", "Fasse das Konzept zusammen", "Welche Daten speichern wir?", "Datenschutz prüfen"]
     : ["Lass uns das Grundkonzept besprechen", "Stell mir die wichtigsten Fragen", "Was brauchen wir für die erste Version?"];
+  const projektName = d.projekte.find((p) => p.id === d.projektId)?.name;
   return (
-    <div className="flex flex-col min-w-0 min-h-[520px] max-h-[calc(100vh-180px)]" aria-label={`Chat mit ${ki.name}`}>
-      <div className="flex-1 overflow-y-auto p-3 space-y-2.5 text-sm" aria-live="polite">
-        {!liste.length && (leer || <p className="text-slate-500">Dein Chat zum Projekt: Hier besprecht ihr das Grundkonzept und jedes neue Vorhaben, bevor gebaut wird. {ki.name} liest im Projekt nach, stellt Rückfragen zum Anklicken und legt die Aufträge selbst an, sobald alles geklärt ist – du gibst danach nur frei und führst zusammen.</p>)}
+    <ChatRahmen className="min-h-[520px] max-h-[calc(100vh-180px)]" label={`Chat mit ${ki.name}`}>
+      <ChatKopf bezug={[{ art: "projekt", name: projektName }, { art: "konzept" }]} />
+      <ChatVerlauf anzahl={liste.length}>
+        {!liste.length && (leer || <p className="text-sm text-slate-500">Dein Chat zum Projekt: Hier besprecht ihr das Grundkonzept und jedes neue Vorhaben, bevor gebaut wird. {ki.name} liest im Projekt nach, stellt Rückfragen zum Anklicken und legt die Aufträge selbst an, sobald alles geklärt ist – du gibst danach nur frei und führst zusammen.</p>)}
         {liste.map((m) => m.frage_id ? (
-          <div key={m.id} className="rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 p-2.5 max-w-[92%]">
-            <div className="text-[11px] font-bold text-slate-500 flex items-center gap-1"><Bot className="w-3.5 h-3.5" />{ki.von(m.ki)} · {zeit(m.erstellt)}</div>
+          <ChatNachricht key={m.id} seite="ki" kopf={<>{ki.von(m.ki)} · {zeit(m.erstellt)}</>}>
             <Markdown text={m.text} klein />
             {m.vorschlag && <Vorschlag m={m} d={d} ich={ich} kann={fragen[m.frage_id]?.von === ich.id} toast={toast} onAntwort={schicke} sperre={wartet || senden} />}
-          </div>
+          </ChatNachricht>
         ) : (
-          <div key={m.id} className="ml-auto rounded-xl bg-emerald-50 dark:bg-emerald-950/50 p-2.5 max-w-[86%]">
-            <div className="text-[11px] font-bold text-slate-500">Du{m.ort !== "konzept" ? ` · ${ORT_NAME(m.ort)}` : ""} · {zeit(m.erstellt)}</div>
+          <ChatNachricht key={m.id} seite="ich" ton={m.stand === "fehler" ? "fehler" : undefined} kopf={<>Du{m.ort !== "konzept" ? ` · ${ORT_NAME(m.ort)}` : ""} · {zeit(m.erstellt)}</>}>
             <Markdown text={m.text} klein />
-            {m.stand === "fehler" && <p className="text-xs text-red-600 mt-1">Nicht beantwortet</p>}
-          </div>))}
-        {wartet && <div className="flex items-center gap-2 text-slate-500">{werkstattAn ? <><Loader2 className="w-4 h-4 animate-spin" />{ki.name} liest nach und antwortet … (über deine Werkstatt)</> : <span className="text-amber-700 dark:text-amber-400">Deine Werkstatt ist aus – sie startet mit dem Programm; dann antwortet Claude.</span>}</div>}
-        <div ref={ende} />
-      </div>
-      <form className="border-t border-slate-200 dark:border-slate-800 p-2.5 flex flex-col gap-2" onSubmit={(e) => { e.preventDefault(); schicke(); }}>
-        <div className="flex flex-wrap gap-1">{IDEEN.map((i) => <button key={i} type="button" disabled={senden} onClick={() => schicke(i)} className="text-xs rounded-full border border-slate-300 dark:border-slate-700 px-2 py-0.5 hover:bg-slate-50 dark:hover:bg-slate-800">{i}</button>)}</div>
-        <div className="flex gap-1.5">
-          <div className="flex-1 min-w-0"><MitErwaehnung value={text} onChange={setText} features={d.features.filter((x) => !x.ausgebaut)} rows={2} maxLength={8000} placeholder="Idee, Vorhaben, Frage oder Entscheidung … (@ für ein Feature)"
-            className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-2.5 py-1.5 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
-            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); schicke(); } }} /></div>
-          <button className={`${btn} self-end`} disabled={senden || !text.trim()} title="Senden">{senden ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}</button>
-        </div>
-      </form>
-    </div>);
+          </ChatNachricht>))}
+        {wartet && <ChatWartet an={werkstattAn} ki={ki.name} />}
+      </ChatVerlauf>
+      <ChatEingabe value={text} onChange={setText} busy={senden} aktionen={{ besprechen: () => schicke() }} ideen={IDEEN} onIdee={(i) => schicke(i)}
+        hinweis="Besprechen: die KI antwortet und legt Aufträge erst an, wenn alles geklärt ist."
+        feld={({ los }) => <MitErwaehnung value={text} onChange={setText} features={d.features.filter((x) => !x.ausgebaut)} rows={2} maxLength={8000} aria-label="Nachricht"
+          placeholder="Idee, Vorhaben, Frage oder Entscheidung … (@ für ein Feature)" className="w-full resize-none bg-transparent px-3 pt-2.5 pb-1 text-[15px] focus:outline-none"
+          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); los(); } }} />} />
+    </ChatRahmen>);
 }
 
 // Konzept-Entscheidung ins Wissen übernehmen (Datenbank 0020): Text kommt aus dem gespeicherten Vorschlag
@@ -137,7 +131,7 @@ function FeatureVorschlag({ m, d, ich, kann, toast }) {
     </div>);
 }
 
-function Vorschlag(props) {
+export function Vorschlag(props) {
   const v = props.m.vorschlag;
   if (Array.isArray(v?.fragen)) return <FragenVorschlag {...props} />;
   if (Array.isArray(v?.auftraege)) return <AuftraegeVorschlag {...props} />;
@@ -204,7 +198,7 @@ function AuftraegeVorschlag({ m, d, ich, kann, toast }) {
           <div key={i} className="rounded-lg border border-slate-200 dark:border-slate-800 p-2 grid gap-1.5">
             <div className="flex items-start gap-2"><div className="min-w-0"><p className="font-semibold">{ids[i] ? `#${ids[i]} · ` : ""}{x.titel}</p>
               <p className="text-xs text-slate-500">{g?.name || x.gruppe_id}{f ? ` › ${f.name}` : ""}</p></div>
-              {a && <span className={`ml-auto shrink-0 text-[11px] font-semibold rounded-full px-2 py-0.5 ${["freigabe", "zusammen", "frage"].includes(a.stand) ? "bg-amber-50 text-amber-800 dark:bg-amber-950 dark:text-amber-200" : ["wissen", "erledigt"].includes(a.stand) ? "bg-green-50 text-green-700 dark:bg-green-950 dark:text-green-300" : a.stand === "nacharbeit" ? "bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300" : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"}`}>{STAND_TEXT[a.stand] || a.stand}</span>}</div>
+              {a && <span className={`ml-auto shrink-0 text-xs font-semibold rounded-full px-2 py-0.5 ${["freigabe", "zusammen", "frage"].includes(a.stand) ? "bg-amber-50 text-amber-800 dark:bg-amber-950 dark:text-amber-200" : ["wissen", "erledigt"].includes(a.stand) ? "bg-green-50 text-green-700 dark:bg-green-950 dark:text-green-300" : a.stand === "nacharbeit" ? "bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300" : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"}`}>{STAND_TEXT[a.stand] || a.stand}</span>}</div>
             {offen && <p className="whitespace-pre-wrap text-xs bg-slate-50 dark:bg-slate-950 rounded p-2 max-h-40 overflow-auto">{x.text}</p>}
             {a && admin && a.stand === "freigabe" && <FreigabeKnopf a={a} onJa={() => rpc("ws_freigeben", a, `Auftrag #${a.id} freigegeben – Sicherheitsprüfung startet`)} />}
             {a && admin && a.stand === "zusammen" && <ZusammenKnopf a={a} onJa={() => rpc("ws_zusammenfuehren", a, `Auftrag #${a.id}: Zusammenführen gestartet`)} />}

@@ -1,5 +1,5 @@
 // GitHub-Repository für ein neues Projekt anlegen (Gerhard 2026-10-23 18:38, Antworten 18:40):
-// Organisation kresak-it-solutions (seit 2026-10-25, vorher Konto gerhardkresak-code), öffentlich (per Klick privat), Grundgerüst aus dem Regelwerk ai-dev-os/project-template.
+// Organisation kresak-it-solutions (seit 2026-10-25, vorher Konto gerhardkresak-code), seit 0.10.1 standardmäßig privat (Befund S2, per Klick öffentlich), Grundgerüst aus dem Regelwerk ai-dev-os/project-template.
 // Läuft nur in der Werkstatt des Admins mit dessen GitHub-Anmeldung (gh). Es wird kein Projekt-Code ausgeführt:
 // nur „gh repo create“, Dateien schreiben, „git commit/push“ ohne Hooks – darum auch auf dem Admin-PC zulässig.
 import { copyFile, lstat, mkdir, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises";

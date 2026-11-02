@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { icons as LUCIDE, X, Save, Send, Loader2, Bot, Check, Search, Trash2, PenLine } from "lucide-react";
+import { icons as LUCIDE, X, Save, Send, Loader2, Bot, Check, Search, Trash2, PenLine, ArrowRight } from "lucide-react";
 import { supabase } from "./supabase";
 import { useKiName } from "./kiName";
-import { useAutoHoehe } from "./autoHoehe";
+import { ChatRahmen, ChatKopf, ChatVerlauf, ChatNachricht, ChatWartet, ChatEingabe } from "./bausteine/chat";
 
 // Symbole und Grundbausteine umdesignen (Entwurf 1.0, freigegeben von Gerhard 2026-10-23 22:38, Datenbank 0027).
 // Rechtsklick in der Galerie (Testseite) oder im Verzeichnis öffnet diesen Entwurf: Zuweisungen vorausgefüllt (alle Stellen angehakt),
@@ -77,7 +77,7 @@ export default function Umdesign({ projekt, d, ich, toast, ziel, verz, icons, on
   const alle = useMemo(() => (Array.isArray(eintrag?.stellen) ? eintrag.stellen.filter((s) => typeof s === "string" && /^src\/[A-Za-z0-9_./ -]{1,200}\.(jsx|js|tsx|ts)$/.test(s) && !s.includes("..")) : []), [eintrag]);
   const [entwurf, setEntwurf] = useState(null); const [werte, setWerte] = useState({}); const [an, setAn] = useState(() => new Set());
   const [suche, setSuche] = useState(""); const [busy, setBusy] = useState(false); const [senden, setSenden] = useState(null);
-  const [chat, setChat] = useState([]); const [text, setText] = useState(""); const feld = useRef(null); useAutoHoehe(feld, text, { min: 72 });
+  const [chat, setChat] = useState([]); const [text, setText] = useState("");
   const ki = useKiName(projekt.id, "design");
   const prefix = `[Umdesign ${art === "symbol" ? "Symbol" : "Baustein"} ${name}]`;
 
@@ -150,7 +150,7 @@ export default function Umdesign({ projekt, d, ich, toast, ziel, verz, icons, on
     <section className={`${card} p-3 flex flex-col gap-3`} aria-label={`${art === "symbol" ? "Symbol" : "Grundbaustein"} ${name} umdesignen`}>
       <div className="flex items-center gap-2 flex-wrap"><PenLine className="w-5 h-5 text-emerald-700" />
         <h3 className="font-display font-bold text-lg">{art === "symbol" ? `Symbol „${name}“` : `Grundbaustein „${eintrag?.name || name}“`}</h3>
-        <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 dark:bg-amber-950 dark:text-amber-300">{entwurf?.id ? "Entwurf gespeichert" : "neuer Entwurf"}</span>
+        <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 dark:bg-amber-950 dark:text-amber-300">{entwurf?.id ? "Entwurf gespeichert" : "neuer Entwurf"}</span>
         <button type="button" className={`${ghost} ml-auto h-8`} onClick={onSchliessen}><X className="w-4 h-4" />Schließen</button></div>
       {!eintrag && <p className="text-sm text-amber-700 dark:text-amber-300">„{name}“ steht noch nicht im Baustein-Verzeichnis des Projekts – die Zuweisungen kommen mit dem nächsten Abgleich (alle 10 Minuten).</p>}
 
@@ -159,7 +159,7 @@ export default function Umdesign({ projekt, d, ich, toast, ziel, verz, icons, on
           {art === "symbol" ? (<>
             <div className="flex items-center gap-4 flex-wrap">
               <div className="text-center"><div className="text-xs text-slate-500">Jetzt</div><div className="w-16 h-16 grid place-items-center rounded-xl border border-slate-200 dark:border-slate-800"><Symbol name={name} groesse={36} strich={strich} /></div></div>
-              <span className="text-slate-400">→</span>
+              <ArrowRight className="w-4 h-4 text-slate-400" aria-hidden="true" />
               <div className="text-center"><div className="text-xs text-slate-500">Neu</div><div className="w-16 h-16 grid place-items-center rounded-xl border border-emerald-600"><Symbol name={werte.neu || name} eigen={werte.eigen} groesse={36} strich={strich} /></div></div>
               {werte.eigen && <span className="text-xs text-slate-500">eigenes Symbol{werte.eigen.name ? ` „${werte.eigen.name}“` : ""} ({werte.eigen.pfade.length + werte.eigen.kreise.length} Striche)</span>}
             </div>
@@ -184,23 +184,25 @@ export default function Umdesign({ projekt, d, ich, toast, ziel, verz, icons, on
             <textarea className={`${input} min-h-[56px]`} maxLength={2000} value={werte.beschreibung || ""} onChange={(ev) => setWerte({ ...werte, beschreibung: ev.target.value })} placeholder="Was soll sich ändern und warum?" /></label>
         </div>
 
-        <div className="flex flex-col gap-2 min-w-0 rounded-xl border border-slate-200 dark:border-slate-800 p-2.5">
-          <div className="text-sm font-semibold flex items-center gap-1.5"><Bot className="w-4 h-4" />Chat mit {ki.name}</div>
-          <div className="flex-1 max-h-[260px] overflow-auto flex flex-col gap-2 text-sm" aria-live="polite">
+        <ChatRahmen className="rounded-xl border border-slate-200 dark:border-slate-800 max-h-[460px]" label={`Chat mit ${ki.name}`}>
+          <ChatKopf bezug={{ art: art === "symbol" ? "symbol" : "baustein", name: art === "symbol" ? name : eintrag?.name || name }} />
+          <ChatVerlauf anzahl={chat.length}>
             {!chat.length && <p className="text-slate-500 text-xs">Frag z. B. „Welches Symbol passt besser für Trainingstermine?“ oder „Warnhinweise auffälliger, aber nicht schreiend“.</p>}
             {chat.map((m) => { const v = m.frage_id ? umdesignAusText(art, m.text) : null;
-              return (
-                <div key={m.id} className={`rounded-lg px-2.5 py-1.5 max-w-[92%] ${m.frage_id ? "bg-slate-50 dark:bg-slate-950 self-start" : "bg-emerald-50 dark:bg-emerald-950/50 self-end"}`}>
-                  {m.frage_id && <div className="text-[11px] font-bold text-slate-500">{ki.von(m.ki)}</div>}
-                  <div className="whitespace-pre-line">{m.frage_id ? ohneVorschlag(m.text) : String(m.text).replace(/^\[Umdesign[^\]]*\] Stand des Entwurfs \(Daten\): [^\n]*\nWunsch: /, "")}</div>
-                  {v && <button type="button" className={`${btn} h-8 mt-1.5`} onClick={() => setWerte({ ...werte, ...v, ...(v.neu ? { eigen: undefined } : {}), ...(v.eigen ? { neu: undefined } : {}) })}><Check className="w-3.5 h-3.5" />Vorschlag übernehmen</button>}
-                </div>); })}
-            {chat.some((m) => !m.frage_id && ["offen", "laeuft"].includes(m.stand)) && <div className="text-xs text-slate-500 flex items-center gap-1.5"><Loader2 className="w-3.5 h-3.5 animate-spin" />{ki.name} denkt nach … (über deine Werkstatt)</div>}
-          </div>
-          <div className="flex gap-2 items-end"><textarea ref={feld} id="umdesign-chat" className={`${input} resize-none`} rows={2} maxLength={2000} value={text} onChange={(ev) => setText(ev.target.value)} placeholder="Was soll sich ändern?"
-            onKeyDown={(ev) => { if (ev.key === "Enter" && !ev.shiftKey) { ev.preventDefault(); fragen(); } }} />
-            <button type="button" className={btn} disabled={!text.trim()} onClick={fragen}><Send className="w-4 h-4" /></button></div>
-        </div>
+              return m.frage_id ? (
+                <ChatNachricht key={m.id} seite="ki" kopf={ki.von(m.ki)}
+                  fuss={v && <button type="button" className={`${btn} h-8 mt-1.5`} onClick={() => setWerte({ ...werte, ...v, ...(v.neu ? { eigen: undefined } : {}), ...(v.eigen ? { neu: undefined } : {}) })}><Check className="w-3.5 h-3.5" />Vorschlag übernehmen</button>}>
+                  <div className="whitespace-pre-line">{ohneVorschlag(m.text)}</div>
+                </ChatNachricht>
+              ) : (
+                <ChatNachricht key={m.id} seite="ich" ton={m.stand === "fehler" ? "fehler" : undefined}>
+                  <div className="whitespace-pre-line">{String(m.text).replace(/^\[Umdesign[^\]]*\] Stand des Entwurfs \(Daten\): [^\n]*\nWunsch: /, "")}</div>
+                </ChatNachricht>); })}
+            {chat.some((m) => !m.frage_id && ["offen", "laeuft"].includes(m.stand)) && <ChatWartet an ki={ki.name} text={`${ki.name} denkt nach … (über deine Werkstatt)`} />}
+          </ChatVerlauf>
+          <ChatEingabe id="umdesign-chat" value={text} onChange={setText} aktionen={{ besprechen: fragen }} maxLength={2000} platzhalter="Was soll sich ändern?"
+            hinweis="Als Auftrag geht der Entwurf unten mit „Als Auftrag senden …“." />
+        </ChatRahmen>
       </div>
 
       <div className="flex flex-col gap-1.5">
@@ -214,12 +216,12 @@ export default function Umdesign({ projekt, d, ich, toast, ziel, verz, icons, on
 
       {senden != null ? (
         <div className="flex flex-col gap-2"><label className="text-sm font-semibold">Auftragstext (änderbar)<textarea className={`${input} mt-1 font-mono text-xs min-h-[140px]`} value={senden} onChange={(ev) => setSenden(ev.target.value)} maxLength={7000} /></label>
-          <div className="flex gap-2 flex-wrap"><button type="button" className={btn} disabled={busy || !an.size} onClick={abschicken}>{busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}Ja, als Auftrag senden</button>
+          <div className="flex gap-2 flex-wrap"><button type="button" className={btn} disabled={busy || !an.size} onClick={abschicken}>{busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}Ja, als Auftrag stellen</button>
             <button type="button" className={ghost} onClick={() => setSenden(null)}>Zurück</button></div></div>
       ) : (
         <div className="flex gap-2 flex-wrap items-center">
           <button type="button" className={btn} disabled={busy || !an.size} onClick={speichern}>{busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}Speichern</button>
-          <button type="button" className={ghost} disabled={busy || !an.size || (art === "symbol" && !werte.neu && !werte.eigen)} onClick={() => setSenden(auftragText())}><Send className="w-4 h-4" />Als Auftrag senden …</button>
+          <button type="button" className={ghost} disabled={busy || !an.size || (art === "symbol" && !werte.neu && !werte.eigen)} onClick={() => setSenden(auftragText())}><Send className="w-4 h-4" />Als Auftrag …</button>
           <button type="button" className={`${ghost} ml-auto`} onClick={verwerfen}><Trash2 className="w-4 h-4" />{entwurf?.id ? "Entwurf verwerfen" : "Abbrechen"}</button>
           {!an.size && <span className="text-xs text-amber-700 dark:text-amber-300">Mindestens eine Stelle anhaken.</span>}
         </div>)}

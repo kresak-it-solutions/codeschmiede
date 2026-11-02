@@ -5,6 +5,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Code2, FileText, Lock, Loader2, Search, GitPullRequest, X, RefreshCw, Info, Check, FolderOpen } from "lucide-react";
 import { supabase } from "./supabase";
+import { useEscape, useFokusfalle } from "./bausteine/grund";
+import { Laden } from "./bausteine/zustand";
 
 const fehler = (e) => (e?.message || "Unbekannter Fehler").replace(/^.*?ERROR:\s*/, "");
 const btn = "inline-flex items-center justify-center gap-2 h-10 px-4 rounded-xl bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 text-white font-display font-bold tracking-wide transition";
@@ -123,12 +125,12 @@ export default function CodeEditor({ d, ich, toast, onAuftrag }) {
           <div className="p-2 border-b border-slate-200 dark:border-slate-800 relative"><Search className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
             <input className={`${input} pl-8 py-1.5 text-sm`} placeholder="Datei suchen …" aria-label="Datei suchen" value={q} onChange={(e) => setQ(e.target.value)} /></div>
           <div className="flex-1 overflow-auto p-1.5 text-sm">
-            {laedt && <p className="p-3 text-slate-500 flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" />Werkstatt liest den Zweig …</p>}
+            {laedt && <Laden zeilen={6} klein text="Werkstatt liest den Zweig" />}
             {baumFehler && <p className="p-3 text-red-700 dark:text-red-300 text-xs">{baumFehler}</p>}
             {!laedt && liste.map((x, i) => {
               const o = ordnerVon(x.p); const neuOrdner = i === 0 || ordnerVon(liste[i - 1].p) !== o;
               return (<React.Fragment key={x.p}>
-                {neuOrdner && o && <div className="px-2 pt-2 pb-0.5 text-[11px] uppercase tracking-wider text-slate-400 truncate flex items-center gap-1"><FolderOpen className="w-3 h-3" />{o}</div>}
+                {neuOrdner && o && <div className="px-2 pt-2 pb-0.5 text-xs uppercase tracking-wider text-slate-400 truncate flex items-center gap-1"><FolderOpen className="w-3 h-3" />{o}</div>}
                 <button type="button" disabled={!!x.x} onClick={() => oeffne(x.p)} title={x.x ? "Geheime Datei – gesperrt" : x.p}
                   className={`w-full flex items-center gap-1.5 px-2 py-1 rounded-md text-left ${aktiv === x.p ? "bg-emerald-50 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-200" : "hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300"} ${x.x ? "opacity-50 cursor-not-allowed" : ""}`}>
                   {x.x ? <Lock className="w-3.5 h-3.5 shrink-0" /> : <FileText className="w-3.5 h-3.5 shrink-0" />}<span className="truncate">{x.p.split("/").pop()}</span>
@@ -149,7 +151,7 @@ export default function CodeEditor({ d, ich, toast, onAuftrag }) {
               </span>))}
           </div>
           {!aktiv ? <div className="flex-1 grid place-items-center text-sm text-slate-500 p-6 text-center">Links eine Datei wählen.</div>
-            : datei?.laedt ? <div className="flex-1 grid place-items-center text-sm text-slate-500"><span className="flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" />Datei wird gelesen …</span></div>
+            : datei?.laedt ? <Laden art="text" zeilen={10} className="flex-1" text="Datei wird gelesen" />
             : datei?.fehler ? <div className="flex-1 p-4 text-sm text-red-700 dark:text-red-300">{datei.fehler}</div>
             : datei?.inhalt == null ? <div className="flex-1 p-4 text-sm text-slate-500 flex items-start gap-2"><Info className="w-4 h-4 mt-0.5" />{datei?.hinweis || "Kein Inhalt"}</div>
             : (<div className="flex-1 min-h-[360px] grid grid-cols-[52px_minmax(0,1fr)] bg-slate-50 dark:bg-[#0a1613] font-mono text-[13px] leading-5">
@@ -188,7 +190,7 @@ function Aenderungen({ entwurf, dateien, darf, onSpeichern, onVerwerfen, onOeffn
       return (<div key={p} className="flex flex-col gap-1">
         <button type="button" className="text-left text-sm font-semibold font-mono truncate hover:underline" onClick={() => onOeffne(p)}>{p}</button>
         {alt == null ? <p className="text-xs text-slate-500">Datei neu öffnen, um die Gegenüberstellung zu sehen.</p>
-          : <pre className="m-0 text-[11.5px] leading-[17px] font-mono rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#0a1613] py-1 overflow-x-auto">
+          : <pre className="m-0 text-xs leading-[17px] font-mono rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#0a1613] py-1 overflow-x-auto">
             {diffZeilen(alt, entwurf[p].inhalt).map(([art, t], i) => <div key={i} className={`px-2 ${art === "p" ? "bg-emerald-100/70 text-emerald-900 dark:bg-emerald-900/30 dark:text-emerald-200" : art === "m" ? "bg-red-100/70 text-red-900 dark:bg-red-900/30 dark:text-red-200" : "text-slate-400"}`}>{t || " "}</div>)}</pre>}
       </div>);
     }) : <p className="text-sm text-slate-500">Noch nichts geändert.</p>}
@@ -199,8 +201,9 @@ function Aenderungen({ entwurf, dateien, darf, onSpeichern, onVerwerfen, onOeffn
 }
 
 function Speichern({ gruppen, d, entwurf, toast, onClose, onFertig }) {
+  const fokusfalle = useFokusfalle();   // Fokus bleibt im Dialog (Befund B2)
   const [titel, setTitel] = useState(""); const [text, setText] = useState(""); const [gid, setGid] = useState(gruppen[0]?.id || ""); const [busy, setBusy] = useState(false);
-  useEffect(() => { const k = (e) => e.key === "Escape" && onClose(); window.addEventListener("keydown", k); return () => window.removeEventListener("keydown", k); }, [onClose]);
+  useEscape(onClose);   // nur der oberste Dialog (Review N2)
   const pfade = Object.keys(entwurf);
   const basis = [...new Set(pfade.map((p) => entwurf[p].basis_sha))];
   const bereich = (id) => d.bereiche.find((b) => b.id === id)?.name || "";
@@ -216,7 +219,7 @@ function Speichern({ gruppen, d, entwurf, toast, onClose, onFertig }) {
   };
   return (
     <div className="fixed inset-0 z-40 grid place-items-center bg-black/45 p-4" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div role="dialog" aria-modal="true" aria-label="Als Auftrag speichern" className={`${card} w-full max-w-lg p-5 flex flex-col gap-3`}>
+      <div ref={fokusfalle} role="dialog" aria-modal="true" aria-label="Als Auftrag speichern" className={`${card} w-full max-w-lg p-5 flex flex-col gap-3`}>
         <h3 className="font-display font-bold text-xl">Als Auftrag speichern</h3>
         <label className="flex flex-col gap-1 text-sm text-slate-500">Titel<input className={input} value={titel} onChange={(e) => setTitel(e.target.value)} maxLength={120} autoFocus placeholder="z. B. Kalender: Wochenstart Montag" /></label>
         <label className="flex flex-col gap-1 text-sm text-slate-500">Gruppe
