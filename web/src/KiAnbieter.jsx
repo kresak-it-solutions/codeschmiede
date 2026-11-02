@@ -4,6 +4,7 @@ import { Cpu, Loader2, Save, ArrowUp, ArrowDown, Plus, X, RefreshCw, Lock, Circl
 import { supabase } from "./supabase";
 import { useFokusfalle } from "./bausteine/grund";
 import { Laden } from "./bausteine/zustand";
+import ProgrammierWerkzeug from "./seiten/ProgrammierWerkzeug";
 
 // KI-Anbieter (Entwurf 1.2, freigegeben von Gerhard 2026-10-23 15:00): Wer übernimmt was – Anbieter und Modell je Aufgabe.
 // Zuständigkeiten stellt nur der Admin ein (14:59). Bauen ist fest Claude (14:27). Jede Person koppelt ihre Anbieter auf dem eigenen PC.
@@ -43,7 +44,7 @@ const AUFGABEN = [
   ["doku", "Dokumentation & Handbuch", "wird genutzt, sobald Doku-Aufträge getrennt laufen (Etappe 4)"],
   ["texte", "Texte & Übersetzungen", "wird genutzt, sobald Text-Aufträge getrennt laufen (Etappe 4)"],
   ["bilder", "Bilder & Grafiken", "wird mit Etappe 5 (Marke, Logo) genutzt; nur Anbieter, die Bilder erzeugen können"],
-  ["bauen", "Bauen & Programmieren", "nur Claude Code – bei vollem Limit wartet der Auftrag (kein Ersatz mehr, Entscheidung 02.11.2026)"],
+  ["bauen", "Programmieren", "ein Werkzeug je Projekt (seit 0.14.0): Claude Code, Codex, Gemini CLI oder OpenCode – verpflichtend, kein Einspringen"],
 ];
 // Ohne Admin-Einstellung gilt nur Claude (Prüfung M5). VORSCHLAG = Entwurf 1.2 zum Übernehmen.
 const STANDARD = Object.fromEntries(["chat", "konzept", "design", "pruefung", "doku", "texte", "bilder", "bauen"].map((a) => [a, [{ anbieter: "claude", ...({ konzept: { modell: "opus" }, pruefung: { modell: "opus" }, texte: { modell: "haiku" } }[a] || {}) }]]));
@@ -68,7 +69,7 @@ const GRUND = {
   doku: "Handbuch und Doku: Claude hat die höchste gemessene Faktentreue und sehr gutes Deutsch; Gemini ist stark bei sehr langen Dokumenten; ChatGPT als Dritter.",
   texte: "Texte und Übersetzungen: Claude bleibt bei Fachbegriffen über lange Texte am einheitlichsten, ChatGPT formuliert flüssig, Gemini als Dritter. Mistral wäre die EU-Wahl, ist in den Vergleichen aber nicht vorne und wurde für Deutsch nicht getestet.",
   bilder: "Bild-Rangliste (LMArena): 1. ChatGPT (GPT Image 2). Fürs Nachbauen von Logos als bearbeitbare Formen ist Claude Opus sehr gut; Gemini als Dritter. Grok liegt bei Bildern auf Platz 2, ist hier aber noch nicht als Bild-Anbieter angebunden.",
-  bauen: "Bauen ist nach deiner Regel fest Claude Code (führt WebDev und Programmier-Tests). Seit 02.11.2026 ohne Ersatz: bei vollem Limit wartet der Auftrag.",
+  bauen: "Programmieren: ein Werkzeug je Projekt, Standard Claude Code (führt WebDev und Programmier-Tests). Fremde Werkzeuge nur nach bestandenem Sperren-Test.",
 };
 
 const MODELL = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,59}$/;
@@ -79,7 +80,7 @@ function Eignung({ liste }) {
   return (
     <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden">
       <div className="px-3 py-2 bg-slate-50 dark:bg-slate-950"><h3 className="font-display font-bold">Wofür eignet sich welche KI?</h3>
-        <p className="text-xs text-slate-500">Empfehlungen (Stand Oktober 2026) – du entscheidest unten bei den Zuständigkeiten. Gebaut wird immer von Claude.</p></div>
+        <p className="text-xs text-slate-500">Empfehlungen (Stand Oktober 2026) – du entscheidest unten bei den Zuständigkeiten. Programmiert wird mit dem Werkzeug des Projekts (Standard Claude Code).</p></div>
       <div className="divide-y divide-slate-100 dark:divide-slate-800">
         {Object.entries(liste).map(([id, a]) => {
           const st = STAERKEN[id];
@@ -108,20 +109,6 @@ function Zeile({ id, titel, hinweis, eintrag, admin, onSpeichern, anbieter = ANB
   // Prüfungen nur eingebaute Anbieter (eigene Programme laufen ohne Sandbox)
   const frei = Object.keys(anbieter).filter((a) => !reihe.some((e) => e.anbieter === a) && !(id === "pruefung" && !ANBIETER[a]));
   const speichern = async () => { setBusy(true); await onSpeichern(id, reihe, ab); setBusy(false); };
-  // Programmieren: nur Claude Code, kein Ersatz (Entscheidung Gerhard 02.11.2026 10:00 – das frühere „ChatGPT als Ersatz“ entfällt)
-  if (fest) {
-    return (
-      <div className="border-t border-slate-100 dark:border-slate-800 p-3 grid gap-2 lg:grid-cols-[240px_minmax(0,1fr)_auto] items-start">
-        <div><div className="font-semibold text-sm flex items-center gap-1.5"><Lock className="w-3.5 h-3.5 text-slate-400" />{titel}</div>{hinweis && <div className="text-xs text-slate-500">{hinweis}</div>}</div>
-        <div className="flex flex-col gap-1.5 text-xs">
-          <span className="flex flex-wrap items-center gap-1.5"><span className="inline-flex rounded-full px-2.5 py-0.5 font-semibold border border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">1. Claude Code</span>
-            <span className="text-slate-500">kein Ersatz – bei vollem Limit wartet der Auftrag</span></span>
-          {reihe.length > 1 && <span className="text-xs text-amber-700 dark:text-amber-300">Hier ist noch „ChatGPT als Ersatz“ gespeichert – es wird nicht mehr genutzt. {admin ? "Speichern entfernt es." : ""}</span>}
-        </div>
-        {admin && reihe.length > 1 ? <div className="flex items-center gap-2 text-xs"><button type="button" className={ghost} disabled={busy} onClick={() => { setReihe([{ anbieter: "claude" }]); }}><X className="w-3.5 h-3.5" />Ersatz entfernen</button></div> : <div />}
-        <div className="flex items-center gap-2 text-xs">{admin && <button type="button" className={ghost} disabled={busy || !geaendert} onClick={speichern}>{busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}Speichern</button>}</div>
-      </div>);
-  }
   return (
     <div className="border-t border-slate-100 dark:border-slate-800 p-3 grid gap-2 lg:grid-cols-[240px_minmax(0,1fr)_auto] items-start">
       <div><div className="font-semibold text-sm flex items-center gap-1.5">{fest && <Lock className="w-3.5 h-3.5 text-slate-400" />}{titel}</div>{hinweis && <div className="text-xs text-slate-500">{hinweis}</div>}
@@ -227,7 +214,7 @@ export function KiProtokoll() {
 // steht fest im Werkstatt-Programm (desktop/dienst/lib/einrichten.mjs), nie in der Datenbank.
 const EIN_KLICK = {
   codex: { art: "browser", install: "npm install -g @openai/codex" }, gemini: { art: "fenster", install: "npm install -g @google/gemini-cli" },
-  copilot: { art: "browser", install: "npm install -g @github/copilot" }, opencode: { art: "fenster", install: "npm install -g opencode-ai" },
+  copilot: { art: "browser", install: "npm install -g @github/copilot" }, opencode: { art: "fenster", install: "npm install -g @opencode/cli" },
   "cursor-agent": { art: "browser", install: "offizielle Installation von cursor.com" },
   grok: { art: "browser", install: "Offizielle Installation von x.ai läuft automatisch" }, agy: { art: "fenster", install: "Offizielle Installation von Google läuft automatisch (das Terminal-Programm agy – die Antigravity-App allein reicht nicht)" },
   vibe: { art: "fenster", install: "Offizielle Installation von Mistral läuft automatisch" },
@@ -304,7 +291,7 @@ export default function KiAnbieter({ d, ich, toast }) {
   return (
     <section className="flex flex-col gap-4" aria-label="KI-Anbieter">
       <div><h2 className="font-display font-bold text-xl leading-tight flex items-center gap-2"><Cpu className="w-5 h-5 text-emerald-700" />KI-Anbieter</h2>
-        <p className="text-sm text-slate-500">Wer übernimmt was: Anbieter und Modell je Aufgabe, in Reihenfolge. <b>Verpflichtend – kein Ausweichen:</b> Es werden nur die hier eingestellten Anbieter genommen (der nächste in der Liste übernimmt, wenn ein Limit voll ist oder ein Anbieter auf dem PC nicht gekoppelt ist). Ist keiner davon nutzbar, wartet die Aufgabe mit der Meldung „wartet auf …“. Programmieren macht nur Claude Code. Jeder nutzt sein eigenes Abo.</p></div>
+        <p className="text-sm text-slate-500">Wer übernimmt was: Anbieter und Modell je Aufgabe, in Reihenfolge. <b>Verpflichtend – kein Ausweichen:</b> Es werden nur die hier eingestellten Anbieter genommen (der nächste in der Liste übernimmt, wenn ein Limit voll ist oder ein Anbieter auf dem PC nicht gekoppelt ist). Ist keiner davon nutzbar, wartet die Aufgabe mit der Meldung „wartet auf …“. Programmieren: ein Werkzeug je Projekt (Zeile „Programmieren“). Jeder nutzt sein eigenes Abo.</p></div>
 
       <Eignung liste={liste} />
 
@@ -312,8 +299,10 @@ export default function KiAnbieter({ d, ich, toast }) {
         <div className="px-3 py-2 bg-slate-50 dark:bg-slate-950 flex flex-wrap items-center gap-2"><h3 className="font-display font-bold">Zuständigkeiten</h3><span className="text-xs text-slate-500">{admin ? "Nur du als Admin stellst das ein." : "Stellt der Admin ein."}</span></div>
         {zust?.fehlt ? <p className="p-4 text-sm text-amber-700 dark:text-amber-300">Die Datenbank-Erweiterung 0012 (KI-Anbieter) ist noch nicht eingespielt.</p>
           : !zust ? <Laden zeilen={4} text="Zuständigkeiten werden geladen" />
-          : AUFGABEN.map(([id, titel, hinweis]) => <Zeile key={id} id={id} titel={titel} hinweis={hinweis} eintrag={zust[id]} admin={admin} onSpeichern={speichern} anbieter={liste} />)}
-        <p className="px-3 py-2 text-xs text-slate-500 border-t border-slate-100 dark:border-slate-800">Solange hier nichts gespeichert ist, antwortet nur Claude. Andere Anbieter bekommen Dokumentation und Dateiliste als Text und starten in einem leeren Ordner mit minimaler Umgebung; sie ändern nichts. <b>Restrisiko:</b> Ihre eingebauten Werkzeuge könnten technisch Dateien des PCs lesen – Antworten mit verdächtigem Inhalt werden verworfen. Prüfen und Bauen macht deshalb nur Claude. „Automatisch“ = Standardmodell des Anbieters.</p>
+          : AUFGABEN.map(([id, titel, hinweis]) => id === "bauen"
+            ? <div key={id} className="border-t border-slate-100 dark:border-slate-800 p-3"><ProgrammierWerkzeug d={d} ich={ich} toast={toast} eintrag={zust.bauen} meinePcs={meinePcs} onGespeichert={() => setTick((t) => t + 1)} /></div>
+            : <Zeile key={id} id={id} titel={titel} hinweis={hinweis} eintrag={zust[id]} admin={admin} onSpeichern={speichern} anbieter={liste} />)}
+        <p className="px-3 py-2 text-xs text-slate-500 border-t border-slate-100 dark:border-slate-800">Solange hier nichts gespeichert ist, antwortet nur Claude. Andere Anbieter bekommen Dokumentation und Dateiliste als Text und starten in einem leeren Ordner mit minimaler Umgebung; sie ändern nichts. <b>Restrisiko:</b> Ihre eingebauten Werkzeuge könnten technisch Dateien des PCs lesen – Antworten mit verdächtigem Inhalt werden verworfen. Prüfen macht deshalb Claude bzw. ein Anbieter in der Sandbox; Programmieren mit fremden Werkzeugen nur in der Sperre der Codeschmiede (Zeile „Programmieren“). „Automatisch“ = Standardmodell des Anbieters.</p>
       </div>
 
       <div className={`${card} overflow-hidden`}>

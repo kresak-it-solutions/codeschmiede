@@ -11,7 +11,7 @@ Widersprüche, Risiken, Empfehlung melden → Fragen stellen → ab NORMAL Freig
 
 ## Was ist die Codeschmiede?
 Gerhards Programmierumgebung für **alle** seine Apps (Projekte): ein Programm für Windows und Mac mit Projektwechsel, Auftrags-Zentrale,
-Werkstatt (offizielles Claude Code mit eigenem Abo-Login), Live-Vorschau, Freigabe, Zusammenführen, Sicherheitsprüfung, Wissen. Konzept: `docs/KONZEPT.md`.
+Werkstatt (Programmier-Werkzeug des Projekts, Standard das offizielle Claude Code mit eigenem Abo-Login), Live-Vorschau, Freigabe, Zusammenführen, Sicherheitsprüfung, Wissen. Konzept: `docs/KONZEPT.md`.
 
 ## Projektregeln (Anweisungen von Gerhard)
 - Erst prüfen, ob eine Anweisung Sinn macht, alle Details erfragen, dann bauen. Sichtbare Neuerungen zuerst als klickbarer Entwurf.
@@ -40,10 +40,18 @@ Zusammengeführt wird nur auf Gerhards Wort (in der Codeschmiede: Knopf „Freig
 - Werkstatt arbeitet nur im Arbeitsordner des Auftrags (eigener Zweig), nie direkt auf `main`; heikle Befehle brauchen Erlaubnis im Programm.
 
 ## Neue Anweisungen
+- **2026-11-02 – Programmier-Werkzeug je Projekt (0.14.0, Entwurf frei, `docs/KONZEPT-WERKZEUGE.md`):** Je Projekt wählt der Admin unter
+  KI-Anbieter › Programmieren das Werkzeug: Claude Code (Standard), OpenAI Codex CLI, Gemini CLI oder OpenCode (mit Modell). **Verpflichtend:** ist es
+  auf einem PC nicht installiert, nicht angemeldet oder hat es den Sperren-Test nicht bestanden, wartet der Auftrag („wartet auf <Werkzeug>“) – kein anderes
+  Werkzeug springt ein, auch nicht Claude; ein Auftrag macht mit seinem Werkzeug fertig. Keine Zugangsdaten in der Codeschmiede (Anmelden macht die Person im
+  Werkzeug). Installieren nur auf Entwickler-PCs aus der offiziellen Quelle in fester Version (Lock-Datei, ohne Skripte). Fremde Werkzeuge nur in der
+  Betriebssystem-Sperre der Codeschmiede (schreiben nur im Arbeitsordner, nie Regeln\, setup\, andere Projekte, REGELN.md, .git) – **unter Windows und Linux gesperrt**
+  (keine Windows-Sandbox als Ausweg; Linux: Programmstarts nicht begrenzbar), nie auf dem Admin-PC; Gemini CLI derzeit überall gesperrt (Ordner-Vertrauen). Sperren-Test je PC und Version Pflicht. Commit/PR macht bei fremden Werkzeugen die Werkstatt.
+  Datenbank 0057.
 - **2026-11-02 10:00 – KI-Anbieter verpflichtend, Setup-Dateien, Limits „Ultra“ (0.13.1):** Die unter „KI-Anbieter“ je Aufgabe eingestellten Anbieter
   werden **verpflichtend** genommen – kein stilles Ausweichen auf einen anderen Anbieter (Chats, Design, Kachel-Chat nur innerhalb der Zuständigkeit,
   Prüfungen ohne Claude-Rückfall); die Reihenfolge gilt nur innerhalb der eingestellten Liste; ist keiner nutzbar, wartet die Aufgabe mit
-  „wartet auf <Anbieter>: <Grund>“. Programmieren nur Claude Code – das Ausweichen auf ChatGPT (Codex) bei vollem Limit entfällt, der Auftrag wartet.
+  „wartet auf <Anbieter>: <Grund>“. Programmieren: das Werkzeug des Projekts (seit 0.14.0, siehe 2026-11-02 Programmier-Werkzeug) – das Ausweichen auf ChatGPT (Codex) bei vollem Limit entfällt, der Auftrag wartet.
   Nach jedem Live-Schalten eines Programms legt die Werkstatt des Admins die Installationsdateien des Releases in `<Projektordner>\setup\<version>\` ab.
   Limit-Anzeige: „5 Std.: kein Limit“, wenn Claude Code kein 5-Stunden-Fenster meldet; modell-eigene Wochenlimits (z. B. Fable) zusätzlich, nur was gemeldet wird.
   Ergänzung (Gerhard, „Claude fest eintragen“): Für alle bestehenden und neuen Projekte stehen die bisherigen Standardwerte (Claude) als echte,
@@ -174,7 +182,7 @@ Zusammengeführt wird nur auf Gerhards Wort (in der Codeschmiede: Knopf „Freig
   speichert, nur Claude** – seit 0.13.1: Claude ist als echte, änderbare Zuständigkeit eingetragen (Datenbank 0056, auch für neue Projekte);
   ohne gespeicherte bzw. lesbare Zuständigkeit wartet die Aufgabe, kein Ausweichen zur Laufzeit, siehe 2026-11-02). Unabhängige Prüfungen durch fremde Anbieter (Entscheidung 14:27) sind **vorerst gesperrt** und nur Claude,
   bis fremde Programme in einer Betriebssystem-Sandbox laufen (unabhängige Prüfung 2026-10-23: sonst Lesezugriff auf den PC).
-  **Bauen und Programmieren macht nur Claude – nie ein anderer Anbieter** (14:27). Je Aufgabe Anbieter **und Modell** in Reihenfolge frei
+  **Bauen und Programmieren macht nur Claude – nie ein anderer Anbieter** (14:27; seit 2026-11-02 ersetzt durch das Programmier-Werkzeug je Projekt, siehe oben). Je Aufgabe Anbieter **und Modell** in Reihenfolge frei
   wählbar (14:49); der nächste übernimmt bei vollem Limit oder ohne Kopplung. Zuständigkeiten stellt **nur der Admin** ein (14:59).
   Im Chat sieht man nicht, wer antwortet; vermerkt wird es im Protokoll. Freigegebene Konzepte (Konzept-Karte) gehen als Auftrag an Claude
   und werden als `docs/konzepte/<datum>-<feature>.md` mit dem Bau-PR abgelegt. Andere Anbieter laufen in einem leeren Ordner mit

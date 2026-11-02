@@ -1,5 +1,6 @@
 // Zentrale – aus App.jsx ausgelagert (Befund B1 vom 01.11.2026, kein Verhaltenswechsel).
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { werkzeugName } from "../daten/werkzeuge";
 import { Bot, Check, CircleCheck, FolderInput, FolderPlus, GitMerge, GitPullRequest, Globe, Layers, Loader2, MessageSquare, PenLine, Plus, RefreshCw, Send, ShieldCheck, Trash2, X } from "lucide-react";
 import { ABGESCHLOSSEN, Badge, Dialog, STEPS, STEP_IDX, btn, card, fehler, fmt, ghost, input } from "../bausteine/grund";
 import { AufbauBanner, GruppeLoeschen, NeueObergruppe, Umbenennen, bereichName, gruppeLoeschbar, ohneMenue } from "../Aufbau";
@@ -498,6 +499,8 @@ export function StationsUebersicht({ station, d, darf, toast, onSchliessen, onOe
                 <div key={a.id} className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 items-center px-3 py-2.5 border-t border-slate-200 dark:border-slate-800">
                   <div className="min-w-0"><div className="font-semibold text-sm">#{a.id} {a.titel}</div>
                     <div className="text-xs text-slate-500 flex gap-2 flex-wrap">{a.pr_nummer && <span className="inline-flex items-center gap-1"><GitPullRequest className="w-3 h-3" />PR #{a.pr_nummer}</span>}
+                      {a.werkzeug && <span className="rounded-full border border-slate-300 dark:border-slate-700 px-2 font-semibold">Programmiert mit {werkzeugName(a.werkzeug)}</span>}
+                      {a.stand === "wartet" && a.wartet_auf && <span className="rounded-full border border-amber-500 text-amber-700 dark:text-amber-300 px-2 font-semibold">{a.wartet_auf}</span>}
                       {a.stand === "nacharbeit" && <span className="text-red-600 font-semibold">Nacharbeit nach roter Prüfung</span>}
                       {a.pruefung?.lokal && station === "freigabe" && <span>Bauen & Tests: {a.pruefung.lokal.ergebnis === "gruen" ? "grün" : "rot"}</span>}
                       {station === "zusammen" && a.pruefung?.sicherheit && <span className="text-green-700 dark:text-green-400">Sicherheitsprüfung grün</span>}

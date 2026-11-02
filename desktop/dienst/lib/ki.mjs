@@ -8,7 +8,6 @@ import { spawn, execFile } from "node:child_process";
 import { existsSync, readFileSync, realpathSync, readdirSync, statSync, openSync, readSync, closeSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { sandboxLauf, sandboxArt, sicherLesen } from "./sandbox.mjs";
-import { kopiereProjekt, vergleiche } from "./ersatz.mjs";
 import { codexFenster } from "./abo.mjs";
 export { sandboxArt };
 import path from "node:path";
@@ -144,33 +143,6 @@ export async function codexFrage(prompt, { modell, signal, nurSandbox = false } 
     if (!t) throw new Error("Codex hat keine Antwort geliefert");
     if (verdaechtig(t)) throw new Error("Antwort verworfen (verdächtiger Inhalt)");
     return t;
-  } finally { await rm(tmp, { recursive: true, force: true }).catch(() => {}); }
-}
-
-/**
- * Ersatz beim Programmieren (Gerhard 2026-10-23: „Nur als Ersatz“, wenn Claudes Limit voll ist).
- * Codex arbeitet in einer KOPIE des Auftragsordners ohne .git, innerhalb der Betriebssystem-Sandbox (macOS/Linux): schreiben nur in der Kopie,
- * lesen nur dort und im Programmordner, kein Benutzerordner, kein Schlüsselbund, keine Apple Events. Die Werkstatt vergleicht danach selbst
- * Datei für Datei und übernimmt nur Erlaubtes (lib/ersatz.mjs) – Commit, Hochladen und Pull Request macht die Werkstatt. Prüfungen bleiben bei Claude.
- */
-export async function codexBauen(prompt, { quelle, modell, signal } = {}) {
-  const prog = findeProgramm("chatgpt");
-  if (!prog) throw new Error("Codex (ChatGPT) ist auf diesem PC nicht installiert.");
-  const tmp = await mkdtemp(path.join(os.tmpdir(), "cs-codexbau-"));
-  const datei = path.join(tmp, "antwort.txt");
-  const werk = path.join(tmp, "projekt");
-  try {
-    await mkdir(werk);
-    const original = await kopiereProjekt(quelle, werk);
-    const sbx = await sandboxLauf({ anbieter: "chatgpt", prog, arbeit: tmp, env: minimaleUmgebung(), bauen: true });
-    if (!sbx) throw new Error("Der Ersatz beim Programmieren braucht die Betriebssystem-Sandbox (macOS/Linux) – auf diesem PC nicht möglich.");
-    // Codex-eigene Sandbox aus: sie lässt sich in der äußeren nicht verschachteln; die äußere begrenzt Lesen, Schreiben und Starten
-    const args = ["exec", "--skip-git-repo-check", "--sandbox", "danger-full-access", "--color", "never", "-c", "mcp_servers={}", "--cd", werk, "--output-last-message", datei,
-      ...(modell && MODELL.test(modell) ? [`--model=${modell}`] : []), "-"];
-    try { await lauf({ befehl: sbx.befehl, vorne: sbx.vorne }, args, { cwd: werk, eingabe: prompt, env: sbx.env, signal, minuten: 45 }); }
-    finally { for (const f of sbx.nachher || []) await f(); }
-    const text = ((await sicherLesen(datei, tmp, 512 * 1024))?.toString("utf8") || "").trim();
-    return { text, aenderung: await vergleiche(quelle, werk, original) };
   } finally { await rm(tmp, { recursive: true, force: true }).catch(() => {}); }
 }
 

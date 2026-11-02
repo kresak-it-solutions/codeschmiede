@@ -271,7 +271,7 @@ Links folgen **nur angeklickte Seitenwechsel**: Die erste Meldung nach jedem Lad
 - **Abo-Limits:** Claude Code meldet den Stand (5-Stunden-Fenster, Woche, Rücksetzzeit) im Lauf bzw. über die optionale Statuszeile
   (`werkzeuge/abo-statuszeile.mjs`, schreibt `~/.codeschmiede/abo.json`). Werkstatt speichert ihn in `ws_abo_limits` (live für alle im Projekt).
   Ab `abo_klein_ab_prozent` (Standard 75) eine Modellstufe kleiner, ab `abo_pause_ab_prozent` (95) keine neuen Aufträge bis zur Rücksetzung.
-  Seit 0.13.1 (Abo „Ultra“): Meldet Claude Code kein 5-Stunden-Fenster, steht dort „kein Limit“; modell-eigene Wochenfenster (z. B. Fable) werden angezeigt und für genau dieses Modell berücksichtigt – nur was gemeldet wird. KI-Anbieter je Aufgabe sind seit 0.13.1 verpflichtend (kein Ausweichen, „wartet auf …“), Programmieren nur Claude Code.
+  Seit 0.13.1 (Abo „Ultra“): Meldet Claude Code kein 5-Stunden-Fenster, steht dort „kein Limit“; modell-eigene Wochenfenster (z. B. Fable) werden angezeigt und für genau dieses Modell berücksichtigt – nur was gemeldet wird. KI-Anbieter je Aufgabe sind seit 0.13.1 verpflichtend (kein Ausweichen, „wartet auf …“). Programmieren seit 0.14.0 mit dem Werkzeug des Projekts (Claude Code, Codex, Gemini CLI oder OpenCode, verpflichtend, `docs/KONZEPT-WERKZEUGE.md`); fremde Werkzeuge zeigen Verbrauch nur, soweit sie ihn melden.
   Rechnerischer Wert jedes Laufs → `ws_verbrauch` (nur Information, keine Extrakosten).
 - Live-Log (Lesen, Ändern mit Ausschnitt, Befehle, Tests) ohne Geheimnisse; Erlaubnis-Anfragen für Befehle außerhalb der freigegebenen Liste;
   Rückfrage beendet den Lauf mit `RÜCKFRAGE:` und setzt beim Antworten fort; Ergebnis: Pull Request → Stand „Freigabe“.

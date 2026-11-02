@@ -1,0 +1,89 @@
+name: Lock-Dateien der Programmier-Werkzeuge
+
+# Erzeugt mit `node tools/werkzeug-lock.mjs` die Lock-Dateien für Codex, Gemini CLI und OpenCode (feste Versionen aus
+# desktop/dienst/lib/werkzeuge.mjs, nur registry.npmjs.org, sha512 je Paket, ohne Skripte – npm lädt nur die Paket-Angaben).
+# Start: von Hand (Actions › „Lock-Dateien der Programmier-Werkzeuge“ › Run workflow – erst sichtbar, wenn der Ablauf auf main liegt) oder per push
+# auf feature/werkzeug-wahl, wenn tools/werkzeug-lock.mjs oder tools/werkzeug-lock.anfordern geändert wurde (Zeitstempel ändern = neu anfordern).
+# Nie auf main/live. Der eigene Commit (nur desktop/dienst/werkzeuge/*/package-lock.json) löst ihn nicht erneut aus: Pfad-Filter + Prüfung des Auslösers.
+# Ergebnis: Artefakt „werkzeug-lock“ (7 Tage) und – wenn gewählt – ein Commit auf den gewählten Zweig. Die Dateien gehören ins Review.
+on:
+  push:
+    branches: ['feature/werkzeug-wahl']
+    paths:
+      - 'tools/werkzeug-lock.mjs'
+      - 'tools/werkzeug-lock.anfordern'
+      - '!desktop/dienst/werkzeuge/**'
+  workflow_dispatch:
+    inputs:
+      committen:
+        description: "Lock-Dateien zusätzlich auf diesen Zweig committen (sonst nur Artefakt)"
+        type: boolean
+        default: true
+
+permissions:
+  contents: write            # nur für den Commit der Lock-Dateien auf den Arbeitszweig
+
+jobs:
+  lock:
+    # Nie durch den eigenen Commit (Bot) erneut auslösen
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04   # fest wie „Prüfung“
+    timeout-minutes: 15
+    steps:
+      - name: Nur Zweige feature/* (nie main, live, Tags)
+        env: { REF_TYP: "${{ github.ref_type }}", ZWEIG: "${{ github.ref_name }}" }
+        run: |
+          if [ "$REF_TYP" != "branch" ]; then echo "Nur auf einem Zweig starten (nicht ${REF_TYP})."; exit 1; fi
+          case "$ZWEIG" in
+            main|live) echo "Nie auf ${ZWEIG}."; exit 1 ;;
+            feature/*) ;;
+            *) echo "Nur Zweige feature/* – nicht ${ZWEIG}."; exit 1 ;;
+          esac
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683   # v4.2.2
+        with:
+          persist-credentials: false   # kein Token in .git/config; nur der Commit-Schritt bekommt ihn
+      # Node fest wie die Werkstatt: Die Codeschmiede liefert kein Node mit (Einrichtung: Node.js LTS), der Dienst verlangt ≥ 20.12.2,
+      # alle Abläufe bauen mit Node 22 – hier genau 22.22.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020   # v4.4.0
+        with: { node-version: "22.22.0" }
+      - name: Diagnose – gibt es die festen Versionen bei registry.npmjs.org?
+        run: |
+          leer_b=$(mktemp); leer_g=$(mktemp)
+          fehlt=0
+          for paar in $(node --input-type=module -e "import('./desktop/dienst/lib/werkzeuge.mjs').then(({ WERKZEUGE, FREMDE }) => console.log(FREMDE.map((w) => WERKZEUGE[w].paket + '@' + WERKZEUGE[w].version).join(' ')))"); do
+            echo "== ${paar}"
+            # Fehlt nur die Version, gibt npm oft nichts aus und endet mit 0 – darum auch auf leere Ausgabe prüfen
+            aus=$(npm view "${paar}" version dist.integrity --registry=https://registry.npmjs.org/ --userconfig="$leer_b" --globalconfig="$leer_g" 2>&1) || aus=""
+            echo "${aus}"
+            if ! printf '%s' "${aus}" | grep -q 'sha512-'; then
+              echo "::error::${paar} gibt es bei registry.npmjs.org nicht (oder ohne sha512) – Paket bzw. Version in desktop/dienst/lib/werkzeuge.mjs prüfen"
+              fehlt=1
+            fi
+          done
+          exit $fehlt
+      - name: Lock-Dateien erzeugen
+        run: |
+          node --version
+          node tools/werkzeug-lock.mjs
+          git status --short desktop/dienst/werkzeuge
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02   # v4.6.2
+        with:
+          name: werkzeug-lock
+          path: desktop/dienst/werkzeuge/*/package-lock.json
+          retention-days: 7
+          if-no-files-found: error
+      - name: Auf den Zweig committen
+        if: github.event_name == 'push' || inputs.committen
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}   # nur hier; GitHub blendet ihn im Log aus
+          ZWEIG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add desktop/dienst/werkzeuge/*/package-lock.json
+          if git diff --cached --quiet; then echo "Keine Änderung – Lock-Dateien sind schon aktuell."; exit 0; fi
+          git commit -m "Lock-Dateien der Programmier-Werkzeuge erzeugt (Ablauf „Lock-Dateien der Programmier-Werkzeuge“)"
+          git remote set-url origin "https://x-access-token:${TOKEN}@github.com/${REPO}.git"
+          git push origin "HEAD:refs/heads/${ZWEIG}"
+          git remote set-url origin "https://github.com/${REPO}.git"
