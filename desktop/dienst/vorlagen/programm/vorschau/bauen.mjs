@@ -41,9 +41,10 @@ for (const s of SKRIPTE) await copyFile(path.join(HIER, s), path.join(ZIEL, "cs-
 // Stand für „Neuer Stand da“ in der Codeschmiede (Cloudflare setzt CF_PAGES_COMMIT_SHA)
 const commit = /^[0-9a-f]{7,40}$/.test(process.env.CF_PAGES_COMMIT_SHA || "") ? process.env.CF_PAGES_COMMIT_SHA : "";
 await writeFile(path.join(ZIEL, "version.json"), JSON.stringify({ commit, art: "programm-testseite" }));
-// Nur eigene Skripte, keine fremden Verbindungen; nicht in Suchmaschinen
+// Nur eigene Skripte, keine fremden Verbindungen; nicht in Suchmaschinen. Einbetten darf nur die Codeschmiede (Prüfung N5): Auch das Programm
+// (Tauri) zeigt https://codeschmiede.pages.dev (desktop/ui/start.js leitet dorthin weiter) – darum keine tauri://- oder tauri.localhost-Herkunft.
 await writeFile(path.join(ZIEL, "_headers"), `/*
-  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors https://codeschmiede.pages.dev
   X-Content-Type-Options: nosniff
   Referrer-Policy: strict-origin-when-cross-origin
   X-Robots-Tag: noindex

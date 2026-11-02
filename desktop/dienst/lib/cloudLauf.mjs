@@ -5,12 +5,10 @@
 //   * Dokument-Vorschau: Ablauf „Dokument“ (dokument.yml) baut das PDF aus dem Zweig und legt die Seiten als PNG ab; die Werkstatt prüft jede
 //     Seite (PNG-Kopf, Größe) und legt sie im privaten Speicher ws-vorschau ab. Kein PDF wird auf diesem PC geöffnet oder gerendert.
 // Auf dem PC wird kein Projekt-Code ausgeführt: nur gh (Argument-Listen ohne Shell) und das Lesen heruntergeladener Dateien.
-import { constants } from "node:fs";
-import { lstat, mkdir, open, readdir, realpath, rm } from "node:fs/promises";
-import path from "node:path";
 import { ohneGeheimnisse } from "./geheim.mjs";
 import { geheimDatei } from "./codeLive.mjs";
 import { pngPruefen } from "./bildschirmfoto.mjs";
+import { zipEintraege } from "./einlesen.mjs";
 
 // gleiche Regeln wie anbindungen.mjs (hier eigen, damit es keinen Kreis-Import gibt)
 const repoGut = (r) => /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\/[A-Za-z0-9._-]{1,100}$/.test(r || "") && !/\/\.\.?$/.test(r);
@@ -50,16 +48,49 @@ export function eingabenFehler(e, { befehle = null, dateien = null } = {}) {
   if (dateien && !dateien.includes(e.eingabe)) return `Beispiel-Eingabe „${e.eingabe}“ liegt nicht in beispiele/`;
   return null;
 }
-/** gh-Aufruf für den Testlauf: Ablauf lauf.yml auf dem Zweig, Werte nur als -f name=wert (Argument-Liste, keine Shell). */
-export function laufArgs({ repo, zweig, eingaben = null }) {
+export const KENNUNG = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+/** Name des Laufs bei GitHub (run-name in lauf.yml/dokument.yml) – darüber wird der Lauf zugeordnet, nicht über die Uhrzeit (Prüfung N7). */
+export const laufTitel = (kennung) => `Codeschmiede ${kennung}`;
+/**
+ * gh-Aufruf für einen Lauf per Knopf: Ablauf auf dem Zweig, Werte nur als -f name=wert (Argument-Liste, keine Shell).
+ * kennung (UUID) ordnet den Lauf zu; eingaben = { befehl, eingabe } nur für lauf.yml.
+ */
+export function laufArgs({ repo, zweig, eingaben = null, kennung = null, workflow = "lauf.yml" }) {
   if (!repoGut(repo)) throw new Error("Ungültiges Repository");
   if (!zweigGut(zweig)) throw new Error("Ungültiger Zweig");
-  const a = ["workflow", "run", "lauf.yml", "--repo", repo, "--ref", zweig];
+  if (!["lauf.yml", "dokument.yml"].includes(workflow)) throw new Error("Unbekannter Ablauf");
+  const a = ["workflow", "run", workflow, "--repo", repo, "--ref", zweig];
   if (eingaben) {
+    if (workflow !== "lauf.yml") throw new Error("Eingaben nur für den Testlauf");
     const f = eingabenFehler(eingaben); if (f) throw new Error(f);
     a.push("-f", `befehl=${eingaben.befehl}`, "-f", `eingabe=${eingaben.eingabe}`);
   }
+  if (kennung != null) { if (!KENNUNG.test(kennung)) throw new Error("Ungültige Kennung"); a.push("-f", `kennung=${kennung}`); }
   return a;
+}
+
+/**
+ * Prüfung M2: Ein Lauf per Knopf auf einem Zweig führt die Ablauf-Datei DES ZWEIGS aus. Gestartet wird nur, wenn sie genau so auf main
+ * (bzw. live) liegt – gleiche Blob-SHA. Sonst hätte ein ungeprüfter Auftrags-Zweig den Ablauf (und damit, was in GitHub läuft) verändert.
+ * → null (in Ordnung) oder Fehlertext.
+ */
+export async function ablaufUnveraendert({ sh, repo, zweig, workflow }) {
+  if (!repoGut(repo)) throw new Error("Ungültiges Repository");
+  if (!zweigGut(zweig)) throw new Error("Ungültiger Zweig");
+  if (!["lauf.yml", "dokument.yml"].includes(workflow)) throw new Error("Unbekannter Ablauf");
+  const blob = async (ref) => {
+    try {
+      const { stdout } = await sh("gh", ["api", `repos/${repo}/contents/.github/workflows/${workflow}?ref=${encodeURIComponent(ref)}`, "--jq", ".sha"]);
+      const s = String(stdout).trim(); return /^[0-9a-f]{40}$/.test(s) ? s : null;
+    } catch (e) { if (/HTTP 404|Not Found/i.test(`${e?.stderr || ""}${e?.message || ""}`)) return null; throw e; }
+  };
+  const main = await blob("main");
+  if (!main) return `Der Ablauf ${workflow} fehlt auf main – erst einrichten (Auftrag mit Prüfung und Zusammenführen)`;
+  if (zweig === "main") return null;
+  const hier = await blob(zweig);
+  if (hier === main) return null;
+  if (hier && zweig !== "live" && hier === (await blob("live"))) return null;
+  return `Ablauf auf dem Zweig verändert – erst nach Prüfung und Zusammenführen (${workflow} auf ${zweig} ist nicht derselbe wie auf main)`;
 }
 
 // Steuerzeichen (außer Zeilenumbruch und Tab) und ANSI-Farbcodes raus
@@ -73,58 +104,45 @@ export function ausgabeAufbereiten(text, { max = GRENZEN.ausgabe, kopf = GRENZEN
   return { ausgabe: `${t.slice(0, kopf)}\n… (gekürzt, ${t.length - kopf - ende} Zeichen ausgelassen) …\n${t.slice(-ende)}`, gekuerzt: true };
 }
 
-/** Echte Datei lesen (keine Verknüpfung, kein harter Link), höchstens max Bytes; größere: nur die ersten max Bytes, gekuerzt = true. */
-async function dateiLesen(datei, max) {
-  const l = await lstat(datei);
-  if (!l.isFile() || l.isSymbolicLink() || l.nlink !== 1) return null;
-  const fh = await open(datei, constants.O_RDONLY | (constants.O_NOFOLLOW || 0));
-  try {
-    const s = await fh.stat(); if (s.ino !== l.ino || s.dev !== l.dev) return null;
-    const n = Math.min(s.size, max); const b = Buffer.alloc(n); await fh.read(b, 0, n, 0);
-    return { buf: b, groesse: s.size, gekuerzt: s.size > max };
-  } finally { await fh.close(); }
-}
-/** Alle echten Dateien unter ordner (keine Verknüpfungen, nicht nach außen), höchstens max, Pfade mit „/“. */
-export async function dateienListe(ordner, { max = 200, tiefe = 4 } = {}) {
-  const wurzel = await realpath(ordner); const r = [];
-  const gehe = async (o, rel, t) => {
-    for (const e of (await readdir(o, { withFileTypes: true })).sort((x, y) => x.name.localeCompare(y.name))) {
-      if (r.length >= max) return;
-      const p = path.join(o, e.name); const l = await lstat(p);
-      if (l.isSymbolicLink()) continue;
-      const neu = rel ? `${rel}/${e.name}` : e.name;
-      if (l.isDirectory() && t > 0) await gehe(p, neu, t - 1);
-      else if (l.isFile()) r.push(neu);
-    }
-  };
-  await gehe(wurzel, "", tiefe);
-  return r;
+// ---------- Artefakt als ZIP (Prüfung M1): nie entpacken auf die Platte, nur geprüfte Einträge im Speicher ----------
+export const ZIP_GRENZEN = Object.freeze({ eintraege: 500, je: 64 * 1024 * 1024, gesamt: 256 * 1024 * 1024, verhaeltnis: 200 });
+/**
+ * Einträge eines Artefakt-ZIPs (gleicher Leser wie „Projekt einlesen“: zipEintraege lehnt Verknüpfungen, „..“, absolute Pfade, ZIP64,
+ * Verschlüsselung und doppelte Namen ab). Dazu Grenzen für Anzahl, Einzel- und Gesamtgröße (entpackt) und Packverhältnis.
+ * → [{ name, groesse, lesen(max) }] (ohne Ordner)
+ */
+export function artefaktEintraege(buf, grenzen = ZIP_GRENZEN) {
+  const alle = zipEintraege(buf, { eintraegeMax: grenzen.eintraege, verhaeltnis: grenzen.verhaeltnis }).filter((e) => !e.ordner);
+  let summe = 0;
+  for (const e of alle) {
+    if (e.groesse > grenzen.je) throw new Error(`Datei im Ergebnis zu groß („${e.name.slice(0, 80)}“)`);
+    summe += e.groesse;
+  }
+  if (summe > grenzen.gesamt) throw new Error("Ergebnis ist entpackt zu groß");
+  return alle;
 }
 
 /**
- * Ergebnis des Testlaufs aus dem heruntergeladenen Artefakt (Ordner): konsole.txt → Ausgabe, übrige Dateien → Liste (Text-Dateien mit Inhalt,
- * ohne Geheimnisse und gekürzt). Geheimnis-Dateien nur dem Namen nach, ohne Inhalt.
+ * Ergebnis des Testlaufs aus den Einträgen des Artefakts: konsole.txt → Ausgabe, übrige Dateien → Liste (Text-Dateien mit Inhalt,
+ * ohne Geheimnisse und gekürzt). Übernommen werden nur Namen nach festem Muster; Geheimnis-Dateien nur dem Namen nach.
  */
-export async function testlaufErgebnis(ordner, { grenzen = GRENZEN } = {}) {
-  const namen = await dateienListe(ordner);
+export function testlaufErgebnis(eintraege, { grenzen = GRENZEN } = {}) {
   let ausgabe = { ausgabe: "", gekuerzt: false };
-  if (namen.includes("konsole.txt")) {
-    const k = await dateiLesen(path.join(ordner, "konsole.txt"), 1024 * 1024);
-    if (k) ausgabe = ausgabeAufbereiten(k.buf.toString("utf8"), { max: grenzen.ausgabe });
-    if (k?.gekuerzt) ausgabe.gekuerzt = true;
-  }
+  const k = eintraege.find((e) => e.name === "konsole.txt");
+  if (k && k.groesse <= 1024 * 1024) ausgabe = ausgabeAufbereiten(k.lesen(1024 * 1024).toString("utf8"), { max: grenzen.ausgabe });
+  else if (k) ausgabe = { ausgabe: "(Ausgabe größer als 1 MB – bei GitHub ansehen)", gekuerzt: true };
   const dateien = []; let gesamt = 0;
-  for (const n of namen) {
-    if (n === "konsole.txt" || dateien.length >= grenzen.dateien) continue;
-    if (!NAME.test(n) || n.includes("..")) continue;
-    const l = await lstat(path.join(ordner, ...n.split("/")));
-    const eintrag = { name: n, groesse: l.size };
-    if (!geheimDatei(n) && TEXT_ENDUNG.test(n) && gesamt < grenzen.textGesamt) {
-      const d = await dateiLesen(path.join(ordner, ...n.split("/")), Math.min(grenzen.text * 4, 256 * 1024));
-      if (d) {
-        let t = ohneGeheimnisse(sauber(d.buf.toString("utf8")));
+  for (const e of [...eintraege].sort((a, b) => a.name.localeCompare(b.name))) {
+    if (e.name === "konsole.txt" || dateien.length >= grenzen.dateien) continue;
+    if (!NAME.test(e.name) || e.name.includes("..")) continue;
+    const eintrag = { name: e.name, groesse: e.groesse };
+    const lesbar = Math.min(grenzen.text * 4, 256 * 1024);
+    if (!geheimDatei(e.name) && TEXT_ENDUNG.test(e.name) && gesamt < grenzen.textGesamt) {
+      if (e.groesse > lesbar) eintrag.gekuerzt = true;
+      else {
+        let t = ohneGeheimnisse(sauber(e.lesen(lesbar).toString("utf8")));
         const platz = Math.min(grenzen.text, grenzen.textGesamt - gesamt);
-        if (t.length > platz || d.gekuerzt) { t = t.slice(0, platz); eintrag.gekuerzt = true; }
+        if (t.length > platz) { t = t.slice(0, platz); eintrag.gekuerzt = true; }
         eintrag.text = t; gesamt += t.length;
       }
     }
@@ -133,48 +151,56 @@ export async function testlaufErgebnis(ordner, { grenzen = GRENZEN } = {}) {
   return { ...ausgabe, dateien };
 }
 
-/** Seiten des Dokuments aus dem Artefakt: nur seite-NNN.png (1–999), echte PNG bis 3 MB, höchstens 60. → { seiten: [{ nr, buf, breite, hoehe }], gesamt, gekuerzt } */
-export async function dokumentSeiten(ordner, { grenzen = GRENZEN } = {}) {
-  const namen = (await dateienListe(ordner, { max: 2000, tiefe: 1 })).filter((n) => /^(seiten\/)?seite-[0-9]{1,3}\.png$/.test(n));
-  const mitNr = namen.map((n) => ({ n, nr: Number(n.match(/seite-([0-9]{1,3})\.png$/)[1]) })).filter((x) => x.nr >= 1 && x.nr <= 999)
+/** Seiten des Dokuments: nur seite-NNN.png (1–999), echte PNG bis 3 MB, höchstens 60. → { seiten: [{ nr, buf, breite, hoehe }], gesamt, gekuerzt } */
+export function dokumentSeiten(eintraege, { grenzen = GRENZEN } = {}) {
+  const mitNr = eintraege.filter((e) => /^(seiten\/)?seite-[0-9]{1,3}\.png$/.test(e.name))
+    .map((e) => ({ e, nr: Number(e.name.match(/seite-([0-9]{1,3})\.png$/)[1]) })).filter((x) => x.nr >= 1 && x.nr <= 999)
     .sort((a, b) => a.nr - b.nr).filter((x, i, arr) => i === 0 || arr[i - 1].nr !== x.nr);
   const seiten = [];
   for (const x of mitNr.slice(0, grenzen.seiten)) {
-    const d = await dateiLesen(path.join(ordner, ...x.n.split("/")), grenzen.seiteBytes + 1);
-    if (!d || d.gekuerzt) continue;
-    const m = pngPruefen(d.buf); if (!m || m.breite > 4000 || m.hoehe > 6000) continue;
-    seiten.push({ nr: x.nr, buf: d.buf, ...m });
+    if (x.e.groesse > grenzen.seiteBytes) continue;
+    const buf = x.e.lesen(grenzen.seiteBytes);
+    const m = pngPruefen(buf); if (!m || m.breite > 4000 || m.hoehe > 6000) continue;
+    seiten.push({ nr: x.nr, buf, ...m });
   }
   return { seiten, gesamt: mitNr.length, gekuerzt: mitNr.length > grenzen.seiten };
 }
 
-/** Neuesten Lauf eines Ablaufs auf dem Zweig finden, der nach `seit` (Zeit des Anstoßes) per Knopf gestartet wurde. */
-export async function laufFinden({ sh, repo, workflow, zweig, seit }) {
-  const { stdout } = await sh("gh", ["run", "list", "--repo", repo, "--workflow", workflow, "--branch", zweig, "--event", "workflow_dispatch", "--limit", "10",
-    "--json", "databaseId,status,conclusion,createdAt,url"]);
-  const l = JSON.parse(stdout || "[]").filter((x) => /^\d{1,20}$/.test(String(x.databaseId)) && new Date(x.createdAt).getTime() >= seit - 60000);
-  return l.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0] || null;
+/** Lauf eines Ablaufs auf dem Zweig über seine Kennung finden (run-name „Codeschmiede <kennung>“, Prüfung N7). */
+export async function laufFinden({ sh, repo, workflow, zweig, kennung }) {
+  if (!repoGut(repo)) throw new Error("Ungültiges Repository");
+  if (!zweigGut(zweig)) throw new Error("Ungültiger Zweig");
+  if (!KENNUNG.test(String(kennung || ""))) throw new Error("Ungültige Kennung");
+  const { stdout } = await sh("gh", ["run", "list", "--repo", repo, "--workflow", workflow, "--branch", zweig, "--event", "workflow_dispatch", "--limit", "20",
+    "--json", "databaseId,status,conclusion,createdAt,url,displayTitle"]);
+  return JSON.parse(stdout || "[]").find((x) => /^\d{1,20}$/.test(String(x.databaseId)) && x.displayTitle === laufTitel(kennung)) || null;
 }
 /** Auf den Lauf warten (alle 15 s, höchstens grenzen.warten); lebt() hält die Aktion in der Datenbank. → Lauf oder null (Zeit um). */
-export async function aufLaufWarten({ sh, repo, workflow, zweig, seit, lebt = async () => {}, pause = (ms) => new Promise((r) => setTimeout(r, ms)), jetzt = Date.now, max = GRENZEN.warten, takt = 15000 }) {
+export async function aufLaufWarten({ sh, repo, workflow, zweig, kennung, lebt = async () => {}, pause = (ms) => new Promise((r) => setTimeout(r, ms)), jetzt = Date.now, max = GRENZEN.warten, takt = 15000 }) {
   const ende = jetzt() + max; let lauf = null;
   while (jetzt() < ende) {
-    lauf = await laufFinden({ sh, repo, workflow, zweig, seit }).catch(() => lauf);
+    lauf = await laufFinden({ sh, repo, workflow, zweig, kennung }).catch(() => lauf);
     if (lauf?.status === "completed") return lauf;
     await lebt(lauf ? "Lauf in GitHub läuft" : "Wartet auf den Start in GitHub");
     await pause(takt);
   }
   return null;
 }
-/** Artefakt eines Laufs herunterladen (Größe vorher geprüft). → Ordner oder null (kein Artefakt). */
-export async function artefaktHolen({ sh, repo, lauf, name, ordner, max = GRENZEN.artefakt }) {
+/**
+ * Artefakt eines Laufs als ZIP holen (gh api …/artifacts/<id>/zip, Größe vorher und nachher geprüft) und mit dem ZIP-Leser lesen – nichts wird
+ * auf die Platte entpackt. → Einträge oder null (kein Artefakt dieses Namens).
+ */
+export async function artefaktHolen({ sh, repo, lauf, name, max = GRENZEN.artefakt, grenzen = ZIP_GRENZEN }) {
+  if (!repoGut(repo)) throw new Error("Ungültiges Repository");
   const id = String(lauf?.databaseId ?? ""); if (!/^\d{1,20}$/.test(id)) throw new Error("Ungültiger Lauf");
   if (!/^[a-z0-9-]{1,40}$/.test(name)) throw new Error("Ungültiger Artefakt-Name");
-  const { stdout } = await sh("gh", ["api", `repos/${repo}/actions/runs/${id}/artifacts`, "--jq", `.artifacts[] | select(.name == "${name}") | .size_in_bytes`]);
-  const groesse = Number(String(stdout).trim().split(/\s+/)[0]);
-  if (!Number.isFinite(groesse) || groesse <= 0) return null;
+  const { stdout } = await sh("gh", ["api", `repos/${repo}/actions/runs/${id}/artifacts`, "--jq", `.artifacts[] | select(.name == "${name}" and .expired == false) | [.id, .size_in_bytes] | @tsv`]);
+  const [aid, groesseText] = String(stdout).trim().split("\n")[0].split("\t");
+  const groesse = Number(groesseText);
+  if (!/^\d{1,20}$/.test(aid || "") || !Number.isFinite(groesse) || groesse <= 0) return null;
   if (groesse > max) throw new Error(`Ergebnis ist größer als ${Math.round(max / 1024 / 1024)} MB`);
-  await rm(ordner, { recursive: true, force: true }); await mkdir(ordner, { recursive: true });
-  await sh("gh", ["run", "download", id, "--repo", repo, "--name", name, "--dir", ordner], { maxBuffer: 20 * 1024 * 1024, timeout: 300000 });
-  return ordner;
+  const r = await sh("gh", ["api", `repos/${repo}/actions/artifacts/${aid}/zip`], { encoding: "buffer", maxBuffer: max + 1024 * 1024, timeout: 300000 });
+  const buf = Buffer.isBuffer(r.stdout) ? r.stdout : Buffer.from(r.stdout || "");
+  if (buf.length > max) throw new Error(`Ergebnis ist größer als ${Math.round(max / 1024 / 1024)} MB`);
+  return artefaktEintraege(buf, grenzen);
 }

@@ -179,10 +179,10 @@ export async function sandboxStarten({ sh, repo, zweig = "main", basis, projektI
   return { datei: exes[0], link: lauf.url };
 }
 
-/** Testlauf eines Werkzeugs anstoßen (Ablauf „Lauf“ in GitHub). eingaben = { befehl, eingabe } (geprüft, nur als -f name=wert) oder null. */
-export async function testlaufStarten({ sh, repo, zweig = "main", eingaben = null }) {
+/** Testlauf eines Werkzeugs anstoßen (Ablauf „Lauf“ in GitHub). eingaben = { befehl, eingabe } (geprüft, nur als -f name=wert), kennung = UUID des Laufs (0.17.0). */
+export async function testlaufStarten({ sh, repo, zweig = "main", eingaben = null, kennung = null }) {
   if (!repoGut(repo)) throw new Error("Ungültiges Repository");
   if (!zweigGut(zweig)) throw new Error("Ungültiger Zweig");
-  await sh("gh", laufArgs({ repo, zweig, eingaben }));
+  await sh("gh", laufArgs({ repo, zweig, eingaben, kennung }));
   return { link: `https://github.com/${repo}/actions/workflows/lauf.yml` };
 }

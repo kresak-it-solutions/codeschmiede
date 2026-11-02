@@ -1,6 +1,7 @@
 # Bildschirmfoto NUR vom Fenster der Windows-Sandbox (Codeschmiede 0.17.0, Arbeitsplatz Stufe 2, Gerhard 02.11.2026).
 # Fest im Programm – der Werkstatt-Dienst ruft es ohne Shell mit genau einem Wert auf (-Ziel, vom Dienst erzeugter Pfad).
 # Kein Foto vom ganzen Bildschirm: PrintWindow zeichnet nur dieses eine Fenster (auch wenn andere Fenster darüber liegen, sind sie nicht drauf).
+# Gehört das Fenster nicht zum signierten Programm der Windows-Sandbox (Pfad + Microsoft-Signatur), zählt es nicht.
 # Rückgabe: 0 = gespeichert · 2 = kein Sandbox-Fenster · 3 = Fenster minimiert · 4 = Bild leer · 5 = ungültiger Zielpfad · 6 = mehrere Fenster · 7 = zu groß
 param([Parameter(Mandatory = $true)][string]$Ziel)
 $ErrorActionPreference = 'Stop'
@@ -25,20 +26,15 @@ public static class CsSandboxFenster {
   [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr h, IntPtr hdc, uint f);
   [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
   [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
+  public static uint Pid(IntPtr h) { uint pid; GetWindowThreadProcessId(h, out pid); return pid; }
+  // Kandidaten: sichtbare Fenster mit genau diesem Titel (englisch oder deutsch) – Programm und Signatur prüft das Skript danach
   public static List<IntPtr> Finden() {
     var treffer = new List<IntPtr>();
     EnumWindows((h, l) => {
       if (!IsWindowVisible(h)) return true;
       var sb = new StringBuilder(256); GetWindowText(h, sb, 256);
       var t = sb.ToString();
-      // Nur der genaue Fenstertitel (englisch oder deutsch) – kein „enthält“
-      if (t != "Windows Sandbox" && t != "Windows-Sandbox") return true;
-      uint pid; GetWindowThreadProcessId(h, out pid);
-      try {
-        var name = System.Diagnostics.Process.GetProcessById((int)pid).ProcessName;
-        // Das Fenster gehört zum Programm der Windows-Sandbox (WindowsSandboxClient / WindowsSandboxRemoteSession …)
-        if (name.StartsWith("WindowsSandbox", StringComparison.OrdinalIgnoreCase)) treffer.Add(h);
-      } catch { }
+      if (t == "Windows Sandbox" || t == "Windows-Sandbox") treffer.Add(h);
       return true;
     }, IntPtr.Zero);
     return treffer;
@@ -46,8 +42,24 @@ public static class CsSandboxFenster {
 }
 "@
 
+# Prüfung N1: Das Fenster muss zum echten Programm der Windows-Sandbox gehören – Pfad (System32 bzw. WindowsApps) UND gültige Signatur von Microsoft.
+# Ordner aus Windows selbst (nicht aus Umgebungsvariablen).
+$system32 = [Environment]::GetFolderPath([Environment+SpecialFolder]::System)
+$programme = [Environment]::GetFolderPath([Environment+SpecialFolder]::ProgramFiles)
+function Test-SandboxProgramm([uint32]$prozessId) {
+  try {
+    $pfad = [System.IO.Path]::GetFullPath((Get-Process -Id $prozessId -ErrorAction Stop).MainModule.FileName)
+  } catch { return $false }
+  $ordner = [System.IO.Path]::GetDirectoryName($pfad); $name = [System.IO.Path]::GetFileName($pfad)
+  $ort = ($ordner -ieq $system32 -and $name -like 'WindowsSandbox*.exe') -or
+         ($pfad.StartsWith((Join-Path $programme 'WindowsApps\MicrosoftWindows.WindowsSandbox_'), [StringComparison]::OrdinalIgnoreCase) -and $name -like '*.exe')
+  if (-not $ort) { return $false }
+  $sig = Get-AuthenticodeSignature -LiteralPath $pfad
+  return ($sig.Status -eq 'Valid' -and $null -ne $sig.SignerCertificate -and $sig.SignerCertificate.Subject -match 'O=Microsoft Corporation')
+}
+
 [void][CsSandboxFenster]::SetProcessDPIAware()
-$fenster = [CsSandboxFenster]::Finden()
+$fenster = @([CsSandboxFenster]::Finden() | Where-Object { Test-SandboxProgramm ([CsSandboxFenster]::Pid($_)) })
 if ($fenster.Count -eq 0) { exit 2 }
 if ($fenster.Count -gt 1) { exit 6 }
 $h = $fenster[0]

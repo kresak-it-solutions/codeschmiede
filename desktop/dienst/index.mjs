@@ -58,7 +58,8 @@ import { repoEinlesen } from "./lib/repo.mjs";
 import { pfadOk } from "./lib/projektordner.mjs";
 import { diffSammeln, fingerabdruck, GitVerdaechtig, codeLiveUmgebung } from "./lib/codeLive.mjs";
 import { bildschirmfotoNehmen } from "./lib/bildschirmfoto.mjs";
-import { aufLaufWarten, artefaktHolen, testlaufErgebnis, dokumentSeiten, eingabenFehler } from "./lib/cloudLauf.mjs";
+import { aufLaufWarten, artefaktHolen, testlaufErgebnis, dokumentSeiten, eingabenFehler, ablaufUnveraendert, laufArgs } from "./lib/cloudLauf.mjs";
+import { repoGut, zweigGut } from "./lib/anbindungen.mjs";
 import { vorschauEinrichten } from "./lib/vorschauEinrichten.mjs";
 
 const HIER = path.dirname(fileURLToPath(import.meta.url));
@@ -2782,8 +2783,8 @@ function hintergrund(id, f) {
 }
 // PowerShell (festes Skript) ohne Shell starten, Rückgabe-Code abwarten (höchstens 60 s)
 const fotoStarten = (befehl, args) => new Promise((ok) => {
-  // Nur die Werte, die PowerShell zum Übersetzen des festen Skripts braucht – keine Zugänge aus der Umgebung des Dienstes
-  const env = Object.fromEntries(["SystemRoot", "windir", "TEMP", "TMP", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "PATH"].filter((k) => typeof process.env[k] === "string").map((k) => [k, process.env[k]]));
+  // Nur die Werte, die PowerShell zum Übersetzen des festen Skripts braucht – keine Zugänge aus der Umgebung des Dienstes, kein PATH (Prüfung N1)
+  const env = Object.fromEntries(["SystemRoot", "windir", "TEMP", "TMP", "USERPROFILE", "APPDATA", "LOCALAPPDATA"].filter((k) => typeof process.env[k] === "string").map((k) => [k, process.env[k]]));
   const k = spawn(befehl, args, { shell: false, windowsHide: true, stdio: "ignore", env });
   const t = setTimeout(() => { try { k.kill(); } catch { /* schon weg */ } }, 60000);
   k.once("error", () => { clearTimeout(t); ok({ code: -1 }); });
@@ -2807,39 +2808,43 @@ async function aktionNehmen() {
   return r;
 }
 async function testlaufKonsole(a, ende) {
-  const zweig = a.zweig || "main"; const seit = Date.now();
+  const zweig = a.zweig || "main"; const kennung = randomUUID();
+  if (!repoGut(a.repo) || !zweigGut(zweig)) throw new Error("Ungültiges Repository oder ungültiger Zweig");
   const lebt = (hinweis) => db.rpc("ws_projekt_aktion_lebt", { p_pc: pcId, p_id: a.id, p_hinweis: hinweis }).then(() => {}, () => {});
   const f = eingabenFehler(a.eingaben); if (f) throw new Error(f);
-  await testlaufStarten({ sh: ghGrenze, repo: a.repo, zweig, eingaben: a.eingaben });
+  // Prüfung M2: nur mit dem geprüften Ablauf (gleiche Datei wie auf main/live), sonst nicht starten
+  const veraendert = await ablaufUnveraendert({ sh: ghGrenze, repo: a.repo, zweig, workflow: "lauf.yml" });
+  if (veraendert) throw new Error(veraendert);
+  await testlaufStarten({ sh: ghGrenze, repo: a.repo, zweig, eingaben: a.eingaben, kennung });
   await lebt(`Testlauf „${a.eingaben.befehl} ${a.eingaben.eingabe}“ in GitHub gestartet`);
   hintergrund(a.id, async () => {
-    const tmp = await mkdtemp(path.join(os.tmpdir(), "cs-lauf-"));
     try {
-      const lauf = await aufLaufWarten({ sh: ghGrenze, repo: a.repo, workflow: "lauf.yml", zweig, seit, lebt });
+      const lauf = await aufLaufWarten({ sh: ghGrenze, repo: a.repo, workflow: "lauf.yml", zweig, kennung, lebt });
       if (!lauf) { await ende(null, "Der Lauf braucht länger als 14 Minuten – Ergebnis bei GitHub ansehen", `https://github.com/${a.repo}/actions/workflows/lauf.yml`, true); return; }
-      const ordner = await artefaktHolen({ sh: ghGrenze, repo: a.repo, lauf, name: "ergebnis", ordner: path.join(tmp, "ergebnis") });
-      const e = ordner ? await testlaufErgebnis(ordner) : { ausgabe: "", gekuerzt: false, dateien: [] };
+      const eintraege = await artefaktHolen({ sh: ghGrenze, repo: a.repo, lauf, name: "ergebnis" });
+      const e = eintraege ? testlaufErgebnis(eintraege) : { ausgabe: "", gekuerzt: false, dateien: [] };
       const ok = lauf.conclusion === "success";
       await ende({ ...e, erfolg: ok, lauf: String(lauf.databaseId), befehl: a.eingaben.befehl, eingabe: a.eingaben.eingabe },
         ok ? `Testlauf fertig: ${a.eingaben.befehl} ${a.eingaben.eingabe}` : `Testlauf ${lauf.conclusion === "failure" ? "mit Fehler beendet" : lauf.conclusion || "beendet"} – Ausgabe unten`, lauf.url, false);
     } catch (e) { await ende(null, `Hat nicht geklappt: ${kuerzen(ohneGeheimnisse(e?.stderr || e?.message || String(e)), 400)}`, null, true); }
-    finally { await rm(tmp, { recursive: true, force: true }).catch(() => {}); }
   });
 }
 async function dokumentBauen(a, ende) {
-  const zweig = a.zweig || "main"; const seit = Date.now();
+  const zweig = a.zweig || "main"; const kennung = randomUUID();
+  if (!repoGut(a.repo) || !zweigGut(zweig)) throw new Error("Ungültiges Repository oder ungültiger Zweig");
   const lebt = (hinweis) => db.rpc("ws_projekt_aktion_lebt", { p_pc: pcId, p_id: a.id, p_hinweis: hinweis }).then(() => {}, () => {});
-  await ghGrenze("gh", ["workflow", "run", "dokument.yml", "--repo", a.repo, "--ref", zweig]);
+  const veraendert = await ablaufUnveraendert({ sh: ghGrenze, repo: a.repo, zweig, workflow: "dokument.yml" });
+  if (veraendert) throw new Error(veraendert);
+  await ghGrenze("gh", laufArgs({ repo: a.repo, zweig, kennung, workflow: "dokument.yml" }));
   await lebt("Dokument wird in GitHub gebaut");
   hintergrund(a.id, async () => {
-    const tmp = await mkdtemp(path.join(os.tmpdir(), "cs-dok-"));
     try {
-      const lauf = await aufLaufWarten({ sh: ghGrenze, repo: a.repo, workflow: "dokument.yml", zweig, seit, lebt });
+      const lauf = await aufLaufWarten({ sh: ghGrenze, repo: a.repo, workflow: "dokument.yml", zweig, kennung, lebt });
       if (!lauf) { await ende(null, "Der Bau braucht länger als 14 Minuten – bei GitHub ansehen", `https://github.com/${a.repo}/actions/workflows/dokument.yml`, true); return; }
       if (lauf.conclusion !== "success") { await ende(null, "Dokument bauen ist fehlgeschlagen – bei GitHub ansehen (fehlt das Skript „pdf“?)", lauf.url, true); return; }
-      const ordner = await artefaktHolen({ sh: ghGrenze, repo: a.repo, lauf, name: "dokument-seiten", ordner: path.join(tmp, "seiten") });
-      if (!ordner) { await ende(null, "Im Bau fehlen die Seitenbilder", lauf.url, true); return; }
-      const { seiten, gesamt, gekuerzt } = await dokumentSeiten(ordner);
+      const eintraege = await artefaktHolen({ sh: ghGrenze, repo: a.repo, lauf, name: "dokument-seiten" });
+      if (!eintraege) { await ende(null, "Im Bau fehlen die Seitenbilder", lauf.url, true); return; }
+      const { seiten, gesamt, gekuerzt } = dokumentSeiten(eintraege);
       if (!seiten.length) { await ende(null, "Keine gültigen Seitenbilder im Bau", lauf.url, true); return; }
       const liste = [];
       for (const x of seiten) {
@@ -2851,7 +2856,6 @@ async function dokumentBauen(a, ende) {
       await ende({ seiten: liste, gesamt, gekuerzt, lauf: String(lauf.databaseId) }, `Dokument gebaut: ${liste.length} Seite(n)${gekuerzt ? ` von ${gesamt} (gekürzt)` : ""}`, lauf.url, false);
       await vorschauAufraeumen(a.projekt_id).catch(() => {});
     } catch (e) { await ende(null, `Hat nicht geklappt: ${kuerzen(ohneGeheimnisse(e?.stderr || e?.message || String(e)), 400)}`, null, true); }
-    finally { await rm(tmp, { recursive: true, force: true }).catch(() => {}); }
   });
 }
 

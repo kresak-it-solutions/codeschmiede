@@ -10,7 +10,10 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import os from "node:os";
 import { fotoAufruf, pngPruefen, bildschirmfotoNehmen, powershellPfad, SKRIPT, FEHLER } from "../lib/bildschirmfoto.mjs";
-import { befehleLesen, beispielDateien, pruefwegBefehl, eingabenFehler, laufArgs, ausgabeAufbereiten, testlaufErgebnis, dokumentSeiten, aufLaufWarten, artefaktHolen, laufFinden } from "../lib/cloudLauf.mjs";
+import { befehleLesen, beispielDateien, pruefwegBefehl, eingabenFehler, laufArgs, ausgabeAufbereiten, testlaufErgebnis, dokumentSeiten, aufLaufWarten, artefaktHolen, laufFinden, artefaktEintraege, ablaufUnveraendert, laufTitel } from "../lib/cloudLauf.mjs";
+import { deflateRawSync } from "node:zlib";
+import { randomBytes } from "node:crypto";
+import { crc32 } from "../lib/sicherungen.mjs";
 import { vorschauEinrichten, gitignoreErgaenzen, vorlageDateien, SATZ } from "../lib/vorschauEinrichten.mjs";
 import { ampelBedarf, testlaufStarten } from "../lib/anbindungen.mjs";
 import { buildFuer, projektDaten } from "../lib/testseite.mjs";
@@ -24,6 +27,21 @@ const tmp = (n) => mkdtemp(path.join(os.tmpdir(), `cs23-${n}-`));
 // Kleinstes gültiges PNG (1×1, IHDR + IDAT + IEND)
 const PNG = Buffer.from("89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d4944415478da63f8ffff3f0005fe02fea7d6a4c40000000049454e44ae426082", "hex");
 const pngMit = (b, h) => { const x = Buffer.from(PNG); x.writeUInt32BE(b, 16); x.writeUInt32BE(h, 20); return x; };
+const UUID = "0f0e0d0c-0b0a-4908-8706-050403020100";
+// ZIP wie ein GitHub-Artefakt (gleicher Aufbau wie in einlesen.test.mjs); opt.attr für Verknüpfungen, opt.groesse für Lügen über die Größe
+function zip(eintraege) {
+  const teile = []; const cds = []; let off = 0;
+  for (const [name, inhalt, opt = {}] of eintraege) {
+    const roh = Buffer.from(inhalt); const daten = deflateRawSync(roh); const n = Buffer.from(name);
+    const lokal = Buffer.alloc(30); lokal.writeUInt32LE(0x04034b50, 0); lokal.writeUInt16LE(8, 8); lokal.writeUInt32LE(daten.length, 18); lokal.writeUInt32LE(opt.groesse ?? roh.length, 22); lokal.writeUInt16LE(n.length, 26);
+    const cd = Buffer.alloc(46); cd.writeUInt32LE(0x02014b50, 0); cd.writeUInt8(3, 5); cd.writeUInt16LE(8, 10); cd.writeUInt32LE(crc32(roh), 16);
+    cd.writeUInt32LE(daten.length, 20); cd.writeUInt32LE(opt.groesse ?? roh.length, 24); cd.writeUInt16LE(n.length, 28); cd.writeUInt32LE(opt.attr ?? ((0o100644 << 16) >>> 0), 38); cd.writeUInt32LE(off, 42);
+    const t = Buffer.concat([lokal, n, daten]); teile.push(t); cds.push(Buffer.concat([cd, n])); off += t.length;
+  }
+  const c = Buffer.concat(cds); const e = Buffer.alloc(22); e.writeUInt32LE(0x06054b50, 0);
+  e.writeUInt16LE(eintraege.length, 8); e.writeUInt16LE(eintraege.length, 10); e.writeUInt32LE(c.length, 12); e.writeUInt32LE(off, 16);
+  return Buffer.concat([...teile, c, e]);
+}
 
 // ---------------- Bildschirmfoto ----------------
 test("Bildschirmfoto: nur unter Windows, feste PowerShell, feste Argument-Liste, nur geprüfter Zielpfad", () => {
@@ -41,8 +59,18 @@ test("Bildschirmfoto-Skript: nur das Fenster „Windows Sandbox“, kein ganzer 
   const t = await readFile(SKRIPT, "utf8");
   assert.match(t, /param\(\[Parameter\(Mandatory = \$true\)\]\[string\]\$Ziel\)/);
   assert.equal((t.match(/param\(/g) || []).length, 1);
-  assert.match(t, /t != "Windows Sandbox" && t != "Windows-Sandbox"/);           // genauer Titel, kein „enthält“
-  assert.match(t, /StartsWith\("WindowsSandbox"/);                               // und das Programm der Sandbox
+  assert.match(t, /if \(t == "Windows Sandbox" \|\| t == "Windows-Sandbox"\) treffer\.Add\(h\)/);           // genauer Titel, kein „enthält“
+  // Prüfung N1: Programmpfad über MainModule (System32\WindowsSandbox*.exe bzw. WindowsApps\MicrosoftWindows.WindowsSandbox_*) und gültige Microsoft-Signatur
+  assert.match(t, /\.MainModule\.FileName/);
+  assert.match(t, /\$ordner -ieq \$system32 -and \$name -like 'WindowsSandbox\*\.exe'/);
+  assert.match(t, /WindowsApps\\MicrosoftWindows\.WindowsSandbox_/);
+  assert.match(t, /Get-AuthenticodeSignature -LiteralPath \$pfad/);
+  assert.match(t, /\$sig\.Status -eq 'Valid'/); assert.match(t, /O=Microsoft Corporation/);
+  assert.match(t, /GetFolderPath\(\[Environment\+SpecialFolder\]::System\)/);      // Ordner aus Windows, nicht aus der Umgebung
+  assert.match(t, /Where-Object \{ Test-SandboxProgramm/);
+  const dienst = await readFile(path.join(HIER, "..", "index.mjs"), "utf8");
+  const envZeile = dienst.split("\n").find((z) => z.includes('["SystemRoot", "windir"'));
+  assert.ok(envZeile && !envZeile.includes('"PATH"'), "PowerShell ohne PATH");
   assert.match(t, /PrintWindow\(\$h, \$hdc, 2\)/);
   assert.doesNotMatch(t, /CopyFromScreen|PrimaryScreen|AllScreens|Invoke-Expression|iex |Start-Process|Invoke-WebRequest|Net\.WebClient/i);
   assert.match(t, /if \(\$fenster\.Count -gt 1\) \{ exit 6 \}/);
@@ -115,8 +143,13 @@ test("gh-Aufruf für den Testlauf: nur -f name=wert als einzelne Argumente", asy
   assert.throws(() => laufArgs({ repo: "o/w", zweig: "main", eingaben: { befehl: "zaehlen", eingabe: "x y" } }), /Eingabe/);
   assert.throws(() => laufArgs({ repo: "o/w", zweig: "--upload-pack=x", eingaben: null }), /Zweig/);
   assert.throws(() => laufArgs({ repo: "o/../w", zweig: "main" }), /Repository/);
-  const aufrufe = []; await testlaufStarten({ sh: async (b, a) => { aufrufe.push([b, ...a]); return { stdout: "" }; }, repo: "o/w", zweig: "main", eingaben: { befehl: "zaehlen", eingabe: "klein.csv" } });
-  assert.deepEqual(aufrufe[0].slice(-4), ["-f", "befehl=zaehlen", "-f", "eingabe=klein.csv"]);
+  const aufrufe = []; await testlaufStarten({ sh: async (b, a) => { aufrufe.push([b, ...a]); return { stdout: "" }; }, repo: "o/w", zweig: "main", eingaben: { befehl: "zaehlen", eingabe: "klein.csv" }, kennung: UUID });
+  assert.deepEqual(aufrufe[0].slice(-6), ["-f", "befehl=zaehlen", "-f", "eingabe=klein.csv", "-f", `kennung=${UUID}`]);
+  // Kennung (Prüfung N7) nur als UUID; Dokument-Ablauf ohne Eingaben
+  assert.throws(() => laufArgs({ repo: "o/w", zweig: "main", kennung: "x; y" }), /Kennung/);
+  assert.deepEqual(laufArgs({ repo: "o/w", zweig: "main", kennung: UUID, workflow: "dokument.yml" }), ["workflow", "run", "dokument.yml", "--repo", "o/w", "--ref", "main", "-f", `kennung=${UUID}`]);
+  assert.throws(() => laufArgs({ repo: "o/w", zweig: "main", workflow: "anders.yml" }), /Ablauf/);
+  assert.throws(() => laufArgs({ repo: "o/w", zweig: "main", workflow: "dokument.yml", eingaben: { befehl: "a", eingabe: "b" } }), /nur für den Testlauf/);
 });
 
 test("Vorlage lauf.yml: Eingaben nur als Umgebungsvariablen, nochmals geprüft, keine ${{ }} in Skripten", async () => {
@@ -124,7 +157,9 @@ test("Vorlage lauf.yml: Eingaben nur als Umgebungsvariablen, nochmals geprüft, 
   const zeilen = y.split("\n");
   const mitInputs = zeilen.filter((z) => z.includes("${{ inputs.") && !z.trim().startsWith("#"));
   assert.ok(mitInputs.length >= 2);
-  for (const z of mitInputs) assert.match(z, /^\s+CS_(BEFEHL|EINGABE): \$\{\{ inputs\.(befehl|eingabe) \}\}$/, z);
+  // Eingaben nur als Umgebungsvariablen; einzige Ausnahme ist der Name des Laufs (run-name, kein Skript) mit der Kennung (Prüfung N7)
+  for (const z of mitInputs) assert.match(z, /^(\s+CS_(BEFEHL|EINGABE): \$\{\{ inputs\.(befehl|eingabe) \}\}|run-name: \$\{\{ inputs\.kennung && format\('Codeschmiede \{0\}', inputs\.kennung\) \|\| 'Lauf' \}\})$/, z);
+  assert.equal(laufTitel(UUID), `Codeschmiede ${UUID}`);
   assert.match(y, /\[\[ "\$CS_BEFEHL" =~ \^\[a-z\]\[a-z0-9-\]\{0,39\}\$ \]\]/);
   assert.match(y, /\[\[ "\$CS_EINGABE" =~ /);
   assert.match(y, /hasOwnProperty\.call\(b, process\.env\.CS_BEFEHL\)/);
@@ -133,7 +168,10 @@ test("Vorlage lauf.yml: Eingaben nur als Umgebungsvariablen, nochmals geprüft, 
   assert.match(y, /persist-credentials: false/);
   assert.match(y, /permissions:\n {2}contents: read/);
   const d = await readFile(path.join(VORLAGEN, "_dokument", "dokument.yml"), "utf8");
-  assert.doesNotMatch(d, /inputs\./); assert.match(d, /persist-credentials: false/); assert.match(d, /name: dokument-seiten/); assert.match(d, /-l 60/);
+  for (const z of d.split("\n").filter((x) => x.includes("${{ inputs."))) assert.match(z, /^run-name: /, z);
+  assert.match(d, /persist-credentials: false/); assert.match(d, /name: dokument-seiten/); assert.match(d, /-l 60/);
+  // Prüfung N2: alle Actions per SHA gepinnt
+  for (const t of [y, d]) for (const u of t.split("\n").filter((z) => /^\s*- uses: /.test(z))) assert.match(u, /^\s*- uses: [a-z-]+\/[a-z-]+@[0-9a-f]{40}   # v\d/, u);
 });
 
 test("Werkzeug-Vorlage: Beispiel-Befehl läuft mit Beispiel-Eingabe", async () => {
@@ -153,58 +191,91 @@ test("Ausgabe aufbereiten: ohne Geheimnisse, ohne Steuerzeichen, gekürzt mit An
   assert.ok(lang.gekuerzt && lang.ausgabe.length <= 1100); assert.match(lang.ausgabe, /^ANFANG/); assert.match(lang.ausgabe, /ENDE$/); assert.match(lang.ausgabe, /gekürzt/);
 });
 
-test("Testlauf-Ergebnis: konsole.txt als Ausgabe, Textdateien mit Inhalt, Geheimnisse nur dem Namen nach, Verknüpfungen nie", async () => {
-  const o = await tmp("erg");
-  await writeFile(path.join(o, "konsole.txt"), "Lese 240 Zeilen\nFertig\n");
-  await writeFile(path.join(o, "ergebnis.csv"), "a;b\n1;2\n");
-  await writeFile(path.join(o, ".env"), "SUPABASE_KEY=geheim");
-  await writeFile(path.join(o, "secrets.json"), '{"a":"geheim"}');
-  await writeFile(path.join(o, "bild.png"), PNG);
-  await mkdir(path.join(o, "unter")); await writeFile(path.join(o, "unter", "x.json"), `{"token":"sk-ant-api03-${"b".repeat(40)}"}`);
-  await symlink("/etc/passwd", path.join(o, "passwd.txt"));
-  const e = await testlaufErgebnis(o);
+test("Artefakt-ZIP (Prüfung M1): Verknüpfungen, „..“, absolute Pfade, zu viele, zu große und zu stark gepackte Einträge abgelehnt", () => {
+  assert.equal(artefaktEintraege(zip([["konsole.txt", "ok"], ["unter/x.csv", "a"]])).length, 2);
+  assert.throws(() => artefaktEintraege(zip([["../boese.txt", "x"]])), /„\.\.“/);
+  assert.throws(() => artefaktEintraege(zip([["/etc/passwd", "x"]])), /absoluter Pfad/);
+  assert.throws(() => artefaktEintraege(zip([["link", "/etc/passwd", { attr: ((0o120777 << 16) >>> 0) }]])), /Verknüpfung/);
+  assert.throws(() => artefaktEintraege(zip([["a\\b.txt", "x"]])), /Rückwärtsschrägstrich/);
+  assert.throws(() => artefaktEintraege(zip(Array.from({ length: 6 }, (_, i) => [`d${i}.txt`, "x"])), { eintraege: 5, je: 1e6, gesamt: 1e6, verhaeltnis: 200 }), /Zu viele/);
+  assert.throws(() => artefaktEintraege(zip([["gross.txt", "x".repeat(5000)]]), { eintraege: 10, je: 4000, gesamt: 1e6, verhaeltnis: 1e6 }), /zu groß/);
+  assert.throws(() => artefaktEintraege(zip([["a.txt", "x".repeat(3000)], ["b.txt", "y".repeat(3000)]]), { eintraege: 10, je: 4000, gesamt: 5000, verhaeltnis: 1e6 }), /entpackt zu groß/);
+  assert.throws(() => artefaktEintraege(zip([["bombe.txt", "0".repeat(2 * 1024 * 1024)]])), /ZIP-Bombe/);
+  // Lüge über die Größe: beim Lesen abgelehnt
+  const e = artefaktEintraege(zip([["luege.txt", "x".repeat(5000), { groesse: 10 }]]), { eintraege: 10, je: 1e6, gesamt: 1e6, verhaeltnis: 1e9 });
+  assert.throws(() => e[0].lesen(1e6), /größer als angegeben|beschädigt/);
+  assert.throws(() => artefaktEintraege(Buffer.from("kein zip")), /beschädigt/);
+});
+
+test("Testlauf-Ergebnis: konsole.txt als Ausgabe, Textdateien mit Inhalt, Geheimnisse nur dem Namen nach, unerlaubte Namen nie", () => {
+  const e = testlaufErgebnis(artefaktEintraege(zip([
+    ["konsole.txt", "Lese 240 Zeilen\nFertig\n"], ["ergebnis.csv", "a;b\n1;2\n"], [".env", "SUPABASE_KEY=geheim"], ["secrets.json", '{"a":"geheim"}'],
+    ["bild.png", PNG], ["unter/x.json", `{"token":"sk-ant-api03-${"b".repeat(40)}"}`], ["weg mit leer.txt", "x"], ["gross.txt", randomBytes(150 * 1024).toString("hex")],
+  ])));
   assert.equal(e.ausgabe, "Lese 240 Zeilen\nFertig\n"); assert.equal(e.gekuerzt, false);
   const n = Object.fromEntries(e.dateien.map((d) => [d.name, d]));
-  assert.deepEqual(Object.keys(n).sort(), ["bild.png", "ergebnis.csv", "secrets.json", "unter/x.json"]);   // Punkt-Dateien gar nicht
+  assert.deepEqual(Object.keys(n).sort(), ["bild.png", "ergebnis.csv", "gross.txt", "secrets.json", "unter/x.json"]);   // Punkt-Dateien und Leerzeichen gar nicht
   assert.equal(n["ergebnis.csv"].text, "a;b\n1;2\n"); assert.equal(n["secrets.json"].text, undefined); assert.equal(n["bild.png"].text, undefined);
+  assert.equal(n["gross.txt"].text, undefined); assert.equal(n["gross.txt"].gekuerzt, true);
   assert.doesNotMatch(n["unter/x.json"].text, /sk-ant-api03-b{40}/);
-  assert.ok(!e.dateien.some((d) => d.name.includes("passwd")));
 });
 
-test("Dokument-Seiten: nur seite-NNN.png, echte PNG, Größe und Anzahl begrenzt, keine Verknüpfungen", async () => {
-  const o = await tmp("dok");
-  await writeFile(path.join(o, "seite-01.png"), pngMit(707, 1000)); await writeFile(path.join(o, "seite-002.png"), pngMit(707, 1000));
-  await writeFile(path.join(o, "seite-3.png"), "kein png"); await writeFile(path.join(o, "anderes.png"), PNG);
-  await writeFile(path.join(o, "seite-4.png"), pngMit(5000, 1000));
-  await symlink(path.join(o, "seite-01.png"), path.join(o, "seite-5.png"));
-  const r = await dokumentSeiten(o);
+test("Dokument-Seiten: nur seite-NNN.png, echte PNG, Größe und Anzahl begrenzt", () => {
+  const r = dokumentSeiten(artefaktEintraege(zip([["seite-01.png", pngMit(707, 1000)], ["seite-002.png", pngMit(707, 1000)], ["seite-3.png", "kein png"],
+    ["anderes.png", PNG], ["seite-4.png", pngMit(5000, 1000)], ["unter/seite-5.png", PNG]])));
   assert.deepEqual(r.seiten.map((s) => [s.nr, s.breite, s.hoehe]), [[1, 707, 1000], [2, 707, 1000]]);
-  const viele = await tmp("dok2"); for (let i = 1; i <= 65; i++) await writeFile(path.join(viele, `seite-${String(i).padStart(3, "0")}.png`), PNG);
-  const v = await dokumentSeiten(viele); assert.equal(v.seiten.length, 60); assert.equal(v.gekuerzt, true); assert.equal(v.gesamt, 65);
+  const v = dokumentSeiten(artefaktEintraege(zip(Array.from({ length: 65 }, (_, i) => [`seite-${String(i + 1).padStart(3, "0")}.png`, PNG]))));
+  assert.equal(v.seiten.length, 60); assert.equal(v.gekuerzt, true); assert.equal(v.gesamt, 65);
 });
 
-test("Auf den Lauf warten und Artefakt holen: nur Läufe nach dem Anstoß, Größe vorher geprüft", async () => {
-  const seit = Date.parse("2026-11-02T12:00:00Z"); let runde = 0; const lebt = [];
-  const sh = async (_b, a) => {
+test("Auf den Lauf warten (über die Kennung, Prüfung N7) und Artefakt als ZIP holen (Größe vorher und nachher geprüft)", async () => {
+  let runde = 0; const lebt = []; const aufrufe = [];
+  const artefakt = zip([["konsole.txt", "ok"]]);
+  const sh = async (_b, a, o = {}) => {
+    aufrufe.push(a.join(" "));
     if (a[0] === "run" && a[1] === "list") {
       runde++;
-      return { stdout: JSON.stringify([{ databaseId: 1, status: "completed", conclusion: "success", createdAt: "2026-11-02T10:00:00Z" },
-        ...(runde >= 2 ? [{ databaseId: 2, status: runde >= 3 ? "completed" : "in_progress", conclusion: "success", createdAt: "2026-11-02T12:00:05Z", url: "https://github.com/o/w/actions/runs/2" }] : [])]) };
+      return { stdout: JSON.stringify([{ databaseId: 1, status: "completed", conclusion: "success", createdAt: "2026-11-02T12:00:09Z", displayTitle: "Lauf" },
+        { databaseId: 3, status: "completed", conclusion: "success", createdAt: "2026-11-02T12:00:09Z", displayTitle: "Codeschmiede 11111111-1111-4111-8111-111111111111" },
+        ...(runde >= 2 ? [{ databaseId: 2, status: runde >= 3 ? "completed" : "in_progress", conclusion: "success", createdAt: "2026-11-02T12:00:05Z", displayTitle: laufTitel(UUID), url: "https://github.com/o/w/actions/runs/2" }] : [])]) };
     }
-    if (a[0] === "api") return { stdout: a[1].includes("/runs/2/") ? "1000\n" : "" };
-    if (a[0] === "run" && a[1] === "download") { await writeFile(path.join(a[a.indexOf("--dir") + 1], "konsole.txt"), "ok"); return { stdout: "" }; }
-    return { stdout: "" };
+    if (a[0] === "api" && /\/runs\/2\/artifacts$/.test(a[1])) return { stdout: `77\t${artefakt.length}\n` };
+    if (a[0] === "api" && /\/runs\/\d+\/artifacts$/.test(a[1])) return { stdout: "" };
+    if (a[0] === "api" && a[1] === "repos/o/w/actions/artifacts/77/zip") { assert.equal(o.encoding, "buffer"); return { stdout: artefakt }; }
+    throw new Error(`unerwartet: ${a.join(" ")}`);
   };
-  const lauf = await aufLaufWarten({ sh, repo: "o/w", workflow: "lauf.yml", zweig: "main", seit, lebt: async (h) => lebt.push(h), pause: async () => {} });
-  assert.equal(lauf.databaseId, 2); assert.ok(lebt.length >= 2);
-  assert.equal(await aufLaufWarten({ sh: async () => ({ stdout: "[]" }), repo: "o/w", workflow: "lauf.yml", zweig: "main", seit, pause: async () => {}, max: 5, jetzt: (() => { let t = 0; return () => (t += 3); })() }), null);
-  const o = await tmp("art");
-  assert.equal(await artefaktHolen({ sh, repo: "o/w", lauf, name: "ergebnis", ordner: path.join(o, "e") }), path.join(o, "e"));
-  assert.equal(await artefaktHolen({ sh, repo: "o/w", lauf: { databaseId: 1 }, name: "ergebnis", ordner: path.join(o, "f") }), null);
-  await assert.rejects(artefaktHolen({ sh: async () => ({ stdout: String(70 * 1024 * 1024) }), repo: "o/w", lauf, name: "ergebnis", ordner: path.join(o, "g") }), /größer/);
-  await assert.rejects(artefaktHolen({ sh, repo: "o/w", lauf: { databaseId: "1; x" }, name: "ergebnis", ordner: o }), /Lauf/);
-  await assert.rejects(artefaktHolen({ sh, repo: "o/w", lauf, name: "x\" | .", ordner: o }), /Artefakt/);
-  assert.equal((await laufFinden({ sh: async () => ({ stdout: JSON.stringify([{ databaseId: "1 2", createdAt: "2026-11-02T12:00:05Z" }]) }), repo: "o/w", workflow: "lauf.yml", zweig: "main", seit })), null);
+  const lauf = await aufLaufWarten({ sh, repo: "o/w", workflow: "lauf.yml", zweig: "main", kennung: UUID, lebt: async (h) => lebt.push(h), pause: async () => {} });
+  assert.equal(lauf.databaseId, 2); assert.ok(lebt.length >= 2);   // fremde Läufe (1, 3) zählen nicht, auch wenn sie neuer sind
+  assert.ok(!aufrufe.some((x) => x.includes("run download")), "nie entpacken auf die Platte");
+  const e = await artefaktHolen({ sh, repo: "o/w", lauf, name: "ergebnis" });
+  assert.deepEqual(e.map((x) => x.name), ["konsole.txt"]); assert.equal(e[0].lesen(100).toString(), "ok");
+  assert.equal(await artefaktHolen({ sh, repo: "o/w", lauf: { databaseId: 1 }, name: "ergebnis" }), null);
+  await assert.rejects(artefaktHolen({ sh: async () => ({ stdout: `5\t${70 * 1024 * 1024}` }), repo: "o/w", lauf, name: "ergebnis" }), /größer/);
+  await assert.rejects(artefaktHolen({ sh: async (_b, a) => (a[1].endsWith("/zip") ? { stdout: Buffer.alloc(2000) } : { stdout: "5\t100" }), repo: "o/w", lauf, name: "ergebnis", max: 1000 }), /größer/);
+  await assert.rejects(artefaktHolen({ sh, repo: "o/w", lauf: { databaseId: "1; x" }, name: "ergebnis" }), /Lauf/);
+  await assert.rejects(artefaktHolen({ sh, repo: "o/w", lauf, name: "x\" | ." }), /Artefakt/);
+  // Prüfung N6: Repository und Zweig auch hier
+  await assert.rejects(artefaktHolen({ sh, repo: "o/../w", lauf, name: "ergebnis" }), /Repository/);
+  await assert.rejects(laufFinden({ sh, repo: "o/w", workflow: "lauf.yml", zweig: "--x", kennung: UUID }), /Zweig/);
+  await assert.rejects(laufFinden({ sh, repo: "o/w", workflow: "lauf.yml", zweig: "main", kennung: "1" }), /Kennung/);
+  assert.equal(await aufLaufWarten({ sh: async () => ({ stdout: "[]" }), repo: "o/w", workflow: "lauf.yml", zweig: "main", kennung: UUID, pause: async () => {}, max: 5, jetzt: (() => { let t = 0; return () => (t += 3); })() }), null);
+});
+
+test("Ablauf auf dem Zweig unverändert (Prüfung M2): gleiche Blob-SHA wie main (oder live), sonst kein Start", async () => {
+  const blobs = (k) => async (_b, a) => {
+    const m = /contents\/\.github\/workflows\/lauf\.yml\?ref=(.+)$/.exec(a[1]); const ref = decodeURIComponent(m[1]);
+    if (!(ref in k)) { throw new Error("HTTP 404: Not Found"); }
+    return { stdout: `${k[ref]}\n` };
+  };
+  const A = "a".repeat(40); const B = "b".repeat(40);
+  assert.equal(await ablaufUnveraendert({ sh: blobs({ main: A, "feature/cs-1": A }), repo: "o/w", zweig: "feature/cs-1", workflow: "lauf.yml" }), null);
+  assert.equal(await ablaufUnveraendert({ sh: blobs({ main: A }), repo: "o/w", zweig: "main", workflow: "lauf.yml" }), null);
+  assert.equal(await ablaufUnveraendert({ sh: blobs({ main: A, live: B, "feature/cs-2": B }), repo: "o/w", zweig: "feature/cs-2", workflow: "lauf.yml" }), null);
+  assert.match(await ablaufUnveraendert({ sh: blobs({ main: A, "feature/cs-3": B }), repo: "o/w", zweig: "feature/cs-3", workflow: "lauf.yml" }), /^Ablauf auf dem Zweig verändert – erst nach Prüfung und Zusammenführen/);
+  assert.match(await ablaufUnveraendert({ sh: blobs({ main: A }), repo: "o/w", zweig: "feature/cs-4", workflow: "lauf.yml" }), /verändert/);
+  assert.match(await ablaufUnveraendert({ sh: blobs({}), repo: "o/w", zweig: "feature/cs-5", workflow: "lauf.yml" }), /fehlt auf main/);
+  await assert.rejects(ablaufUnveraendert({ sh: blobs({}), repo: "o/w", zweig: "main", workflow: "x.yml" }), /Ablauf/);
+  await assert.rejects(ablaufUnveraendert({ sh: blobs({}), repo: "o/w", zweig: "../x", workflow: "lauf.yml" }), /Zweig/);
 });
 
 // ---------------- Tauri-Nachbildung und Testseite ----------------
@@ -266,7 +337,8 @@ test("Testseite bauen: ui/ → vorschau-dist/ mit Nachbildung vor allen eigenen 
   assert.ok(html.indexOf("/cs-vorschau/tauri-nachbildung.js") < html.indexOf("a.js"));
   assert.match(await readFile(path.join(o, "vorschau-dist", "index.html"), "utf8"), /<head><script src="\/cs-vorschau\/tauri-nachbildung\.js"><\/script><script src="\/cs-vorschau\/beispiele\.js"><\/script><script src="\/cs-vorschau\/vorschau-helfer\.js"><\/script>/);
   assert.deepEqual(JSON.parse(await readFile(path.join(o, "vorschau-dist", "version.json"), "utf8")).commit, "abcdef1");
-  assert.match(await readFile(path.join(o, "vorschau-dist", "_headers"), "utf8"), /script-src 'self';/);
+  const h = await readFile(path.join(o, "vorschau-dist", "_headers"), "utf8");
+  assert.match(h, /script-src 'self';/); assert.match(h, /frame-ancestors https:\/\/codeschmiede\.pages\.dev$/m);   // Prüfung N5
   await assert.rejects(stat(path.join(o, "vorschau-dist", "passwd")));
   assert.match(await readFile(path.join(o, ".gitignore"), "utf8"), /^vorschau-dist\/$/m);
 });
