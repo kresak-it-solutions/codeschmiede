@@ -2484,7 +2484,7 @@ async function repoArbeit() {
   return true;
 }
 
-// ---------- Bestehendes Projekt einlesen (0.15.0, Datenbank 0058, docs/KONZEPT-EINLESEN.md) – nur die Werkstatt des Admins ----------
+// ---------- Bestehendes Projekt einlesen (0.16.0, Datenbank 0058, docs/KONZEPT-EINLESEN.md) – nur die Werkstatt des Admins ----------
 // Die Quelle (Ordner oder ZIP) wählt der Admin im Programm; den Pfad kennt nur dieser PC (<Daten>/einlesen.json, schreibt nur das Programm).
 // Die Datenbank kennt nur eine zufällige Kennung – darum nimmt nur der PC den Vorgang, auf dem gewählt wurde. Projekt-Code wird nie ausgeführt:
 // nur lesen, prüfen, kopieren, git ohne Hooks, gh. Geheimnisse werden nie kopiert, nie geloggt und nie an die KI gegeben.
@@ -3166,7 +3166,7 @@ async function naechsterAuftrag() {
 async function start() {
   await mkdir(cfg.daten_ordner, { recursive: true });
   await alteAnhaengeAufraeumen();
-  // Einlesen (0.15.0): Wegwerf-Kopien früherer Läufe (mit Code und Git-Daten) beim Start leeren
+  // Einlesen (0.16.0): Wegwerf-Kopien früherer Läufe (mit Code und Git-Daten) beim Start leeren
   await rm(path.join(cfg.daten_ordner, "einlesen"), { recursive: true, force: true }).catch(() => {});
   verbinde();
   await tokenSchreiben();

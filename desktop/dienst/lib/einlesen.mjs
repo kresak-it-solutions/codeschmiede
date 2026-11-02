@@ -1,4 +1,4 @@
-// Bestehendes Projekt einlesen (0.15.0, Entwurf „Projekt einlesen“ freigegeben von Gerhard 02.11.2026, docs/KONZEPT-EINLESEN.md).
+// Bestehendes Projekt einlesen (0.16.0, Entwurf „Projekt einlesen“ freigegeben von Gerhard 02.11.2026, docs/KONZEPT-EINLESEN.md).
 // Quelle ist ein Ordner oder eine ZIP-Datei, die der Admin im Programm auswählt (Pfad nur lokal in einlesen.json, nie in der Datenbank).
 // Hier stehen die prüfbaren Teile ohne Netz und ohne Datenbank:
 //   * ZIP lesen (eigener Leser wie zipEinzeln/zipDateien: Grenzen, CRC, kein ZIP64, nicht verschlüsselt, keine Verknüpfungen, keine bösen Pfade),

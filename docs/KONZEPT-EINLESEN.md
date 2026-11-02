@@ -1,4 +1,4 @@
-# Bestehendes Projekt einlesen (0.15.0)
+# Bestehendes Projekt einlesen (0.16.0)
 
 **Stand:** 2026-11-02 · **Wer:** Gerhard Kresak (Entwurf „Projekt einlesen“ freigegeben 02.11.2026), Claude (Umsetzung)
 **Datenbank:** 0058 (`supabase/migrations/0058_projekt_einlesen.sql`, Test `supabase/tests/t46_einlesen.sql`) · **Code:** `desktop/dienst/lib/einlesen.mjs`,

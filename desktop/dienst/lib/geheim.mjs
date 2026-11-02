@@ -19,7 +19,7 @@ const URL_PASSWORT = /\b([a-z][a-z0-9+.-]*:\/\/[^\s:@\/]+:)[^\s@\/]+@/gi;
 // NAME = wert, auch mit Unterstrich/Bindestrich davor/danach und mit Namen in Anführungszeichen
 // (GITHUB_TOKEN=…, SUPABASE_SERVICE_ROLE_KEY: "…", password = "a b c", {"password": "…"}).
 // Namensteile sind begrenzt, damit lange Buchstabenketten den Dienst nicht ausbremsen (Prüfung 2026-10-24).
-// Seit 0.15.0 (Nachprüfung N1/N3): optionale Typangabe vor dem „=“ (TypeScript „apiKey: string = …“, Kotlin „val password: String = …“),
+// Seit 0.16.0 (Nachprüfung N1/N3): optionale Typangabe vor dem „=“ (TypeScript „apiKey: string = …“, Kotlin „val password: String = …“),
 // Go „:=“, Namen mit „_key“/„-key“ (SUPABASE_SERVICE_KEY, OPENAI_KEY), Werte in Backticks ohne „${“.
 const Z_NAME = String.raw`[A-Za-z0-9_-]{0,40}(?:pass(?:wort|word)?|pwd?(?![a-z])|secret|token|api[_-]?key|apikey|private[_-]?key|service[_-]?role[_-]?key|credential|(?:db|master|encryption|signing|secret|private)[_-]?key|app[_-]?secret|[_-]key(?![a-z]))[A-Za-z0-9_-]{0,120}`;
 const Z_TRENNER = String.raw`((?:\s*:\s*[A-Za-z_][\w.]{0,40}(?:<[^<>\n]{0,40}>)?(?:\[\])?\??)?\s*(?::=|[:=])\s*)`;
@@ -155,7 +155,7 @@ function wertZaehlt(name, roh, ui) {   // ui = "code" (Code-Datei) | "text" (Üb
   return w.length >= 6;
 }
 /**
- * Anzahl der Zuweisungen password/secret/token/api_key/*_key … = „Wert“ (gleiche Muster wie ohneGeheimnisse, Einlesen 0.15.0): mit Typangabe,
+ * Anzahl der Zuweisungen password/secret/token/api_key/*_key … = „Wert“ (gleiche Muster wie ohneGeheimnisse, Einlesen 0.16.0): mit Typangabe,
  * Go „:=“, Backtick-Text ohne „${“, fester Ersatzwert nach ||/??/?: und PHP define(). Schalterwerte und Platzhalter zählen nicht; in Code-Dateien (rel)
  * nur Werte in Anführungszeichen/Backticks.
  */

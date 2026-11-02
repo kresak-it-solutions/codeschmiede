@@ -40,7 +40,7 @@ Zusammengeführt wird nur auf Gerhards Wort (in der Codeschmiede: Knopf „Freig
 - Werkstatt arbeitet nur im Arbeitsordner des Auftrags (eigener Zweig), nie direkt auf `main`; heikle Befehle brauchen Erlaubnis im Programm.
 
 ## Neue Anweisungen
-- **2026-11-02 – Bestehendes Projekt einlesen (Entwurf frei, 0.15.0):** Ordner oder ZIP (z. B. aus einem anderen Claude-Chat) wird geprüft, ohne Code auszuführen,
+- **2026-11-02 – Bestehendes Projekt einlesen (Entwurf frei, 0.16.0):** Ordner oder ZIP (z. B. aus einem anderen Claude-Chat) wird geprüft, ohne Code auszuführen,
   sortiert in einen neuen Projektordner kopiert (Original unverändert, vorhandener Zielordner → Abbruch) und als privates Repository angelegt; Geheimnisse nie übernommen,
   nie geloggt, nie an die KI (nur Name + Anzahl); Personendaten standardmäßig draußen; die KI bekommt nur eine Strukturliste; Prüfungen/Regelwerk als eigene Aufgabe.
   Datenbank 0058, `docs/KONZEPT-EINLESEN.md`.

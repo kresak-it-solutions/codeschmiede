@@ -1,0 +1,1 @@
+psql:/home/claude/cs-einlesen/supabase/migrations/0058_projekt_einlesen.sql:39: NOTICE:  policy "ws_einlesen_lesen" for relation "public.ws_einlesen" does not exist, skipping

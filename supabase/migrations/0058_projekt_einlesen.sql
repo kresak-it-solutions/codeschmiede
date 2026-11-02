@@ -1,4 +1,4 @@
--- Codeschmiede · Datenbank 0058: Bestehendes Projekt einlesen (0.15.0, Entwurf „Projekt einlesen“ freigegeben von Gerhard 02.11.2026,
+-- Codeschmiede · Datenbank 0058: Bestehendes Projekt einlesen (0.16.0, Entwurf „Projekt einlesen“ freigegeben von Gerhard 02.11.2026,
 -- docs/KONZEPT-EINLESEN.md). Unabhängig von 0057 (Werkzeug-Wahl, paralleles Feature) – setzt nur 0001–0056 voraus.
 --   ws_einlesen   Ein Einlese-Vorgang: Quelle (nur zufällige Kennung + Dateiname, NIE ein Pfad – der Pfad liegt nur lokal im Programm),
 --                 Stand, Prüfbericht (nur Namen und Zahlen: Technik, Ausschlüsse, gefährliche Dateien, Dateien mit Geheimnissen nur mit

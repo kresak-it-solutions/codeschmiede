@@ -1,4 +1,4 @@
-// Bestehendes Projekt einlesen (0.15.0): Kopieren in den Projektordner und Prüfungen auf der Platte.
+// Bestehendes Projekt einlesen (0.16.0): Kopieren in den Projektordner und Prüfungen auf der Platte.
 // Kopieren, nie verschieben – die Quelle wird nur gelesen. Im Projektordner wird nichts überschrieben (sicherNeu); der Code geht in einen frischen
 // Wegwerf-Ordner, aus dem das Repository entsteht (danach klont die Werkstatt wie immer nach <Projektordner>/code).
 import { lstat, mkdir, readdir, readFile, writeFile, rename, rm } from "node:fs/promises";

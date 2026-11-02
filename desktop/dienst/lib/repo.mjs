@@ -236,7 +236,7 @@ export async function actionsAus({ sh, repo }) {
 }
 
 /**
- * Eingelesenes Projekt (0.15.0): neues PRIVATES Repository anlegen und den Inhalt von ordner (fertig einsortierter Code, Geheimnis-Prüfung
+ * Eingelesenes Projekt (0.16.0): neues PRIVATES Repository anlegen und den Inhalt von ordner (fertig einsortierter Code, Geheimnis-Prüfung
  * schon gelaufen) als ersten Stand „Projekt eingelesen am <TT.MM.JJJJ>“ auf main hochladen – keine Vorlage, keine Prüfungen, kein Regelwerk
  * (die ergänzt ein eigener Auftrag). Keine vorhandene Git-Geschichte (ordner hat kein .git). Kein Projekt-Code wird ausgeführt (Hooks aus).
  * Der Zugang kommt nur für diesen Aufruf aus gh (Credential-Helfer im Wegwerf-Ordner); die Codeschmiede speichert keine Zugangsdaten.

@@ -409,7 +409,7 @@ pub fn ws_ordner_oeffnen(app: tauri::AppHandle, projekt: String, unterordner: Op
     app.opener().open_path(p.to_string_lossy().to_string(), None::<&str>).map_err(|e| e.to_string())
 }
 
-// ---------- Bestehendes Projekt einlesen (0.15.0, docs/KONZEPT-EINLESEN.md) ----------
+// ---------- Bestehendes Projekt einlesen (0.16.0, docs/KONZEPT-EINLESEN.md) ----------
 // Die Quelle (Ordner oder ZIP) wählt der Admin über die Auswahl des Systems. Der Pfad bleibt NUR lokal in <App-Daten>/werkstatt/einlesen.json
 // (liest der Werkstatt-Dienst); die Oberfläche und die Datenbank bekommen nur eine zufällige Kennung, den Dateinamen und eine Kurzform.
 

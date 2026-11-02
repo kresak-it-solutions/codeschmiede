@@ -1,4 +1,4 @@
-// Assistent „Bestehendes Projekt einlesen“ (0.15.0, Entwurf „Projekt einlesen“ freigegeben von Gerhard 02.11.2026, docs/KONZEPT-EINLESEN.md).
+// Assistent „Bestehendes Projekt einlesen“ (0.16.0, Entwurf „Projekt einlesen“ freigegeben von Gerhard 02.11.2026, docs/KONZEPT-EINLESEN.md).
 // Sechs Schritte: Quelle › Prüfung › Einordnen › Repository › Gruppen & Features › Fertig. Nur für den Admin und nur im Programm.
 // Die Oberfläche bekommt nie einen Pfad: Die Quelle wählt das Programm über die Auswahl des Systems (ws_einlesen_quelle) und gibt nur eine
 // zufällige Kennung zurück; geprüft, kopiert und hochgeladen wird von der eigenen Werkstatt (Datenbank 0058). Projekt-Code wird nie ausgeführt.
