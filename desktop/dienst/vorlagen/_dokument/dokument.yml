@@ -13,9 +13,10 @@ on:
         type: string
 permissions:
   contents: read
+# Ein zweiter Bau bricht den ersten nicht ab, er wartet (0.17.1). GitHub hält je Gruppe höchstens einen wartenden Lauf.
 concurrency:
   group: dokument-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 jobs:
   dokument:
     runs-on: ubuntu-24.04

@@ -62,7 +62,7 @@ test("Live-Datenbank nach dem Live-Schalten: startet Ablauf auf live und meldet 
   const projekt = { repo: "o/a", db_live_ref: "bbcdefghijabcdefghij" };
   assert.equal(await dbLiveEinspielen({ sh: sh("success"), projekt, vorher: "d".repeat(40), kennung: "live-5", pause: async () => {} }), "Live-Datenbank aktuell");
   const start = aufrufe.find((x) => x.startsWith("workflow run"));
-  assert.match(start, /^workflow run datenbank.yml --repo o\/a --ref live -f kennung=cs-live-5-\d+ -f vorher=d{40}$/);
+  assert.match(start, /^workflow run datenbank.yml --repo o\/a --ref refs\/heads\/live -f kennung=cs-live-5-\d+ -f vorher=d{40}$/);
   aufrufe.length = 0;
   assert.match(await dbLiveEinspielen({ sh: sh("failure"), projekt, pause: async () => {} }), /ACHTUNG/);
   assert.equal(await dbLiveEinspielen({ sh: sh("success"), projekt: { repo: "o/a" } }), null);

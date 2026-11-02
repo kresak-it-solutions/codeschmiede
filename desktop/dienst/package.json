@@ -1,6 +1,6 @@
 {
   "name": "ttg-werkstatt-dienst",
-  "version": "0.17.0",
+  "version": "0.17.1",
   "private": true,
   "description": "Werkstatt-Dienst der Codeschmiede: holt Aufträge, arbeitet sie mit dem Programmier-Werkzeug des Projekts ab (Claude Code oder – gesperrt – Codex, Gemini CLI, OpenCode; eigener Login) und meldet Live-Log, Rückfragen, Erlaubnis-Anfragen und Abo-Limits.",
   "type": "module",

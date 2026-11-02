@@ -90,7 +90,7 @@ test("Sandbox starten: lädt genau eine .exe und startet nur die Sandbox", async
 test("Testlauf startet den Ablauf „Lauf“", async () => {
   const aufrufe = [];
   const r = await testlaufStarten({ sh: async (b, a) => { aufrufe.push(a.join(" ")); return { stdout: "" }; }, repo: "o/tool", zweig: "main" });
-  assert.equal(aufrufe[0], "workflow run lauf.yml --repo o/tool --ref main"); assert.match(r.link, /lauf\.yml$/);
+  assert.equal(aufrufe[0], "workflow run lauf.yml --repo o/tool --ref refs/heads/main"); assert.match(r.link, /lauf\.yml$/);
   await assert.rejects(testlaufStarten({ sh: async () => ({}), repo: "o/../x" }), /Repository/);
 });
 
