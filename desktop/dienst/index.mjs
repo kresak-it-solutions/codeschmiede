@@ -2588,7 +2588,7 @@ async function einlesenAusfuehren(v, q) {
       }
     }
     melde("status", `Einlesen: ${r.kopiert} Dateien übernommen${r.ausgelassen.length ? `, ${r.ausgelassen.length} ausgelassen (Name/Ziel)` : ""}`);
-    await einlesenKi({ ...v, projekt_id: projekt.id }, { ...projekt, repo });
+    await einlesenKi({ ...v, projekt_id: projekt.id, auswahl: v.auswahl }, { ...projekt, repo });
   } finally { await rm(stage, { recursive: true, force: true }).catch(() => {}); }
 }
 /** Gruppen und Features: die eingestellte KI (Zuständigkeit „Konzept“, verpflichtend) bekommt NUR die Strukturliste des Codes. */
@@ -2602,7 +2602,9 @@ async function einlesenKi(v, projektVorher = null) {
   }
   const quelle = await ordnerLesen(po.code);
   const leser = new Map(quelle.eintraege.map((e) => [e.rel, e]));
-  const struktur = await strukturListe([...leser.keys()], (rel) => leser.get(rel)?.lesen(2 * 1024 * 1024));
+  // Angehakte Dateien mit Personendaten kommen nicht in die Liste (auch nicht als Pfad)
+  const ohne = Array.isArray(v.auswahl?.personen) ? v.auswahl.personen.filter((x) => typeof x === "string") : [];
+  const struktur = await strukturListe([...leser.keys()], (rel) => leser.get(rel)?.lesen(2 * 1024 * 1024), { ohne });
   const { data: e } = await db.from("ws_einlesen").select("bericht").eq("id", v.id).maybeSingle();
   try {
     const { roh } = await kiAntwort(projekt, "konzept", gruppenPrompt({ name: projekt.name, art: projekt.technik_art || "web", technik: e?.bericht?.technik || [], struktur }));
@@ -3155,6 +3157,8 @@ async function naechsterAuftrag() {
 async function start() {
   await mkdir(cfg.daten_ordner, { recursive: true });
   await alteAnhaengeAufraeumen();
+  // Einlesen (0.15.0): Wegwerf-Kopien früherer Läufe (mit Code und Git-Daten) beim Start leeren
+  await rm(path.join(cfg.daten_ordner, "einlesen"), { recursive: true, force: true }).catch(() => {});
   verbinde();
   await tokenSchreiben();
   await pcAnmelden();

@@ -431,6 +431,12 @@ pub struct Gewaehlt {
     name: String,
     kurz: String,
 }
+/// Netzwerkpfade (\\Server\Freigabe, //Server/Freigabe, \\?\UNC\…) werden beim Einlesen sofort abgelehnt (Befund 10)
+const NETZ_TEXT: &str = "Netzwerkpfade (\\\\Server\\Freigabe) sind beim Einlesen nicht erlaubt – bitte den Ordner bzw. die ZIP-Datei zuerst auf diesen PC kopieren.";
+pub(crate) fn netzwerkpfad(t: &str) -> bool {
+    let k = t.to_ascii_lowercase();
+    t.starts_with("\\\\") || t.starts_with("//") || k.starts_with("\\\\?\\unc\\")
+}
 /// Größte ZIP-Datei, die eingelesen wird (gleiche Grenze wie im Werkstatt-Dienst, lib/einlesen.mjs)
 const ZIP_MAX: u64 = 512 * 1024 * 1024;
 
@@ -451,10 +457,26 @@ pub(crate) fn anzeige_name(p: &Path) -> String {
 #[tauri::command]
 pub async fn ws_einlesen_quelle(app: tauri::AppHandle, art: String) -> Result<Option<Gewaehlt>, String> {
     let pfad = match art.as_str() {
-        "ordner" => match ordner_waehlen(&app, "Projekt zum Einlesen wählen (Ordner)")? { Some(p) => p, None => return Ok(None) },
+        "ordner" => {
+            let Some(f) = app.dialog().file().set_title("Projekt zum Einlesen wählen (Ordner)").blocking_pick_folder() else { return Ok(None) };
+            let p = f.into_path().map_err(|e| e.to_string())?;
+            if netzwerkpfad(&p.to_string_lossy()) {
+                return Err(NETZ_TEXT.into());
+            }
+            if !pfad_text_ok(&p.to_string_lossy()) || !echter_ordner(&p) {
+                return Err("Bitte einen echten Ordner wählen (keine Verknüpfung, kein Netzwerk-Kürzel).".into());
+            }
+            if let Some(grund) = ordner_ungeeignet(&p) {
+                return Err(grund.into());
+            }
+            p
+        }
         "zip" => {
             let Some(f) = app.dialog().file().set_title("Projekt zum Einlesen wählen (ZIP-Datei)").add_filter("ZIP-Archiv", &["zip", "ZIP"]).blocking_pick_file() else { return Ok(None) };
             let p = f.into_path().map_err(|e| e.to_string())?;
+            if netzwerkpfad(&p.to_string_lossy()) {
+                return Err(NETZ_TEXT.into());
+            }
             let m = std::fs::symlink_metadata(&p).map_err(|_| "Die Datei ist nicht erreichbar.".to_string())?;
             if !m.is_file() || m.file_type().is_symlink() {
                 return Err("Bitte eine echte ZIP-Datei wählen (keine Verknüpfung).".into());
@@ -608,6 +630,8 @@ mod tests {
         assert_eq!(anzeige_name(Path::new("/")), "Quelle");
         let k: EinleseKonfig = serde_json::from_str(r#"{"quellen":{"0123456789abcdef0123456789abcdef":{"pfad":"/p/x.zip","art":"zip","zeit":1}}}"#).unwrap();
         assert_eq!(k.quellen.len(), 1);
+        assert!(netzwerkpfad("\\\\server\\freigabe\\x.zip") && netzwerkpfad("//server/x") && netzwerkpfad("\\\\?\\UNC\\server\\x"));
+        assert!(!netzwerkpfad("D:\\Downloads\\x.zip") && !netzwerkpfad("/Volumes/Platte/x.zip"));
     }
 
     #[test]

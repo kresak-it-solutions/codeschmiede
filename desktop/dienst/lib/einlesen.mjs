@@ -9,23 +9,24 @@
 // Projekt-Code wird dabei NIE ausgeführt: nur Dateien lesen und kopieren (kein npm, keine Skripte, keine Hooks).
 import { inflateRawSync } from "node:zlib";
 import { lstat, readdir, readFile, realpath, open } from "node:fs/promises";
+import { constants as FS } from "node:fs";
 import path from "node:path";
 import { crc32 } from "./sicherungen.mjs";
-import { ohneGeheimnisse } from "./geheim.mjs";
-import { linksNachAussen } from "./rechte.mjs";
+import { ohneGeheimnisse, zuweisungenZaehlen } from "./geheim.mjs";
+import { linksNachAussen, gefaehrlicheAttribute } from "./rechte.mjs";
 
 export const GRENZEN = {
   zipMax: 512 * 1024 * 1024,            // Größe der ZIP-Datei
   eintraegeMax: 200000,                  // Einträge in der ZIP bzw. im Ordner (auch Ausgeschlossenes)
   maxDateien: 20000,                     // übernommene Dateien (ohne Ausgeschlossenes)
   maxJe: 50 * 1024 * 1024,               // je Datei (entpackt)
-  maxGesamt: 1024 * 1024 * 1024,         // alle übernommenen Dateien zusammen (entpackt)
+  maxGesamt: 512 * 1024 * 1024,          // alle übernommenen Dateien zusammen (entpackt; liegen nach der Prüfung im Speicher – geprüft = kopiert)
   verhaeltnis: 1000,                     // entpackt : gepackt höchstens 1000 : 1 (ZIP-Bombe)
 };
 const MB = 1024 * 1024;
 
 // ---------- Pfade ----------
-const RESERVIERT = /^(con|prn|aux|nul|com[0-9]|lpt[0-9])(\..*)?$/i;
+const RESERVIERT = /^(con|prn|aux|nul|conin\$|conout\$|com[0-9¹²³]|lpt[0-9¹²³])(\..*)?$/i;
 /** Pfad eines Eintrags (aus ZIP oder Ordner, „/“-getrennt): nur Namen, kein „..“/„.“, keine Laufwerke, keine Sonderzeichen. Rückgabe: Grund oder null. */
 export function pfadFehler(name) {
   if (typeof name !== "string" || !name) return "leerer Name";
@@ -39,7 +40,7 @@ export function pfadFehler(name) {
   for (const t of teile) {
     if (t === "..") return "Pfad mit „..“";
     if (t === "." || t === "") return "leerer Pfadteil";
-    if (t.length > 200 || /[<>:"|?*]/.test(t) || /[. ]$/.test(t) || RESERVIERT.test(t)) return "unzulässiger Dateiname (Windows)";
+    if (t.length > 200 || /[<>:"|?*]/.test(t) || /[. ]$/.test(t) || /^ /.test(t) || RESERVIERT.test(t)) return "unzulässiger Dateiname (Windows)";
   }
   return null;
 }
@@ -85,7 +86,7 @@ export function zipEintraege(buf, { eintraegeMax = GRENZEN.eintraegeMax, verhael
     const name = ordner ? roh.slice(0, -1) : roh;
     const grund = pfadFehler(name);
     if (grund) fehl(`Unzulässiger Pfad in der ZIP (${grund}: „${kurzName(roh)}“) – nichts übernommen`);
-    const schluessel = name.toLowerCase();
+    const schluessel = name.normalize("NFC").toLowerCase();   // é als ein oder zwei Zeichen, Groß/Klein: unter Windows/macOS derselbe Name
     if (namen.has(schluessel)) fehl(`Doppelter Name in der ZIP („${kurzName(roh)}“) – nichts übernommen`);
     namen.add(schluessel);
     if (ordner) { if (groesse !== 0) fehl(); r.push({ name, ordner: true, groesse: 0 }); continue; }
@@ -123,6 +124,7 @@ const AUSSCHLUSS_DATEI = /^(\.DS_Store|Thumbs\.db|desktop\.ini|ehthumbs\.db|\._.
 /** Ausgeschlossen? Gibt den Grund (Ordner- bzw. Dateiname) oder null. hatCargo(ordner) sagt, ob neben „target“ eine Cargo.toml liegt. */
 export function ausschluss(rel, { hatCargo = () => false } = {}) {
   const teile = rel.split("/");
+  if (teile.some((t) => t.toLowerCase() === ".git")) return ".git";   // Ordner ODER Datei (Verweis eines Arbeitsordners) auf jeder Ebene
   for (let i = 0; i < teile.length - 1; i++) {
     if (AUSSCHLUSS_ORDNER.has(teile[i])) return teile[i];
     if (teile[i] === "target" && hatCargo(teile.slice(0, i).join("/"))) return "target";   // Rust-Bauordner
@@ -134,12 +136,15 @@ export function ausschluss(rel, { hatCargo = () => false } = {}) {
 /** Ganzer Ordner fällt weg (beim Durchlaufen nicht betreten). */
 export const ordnerAusgeschlossen = (name) => AUSSCHLUSS_ORDNER.has(name);
 
-const GEFAEHRLICH = /\.(exe|dll|bat|cmd|ps1|psm1|psd1|scr|msi|msp|com|pif|vbs|vbe|jse|wsf|wsh|hta|cpl|reg|jar|lnk|url|webloc|desktop|inf|sys|scf|appref-ms|gadget|application|msc|so|dylib|bin|run|app|pkg|dmg|deb|rpm|apk|ipa)$/i;
+const GEFAEHRLICH = /\.(exe|dll|bat|cmd|ps1|psm1|psd1|scr|msi|msp|com|pif|vbs|vbe|jse|wsf|wsh|hta|cpl|reg|jar|lnk|url|webloc|desktop|inf|sys|scf|appref-ms|gadget|application|msc|so|dylib|bin|run|app|pkg|dmg|deb|rpm|apk|ipa|command|iso|img|vhd|vhdx|chm|msix|msixbundle|appx|appxbundle|xll|library-ms|scpt|scptd|workflow|ws|vb)$/i;
+// Skripte, die Windows (Windows Script Host) in Autostart-/Startmenü-Ordnern selbst startet
+const AUTOSTART = /(^|\/)(start menu|startmenü|startmenu|startup|autostart|autorun)(\/|$)/i;
 /** Ausführbare Datei oder Verknüpfung (nach Name oder Inhalt: Windows-, Linux-, Mac-Programm). Gibt den Grund oder null. */
 export function gefaehrlich(rel, kopf = null) {
   const n = rel.split("/").pop();
   const m = GEFAEHRLICH.exec(n);
   if (m) return `.${m[1].toLowerCase()}`;
+  if (/\.(js|jse|vbs|vbe|wsf|wsh|hta)$/i.test(n) && (AUTOSTART.test(rel) || /^autorun\.inf$/i.test(n))) return "Skript im Autostart/Startmenü";
   if (kopf && kopf.length >= 4) {
     if (kopf[0] === 0x4d && kopf[1] === 0x5a) return "Windows-Programm";
     if (kopf[0] === 0x7f && kopf[1] === 0x45 && kopf[2] === 0x4c && kopf[3] === 0x46) return "Linux-Programm";
@@ -153,7 +158,10 @@ export function gefaehrlich(rel, kopf = null) {
 /** Datei, die schon wegen ihres Namens als Geheimnis gilt. */
 export function geheimeDatei(rel) {
   const n = rel.split("/").pop().toLowerCase();
-  return /^\.env(\..*)?$/.test(n) || /\.(pem|key|p12|pfx|jks|keystore|ppk|kdbx|asc|gpg)$/.test(n) || /^id_(rsa|dsa|ecdsa|ed25519)(\.pub)?$/.test(n)
+  if (/(^|\/)\.docker\/config\.json$/i.test(rel)) return true;
+  // env-Dateien (.env, .env.local, prod.env, app_env.txt …); Quell- und Typ-Dateien wie vite-env.d.ts oder env.js prüft der Inhalt
+  const quelle = /\.(m?[jt]sx?|cjs|d\.ts|vue|svelte|py|rs|go)$/.test(n);
+  return (/(^|[.\-_])env([.\-_]|$)/.test(n) && !quelle) || n === ".envrc" || /^\.(npmrc|pypirc|yarnrc\.yml)$/.test(n) || /\.(pem|key|p12|pfx|jks|keystore|ppk|kdbx|asc|gpg)$/.test(n) || /^id_(rsa|dsa|ecdsa|ed25519)(\.pub)?$/.test(n)
     || /^(\.netrc|\.git-credentials|\.pgpass|credentials(\.json)?|service-account.*\.json|secrets?\.(json|ya?ml|toml))$/.test(n);
 }
 // Schlüssel-Muster im Inhalt (Zählung, nie Ausgabe). Supabase: nur service_role-JWT (der anon-Schlüssel ist öffentlich).
@@ -162,18 +170,35 @@ const SCHLUESSEL = [
   /(?<![A-Za-z0-9])gh[pousr]_[A-Za-z0-9]{20,}/g,
   /(?<![A-Za-z0-9])github_pat_[A-Za-z0-9_]{20,}/g,
   /(?<![A-Za-z0-9])AKIA[0-9A-Z]{16}(?![0-9A-Z])/g,
-  /-----BEGIN (?:[A-Z]+ )?PRIVATE KEY-----/g,
+  /-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY(?: BLOCK)?-----/g,   // RSA/EC/OPENSSH/ENCRYPTED/PGP …
+  /(?<![A-Za-z0-9])npm_[A-Za-z0-9]{30,}/g,
+  /(?<![A-Za-z0-9])AIza[0-9A-Za-z_-]{35}/g,
+  /(?<![A-Za-z0-9])glpat-[A-Za-z0-9_-]{20,}/g,
+  /https:\/\/hooks\.slack\.com\/services\/[A-Za-z0-9/_-]{20,}/g,
   /(?<![A-Za-z0-9])(?:sb_secret_|sbp_)[A-Za-z0-9_-]{16,}/g,
   /(?<![A-Za-z0-9])(?:sk|rk)_live_[A-Za-z0-9]{16,}/g,
   /(?<![A-Za-z0-9])whsec_[A-Za-z0-9]{16,}/g,
-  /(?<![A-Za-z0-9])xox[abpr]-[A-Za-z0-9-]{16,}/g,
+  /(?<![A-Za-z0-9])xox[abprs]-[A-Za-z0-9-]{10,}/g,
   /:\/\/[^\s:@/'"]{1,64}:[^\s@/'"]{6,}@[A-Za-z0-9.-]+/g,   // Zugangsdaten in einer Adresse (postgres://name:passwort@…)
 ];
 const JWT = /eyJ[A-Za-z0-9_-]{10,}\.([A-Za-z0-9_-]{10,})\.[A-Za-z0-9_-]{10,}/g;
-/** Anzahl erkannter Schlüssel im Text (nie der Schlüssel selbst). */
-export function geheimnisseZaehlen(text) {
-  const t = String(text || "");
-  let n = 0;
+/** Datei-Inhalt als Text für die Suche: UTF-16 (BOM oder Null-Bytes) wird umgewandelt, sonst latin1 (jedes Byte bleibt erhalten). */
+export function alsText(buf) {
+  if (!buf || !buf.length) return "";
+  const b = Buffer.isBuffer(buf) ? buf : Buffer.from(buf);
+  if (b[0] === 0xff && b[1] === 0xfe) return b.subarray(2).toString("utf16le");
+  if (b[0] === 0xfe && b[1] === 0xff) { const c = Buffer.from(b.subarray(2, 2 + ((b.length - 2) & ~1))); c.swap16(); return c.toString("utf16le"); }
+  const probe = b.subarray(0, 4096); let ungerade = 0; let gerade = 0;
+  for (let i = 0; i < probe.length; i++) if (probe[i] === 0) (i % 2 ? ungerade++ : gerade++);
+  const haelfte = probe.length / 2;
+  if (ungerade > haelfte * 0.3 && gerade < haelfte * 0.05) return b.toString("utf16le");
+  if (gerade > haelfte * 0.3 && ungerade < haelfte * 0.05) { const c = Buffer.from(b.subarray(0, b.length - (b.length % 2))); c.swap16(); return c.toString("utf16le"); }
+  return b.toString("latin1");
+}
+/** Anzahl erkannter Schlüssel im Text bzw. Buffer (nie der Schlüssel selbst). rel = Dateiname (Zuweisungen in Code nur mit Text in Anführungszeichen). */
+export function geheimnisseZaehlen(text, rel = "") {
+  const t = Buffer.isBuffer(text) ? alsText(text) : String(text || "");
+  let n = zuweisungenZaehlen(t, rel);
   for (const m of SCHLUESSEL) n += (t.match(m) || []).length;
   for (const m of t.matchAll(JWT)) {
     try { const j = JSON.parse(Buffer.from(m[1], "base64url").toString("utf8")); if (j && typeof j === "object" && String(j.role || "").toLowerCase() === "service_role") n++; } catch { /* kein JWT */ }
@@ -312,7 +337,7 @@ export async function pruefen(eintraege, { links = [], git = false, ausgeschloss
   const ausgeschlossen = { ...vorher }; const gefaehrlicheDateien = []; const geheim = []; const personen = []; const dateien = [];
   let summe = 0; let gitDa = git; const technikDateien = new Map();
   for (const e of alle) {
-    if (/(^|\/)\.git(\/|$)/.test(e.rel)) gitDa = true;
+    if (e.rel.split("/").some((t) => t.toLowerCase() === ".git")) gitDa = true;
     const grund = ausschluss(e.rel, { hatCargo: (o) => cargo.has(o) });
     if (grund) { ausgeschlossen[grund] = (ausgeschlossen[grund] || 0) + 1; continue; }
     if (dateien.length >= grenzen.maxDateien) throw new Error(`Zu viele Dateien (mehr als ${grenzen.maxDateien} ohne node_modules, dist, build …) – nichts übernommen`);
@@ -324,13 +349,17 @@ export async function pruefen(eintraege, { links = [], git = false, ausgeschloss
     const kopf = inhalt ? inhalt.subarray(0, 8) : null;
     const gef = gefaehrlich(e.rel, kopf);
     if (gef) { gefaehrlicheDateien.push({ pfad: e.rel, grund: gef }); continue; }
-    if (geheimeDatei(e.rel)) { geheim.push({ pfad: e.rel, anzahl: inhalt ? Math.max(1, geheimnisseZaehlen(inhalt.toString("latin1"))) : 1 }); continue; }
-    if (inhalt) { const n = geheimnisseZaehlen(inhalt.toString("latin1")); if (n) { geheim.push({ pfad: e.rel, anzahl: n }); continue; } }
+    if (geheimeDatei(e.rel)) { geheim.push({ pfad: e.rel, anzahl: inhalt ? Math.max(1, geheimnisseZaehlen(inhalt, e.rel)) : 1 }); continue; }
+    if (inhalt) { const n = geheimnisseZaehlen(inhalt, e.rel); if (n) { geheim.push({ pfad: e.rel, anzahl: n }); continue; } }
     else { geheim.push({ pfad: e.rel, anzahl: 0, grund: "zu groß zum Prüfen" }); continue; }   // ungeprüft nie übernehmen
     const ph = personenHinweis(e.rel, inhalt);
     if (ph) personen.push({ pfad: e.rel, spalten: ph.spalten, ...(ph.grund ? { grund: ph.grund } : {}) });
+    // .gitattributes mit Filtern/Treibern (filter=, diff=, merge=, ident) wird nicht übernommen (gefaehrlicheAttribute wie in der Werkstatt)
+    if (/(^|\/)\.gitattributes$/i.test(e.rel) && gefaehrlicheAttribute(alsText(inhalt)).length) { gefaehrlicheDateien.push({ pfad: e.rel, grund: "Git-Filter/-Treiber in .gitattributes" }); continue; }
     if (e.rel === "package.json") technikDateien.set(e.rel, inhalt);
-    dateien.push({ rel: e.rel, groesse: e.groesse, lesen: e.lesen, personen: !!ph });
+    // Inhalt einmal gelesen und für alle Ziele wiederverwendet: kopiert wird genau das, was geprüft wurde
+    const fest = inhalt;
+    dateien.push({ rel: e.rel, groesse: fest.length, lesen: async () => fest, personen: !!ph });
   }
   // Einheiten der obersten Ebene mit Vorschlag
   const einheiten = new Map();
@@ -424,7 +453,8 @@ const KAPITEL = [["ziel", /ziel|vision|zweck|überblick|ueberblick|einleitung|id
  * Herkunft vorn („Eingelesen aus …, ungeprüft“). Höchstens max Einträge. Geheimnisse werden entfernt.
  */
 export function wissenAusKonzept(name, text, { max = 40 } = {}) {
-  const t = ohneGeheimnisse(String(text || "")).replace(/\r\n?/g, "\n").replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, "");
+  // Roh teilen; ein Stück mit Geheimnis fällt ganz weg (nicht nur maskiert), alle anderen werden zusätzlich gefiltert
+  const t = String(text || "").replace(/\r\n?/g, "\n").replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, "");
   const abschnitte = []; let akt = { titel: "", zeilen: [] };
   for (const z of t.split("\n")) {
     const h = /^#{1,4}\s+(.+)$/.exec(z);
@@ -442,7 +472,8 @@ export function wissenAusKonzept(name, text, { max = 40 } = {}) {
       let stueck = rest.slice(0, platz);
       if (rest.length > platz) { const i = stueck.lastIndexOf("\n"); if (i > platz / 2) stueck = stueck.slice(0, i); }
       rest = rest.slice(stueck.length).trim();
-      if (stueck.trim().length >= 3) r.push({ kapitel: kap, text: (k + stueck.trim()).slice(0, 2000) });
+      const text = ohneGeheimnisse(k + stueck.trim()).slice(0, 2000);
+      if (stueck.trim().length >= 3 && !geheimnisseZaehlen(stueck, name) && !geheimnisseZaehlen(a.titel) && !geheimnisseZaehlen(text)) r.push({ kapitel: kap, text });
     }
     if (r.length >= max) break;
   }
@@ -454,14 +485,18 @@ const CODE_ENDUNG = /\.(jsx?|tsx?|mjs|cjs|vue|svelte|astro|html?|css|scss|py|rs|
 const KOMPONENTE = /\.(jsx|tsx|vue|svelte|astro)$/i;
 const ROUTEN_DATEI = /(^|\/)(app|main|router|routes?|routing|navigation|nav|menu|menue|sidebar|layout)[^/]*\.(jsx?|tsx?|mjs|vue|svelte)$/i;
 const MENUE_DATEI = /(nav|menu|menue|sidebar|navigation|header|tabs?)[^/]*\.(jsx?|tsx?|mjs|vue|svelte|json)$/i;
+/** Sieht ein Wert nach Daten aus (E-Mail, lange Ziffernfolge wie Telefon/IBAN, Datum)? Dann nicht in die Strukturliste. */
+export const datenWert = (w) => /@/.test(w) || /\d{5,}/.test(w) || /\d[\d\s/-]{6,}\d/.test(w)
+  || /\b\d{1,2}[./-]\d{1,2}[./-]\d{2,4}\b/.test(w) || /\b\d{4}-\d{2}-\d{2}\b/.test(w);
 const wert = (s) => String(s).replace(/[\u0000-\u001f\u007f«»`]/g, " ").replace(/\s+/g, " ").trim().slice(0, 80);
 /**
  * Strukturliste aus den Code-Dateien: Pfade (ohne Inhalt), Komponentennamen (Dateinamen), Routen (path-Angaben in Routen-Definitionen bzw. Seiten-Ordner
  * von Next/Nuxt/SvelteKit) und Menüeinträge (label/title-Angaben in Menü-Dateien). Keine anderen Inhalte, keine Daten, keine Geheimnisse; Dateien mit
  * Geheimnissen oder Personendaten kommen gar nicht vor. Größe begrenzt (maxZeichen). lesen(rel) liefert den Inhalt (Buffer) oder null.
  */
-export async function strukturListe(pfade, lesen, { maxZeichen = 24000, maxPfade = 1200 } = {}) {
-  const code = pfade.filter((p) => CODE_ENDUNG.test(p) && !geheimeDatei(p)).sort();
+export async function strukturListe(pfade, lesen, { maxZeichen = 24000, maxPfade = 1200, ohne = [] } = {}) {
+  const weg = new Set(ohne);   // z. B. angehakte Dateien mit Personendaten: kommen gar nicht vor, auch nicht als Pfad
+  const code = pfade.filter((p) => CODE_ENDUNG.test(p) && !geheimeDatei(p) && !weg.has(p)).sort();
   const komponenten = [...new Set(code.filter((p) => KOMPONENTE.test(p)).map((p) => p.split("/").pop().replace(/\.[a-z]+$/i, "")).filter((n) => /^[A-Za-z][A-Za-z0-9_-]{1,60}$/.test(n)))].slice(0, 400);
   const routen = new Set(); const menue = new Set();
   // Seiten-Ordner (Datei-Routen)
@@ -474,12 +509,12 @@ export async function strukturListe(pfade, lesen, { maxZeichen = 24000, maxPfade
     if (!istRoute && !istMenue) continue;
     const b = await Promise.resolve(lesen(p)).catch(() => null); if (!b || b.length > 2 * MB) continue;
     const t = b.toString("utf8");
-    if (geheimnisseZaehlen(t)) continue;
+    if (geheimnisseZaehlen(b, p)) continue;
     if (istRoute) {
-      for (const m of t.matchAll(/(?:<Route[^>]*?\spath\s*=\s*|\bpath\s*:\s*)["'`](\/?[A-Za-z0-9_\-/:.*?[\]]{0,80})["'`]/g)) routen.add(wert(m[1]) || "/");
+      for (const m of t.matchAll(/(?:<Route[^>]*?\spath\s*=\s*|\bpath\s*:\s*)["'`](\/?[A-Za-z0-9_\-/:.*?[\]]{0,80})["'`]/g)) { const w = wert(m[1]) || "/"; if (!datenWert(w)) routen.add(w); }
     }
     if (istMenue || istRoute) {
-      for (const m of t.matchAll(/\b(?:label|title|name|text|titel)\s*:\s*["'`]([^"'`\n]{2,60})["'`]/g)) { const w = wert(m[1]); if (/[A-Za-zÄÖÜäöü]/.test(w) && !/[{}$<>=]/.test(w)) menue.add(w); }
+      for (const m of t.matchAll(/\b(?:label|title)\s*:\s*["'`]([^"'`\n]{2,60})["'`]/g)) { const w = wert(m[1]); if (/[A-Za-zÄÖÜäöü]/.test(w) && !/[{}$<>=]/.test(w) && !datenWert(w)) menue.add(w); }
     }
     if (routen.size > 300 && menue.size > 300) break;
   }
@@ -558,7 +593,8 @@ export async function ordnerLesen(wurzel, { grenzen = GRENZEN } = {}) {
       if (st.nlink > 1) { links.push(`${r} (harter Link)`); continue; }
       if (pfadFehler(r)) { links.push(`${r.slice(0, 120)} (unzulässiger Name)`); continue; }
       const groesse = st.size;
-      eintraege.push({ rel: r, groesse, lesen: async (max = grenzen.maxJe) => dateiLesen(p, max, groesse) });
+      const kennung = { size: groesse, dev: st.dev, ino: st.ino };
+      eintraege.push({ rel: r, groesse, lesen: async (max = grenzen.maxJe) => dateiLesen(p, max, kennung) });
     }
   };
   await gehe(echt, "");
@@ -567,14 +603,19 @@ export async function ordnerLesen(wurzel, { grenzen = GRENZEN } = {}) {
   return { eintraege, links, git, ausgeschlossen };
 }
 /** Datei lesen: nur echte Datei ohne weitere Links, höchstens max Bytes, Größe muss zur Prüfung passen (sonst wurde sie zwischendurch geändert). */
-async function dateiLesen(p, max, erwartet) {
+async function dateiLesen(p, max, erwartet = null) {   // erwartet = { size, dev, ino } aus dem Durchlauf
   const st = await lstat(p);
   if (!st.isFile() || st.isSymbolicLink() || st.nlink > 1) throw new Error("Datei hat sich geändert – bitte neu prüfen");
   if (st.size > max) throw new Error(`„${path.basename(p).slice(0, 80)}“ ist zu groß`);
-  if (erwartet != null && st.size !== erwartet) throw new Error("Datei hat sich seit der Prüfung geändert – bitte neu prüfen");
-  const h = await open(p, "r");
-  try { const buf = Buffer.alloc(st.size); const { bytesRead } = await h.read(buf, 0, st.size, 0); return buf.subarray(0, bytesRead); }
-  finally { await h.close(); }
+  if (erwartet && (st.size !== erwartet.size || st.dev !== erwartet.dev || st.ino !== erwartet.ino)) throw new Error("Datei wurde seit dem Durchlauf ausgetauscht oder geändert – bitte neu prüfen");
+  // Unter macOS/Linux nie durch eine (zwischendurch untergeschobene) Verknüpfung öffnen; danach prüfen, dass genau diese Datei offen ist
+  const h = await open(p, FS.O_RDONLY | (process.platform === "win32" ? 0 : (FS.O_NOFOLLOW || 0)));
+  try {
+    const f = await h.stat();
+    if (!f.isFile() || f.dev !== st.dev || f.ino !== st.ino || f.nlink > 1 || f.size !== st.size) throw new Error("Datei wurde während des Lesens ausgetauscht – bitte neu prüfen");
+    const buf = Buffer.alloc(f.size); const { bytesRead } = await h.read(buf, 0, f.size, 0);
+    return buf.subarray(0, bytesRead);
+  } finally { await h.close(); }
 }
 /** ZIP-Datei lesen (Größe vorher begrenzt) → { eintraege, links: [], git }. */
 export async function zipLesen(datei, { grenzen = GRENZEN } = {}) {

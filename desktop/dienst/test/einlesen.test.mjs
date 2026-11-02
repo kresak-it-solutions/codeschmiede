@@ -1,7 +1,7 @@
 // Bestehendes Projekt einlesen (0.15.0) – Claude. ZIP-Angriffe, Geheimnisse, Ausschlüsse, Einsortieren, Ziel vorhanden, Original unverändert, Strukturliste.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, writeFile, readFile, readdir, stat, symlink, link, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, readFile, readdir, stat, symlink, link, rm, rename } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { deflateRawSync } from "node:zlib";
 import os from "node:os";
@@ -9,7 +9,7 @@ import path from "node:path";
 import { crc32 } from "../lib/sicherungen.mjs";
 import {
   zipEintraege, zipLesen, ordnerLesen, pruefen, pfadFehler, ausschluss, gefaehrlich, geheimeDatei, geheimnisseZaehlen, personenHinweis,
-  technikErkennen, zielVorschlag, auswahlPruefen, kopierPlan, strukturListe, gruppenPrompt, gruppenAntwort, wissenAusKonzept, regelnAusEingelesen, berichtZeilen,
+  technikErkennen, zielVorschlag, auswahlPruefen, kopierPlan, strukturListe, gruppenPrompt, gruppenAntwort, wissenAusKonzept, regelnAusEingelesen, berichtZeilen, alsText, datenWert,
 } from "../lib/einlesen.mjs";
 import { einsortieren, zielFrei, geheimnisseImOrdner } from "../lib/einlesenKopie.mjs";
 
@@ -276,12 +276,13 @@ test("Ablauf ohne Netz: ZIP → Prüfung → Einsortieren → Geheimnis-Prüfung
     await einsortieren({ plan: kopierPlan(dateien, bericht, auswahlPruefen({}, bericht)), wurzel: po, codeOrdner: code });
     assert.deepEqual(await geheimnisseImOrdner(code), []);
     const bare = path.join(tmp, "github.git"); await run("git", ["init", "-q", "--bare", bare]);
-    const aufrufe = [];
+    const aufrufe = []; let angelegt = false;
     const sh = async (befehl, args, o = {}) => {
       aufrufe.push([befehl, ...args].join(" "));
-      if (befehl === "gh" && args[0] === "repo" && args[1] === "view") throw new Error("nicht gefunden");
+      if (befehl === "gh" && args[0] === "repo" && args[1] === "view") { if (!angelegt) throw new Error("nicht gefunden"); return { stdout: "PRIVATE\n" }; }
       if (befehl === "gh" && args[0] === "api") return { stdout: "tester\n" };
-      if (befehl === "gh" && args[0] === "repo" && args[1] === "create") { assert.ok(args.includes("--private")); await run("git", ["-c", "core.hooksPath=/dev/null", "push", "-q", bare, "main"], { cwd: o.cwd }); return { stdout: "" }; }
+      if (befehl === "gh" && args[0] === "repo" && args[1] === "create") { assert.ok(args.includes("--private") && !args.includes("--push") && !args.includes("--source")); angelegt = true; return { stdout: "" }; }
+      if (befehl === "git" && args.includes("push")) { assert.ok(angelegt, "erst anlegen, dann hochladen"); return run("git", args.map((a) => (a.startsWith("https://github.com/") ? bare : a)), o); }
       return run(befehl, args, o);
     };
     const keineHooks = path.join(tmp, "keine-hooks"); await mkdir(keineHooks);
@@ -292,7 +293,115 @@ test("Ablauf ohne Netz: ZIP → Prüfung → Einsortieren → Geheimnis-Prüfung
     const { stdout: liste } = await run("git", ["--git-dir", bare, "ls-tree", "-r", "--name-only", "main"]);
     assert.deepEqual(liste.trim().split("\n").sort(), ["package.json", "src/App.jsx"]);
     assert.ok(!aufrufe.some((a) => /npm|node |install|run build/.test(a)), "kein Projekt-Code ausgeführt");
+    const iCreate = aufrufe.findIndex((a) => a.startsWith("gh repo create")); const iSicht = aufrufe.findIndex((a, i) => i > iCreate && a.includes("visibility")); const iPush = aufrufe.findIndex((a) => a.includes(" push "));
+    assert.ok(iCreate >= 0 && iSicht > iCreate && iPush > iSicht, "anlegen → Sichtbarkeit prüfen → hochladen");
+    assert.ok(aufrufe[iPush].includes("core.hooksPath=") && !aufrufe.some((a) => /git .*config (user|credential)/.test(a)), "Push ohne Hooks, keine gespeicherten Zugänge");
     assert.equal(createHash("sha256").update(await readFile(zipDatei)).digest("hex"), vorher);   // Original unverändert
     assert.ok(!(await readFile(path.join(po, "konzept", "eingelesen", "KONZEPT.md"), "utf8")).includes("SERVICE_ROLE"));
+  } finally { await rm(tmp, { recursive: true, force: true }); }
+});
+
+
+test("Befund 1: env- und Zugangs-Dateien nach Namen", () => {
+  for (const n of [".env", ".env.production", "prod.env", "app_env.txt", "config/stage-env.json", ".envrc", ".npmrc", ".pypirc", "home/.docker/config.json", ".netrc", ".git-credentials",
+    "x.p12", "x.pfx", "release.keystore", "credentials.json", "service-account-prod.json"]) assert.ok(geheimeDatei(n), n);
+  for (const n of ["src/vite-env.d.ts", "src/env.js", "src/environment.ts", "docs/env.md.txt.bak", "inventory.csv", "docker/config.json", "README.md"].filter((x) => x !== "docs/env.md.txt.bak")) assert.ok(!geheimeDatei(n), n);
+});
+
+test("Befund 2: weitere Schlüssel, Zuweisungen, UTF-16", () => {
+  for (const t of [`NPM=npm_${"a".repeat(36)}`, `k=AIza${"b".repeat(35)}`, `glpat-${"c".repeat(20)}`, `xoxs-${"d".repeat(20)}`, "-----BEGIN PGP PRIVATE KEY BLOCK-----", "-----BEGIN OPENSSH PRIVATE KEY-----",
+    "-----BEGIN ENCRYPTED PRIVATE KEY-----", `sk_live_${"e".repeat(24)}`, `rk_live_${"f".repeat(24)}`, `https://hooks.slack.com/services/T000/B000/${"g".repeat(24)}`]) assert.ok(geheimnisseZaehlen(t) >= 1, t.slice(0, 30));
+  assert.equal(geheimnisseZaehlen('password = "hunter2geheim"', "config.yml"), 1);
+  assert.equal(geheimnisseZaehlen("api_key: abcdef123456", "settings.ini"), 1);
+  assert.equal(geheimnisseZaehlen('const secret = "s3cr3t-wert-lang";', "src/a.js"), 1);
+  for (const [t, rel] of [["const token = getToken();", "src/a.js"], ['password: "${DB_PW}"', "c.yml"], ["secret: process.env.SECRET", "c.yml"], ["persist-credentials: false", "w.yml"], ['token: "your-token-here"', "c.yml"]]) assert.equal(geheimnisseZaehlen(t, rel), 0, t);
+  const u16 = (t, bom) => Buffer.concat([bom ? Buffer.from([0xff, 0xfe]) : Buffer.alloc(0), Buffer.from(t, "utf16le")]);
+  assert.equal(geheimnisseZaehlen(u16(`token ghp_${"x".repeat(36)}`, true)), 1);
+  assert.equal(geheimnisseZaehlen(u16(`token ghp_${"x".repeat(36)} und noch etwas Text`, false)), 1);
+  const be = Buffer.from(`ghp_${"y".repeat(36)}`, "utf16le"); be.swap16();
+  assert.equal(geheimnisseZaehlen(Buffer.concat([Buffer.from([0xfe, 0xff]), be])), 1);
+  assert.equal(alsText(Buffer.from("normal")), "normal");
+});
+
+test("Befund 3: dateiLesen erkennt ausgetauschte Dateien; kopiert wird genau der geprüfte Inhalt", async () => {
+  const tmp = await mkdtemp(path.join(os.tmpdir(), "cs-einlesen-tausch-"));
+  try {
+    const q = path.join(tmp, "q"); await mkdir(q); await writeFile(path.join(q, "a.js"), "AAAA"); await writeFile(path.join(tmp, "geheim"), "PRIV");
+    let quelle = await ordnerLesen(q);
+    await rm(path.join(q, "a.js")); await symlink(path.join(tmp, "geheim"), path.join(q, "a.js"));
+    await assert.rejects(quelle.eintraege[0].lesen(), /geändert|ausgetauscht|ELOOP/);
+    await rm(path.join(q, "a.js")); await writeFile(path.join(q, "a.js"), "AAAA");
+    quelle = await ordnerLesen(q);
+    await writeFile(path.join(q, "b.tmp"), "BBBB"); await rename(path.join(q, "b.tmp"), path.join(q, "a.js"));   // gleiche Größe, andere Datei
+    await assert.rejects(quelle.eintraege[0].lesen(), /ausgetauscht/);
+    // Nach der Prüfung geänderte Quelle: kopiert wird das Geprüfte
+    await writeFile(path.join(q, "a.js"), "CCCC");
+    const neu = await ordnerLesen(q); const { bericht, dateien } = await pruefen(neu.eintraege);
+    await writeFile(path.join(q, "a.js"), `const t = "ghp_${"z".repeat(36)}";`);
+    const po = path.join(tmp, "po"); await mkdir(po); const code = path.join(tmp, "stage", "code");
+    await einsortieren({ plan: kopierPlan(dateien, bericht, auswahlPruefen({}, bericht)), wurzel: po, codeOrdner: code });
+    assert.equal(await readFile(path.join(code, "a.js"), "utf8"), "CCCC");
+  } finally { await rm(tmp, { recursive: true, force: true }); }
+});
+
+test("Befund 3: Geheimnis-Sperre auch für konzept/doku/material und Wissen", async () => {
+  const tmp = await mkdtemp(path.join(os.tmpdir(), "cs-einlesen-ziele-"));
+  try {
+    const po = path.join(tmp, "po"); await mkdir(po);
+    const boese = { rel: "KONZEPT.md", groesse: 10, lesen: async () => Buffer.from(`# Ziel\napi_key: "abcdefgh12345"`) };
+    await assert.rejects(einsortieren({ plan: { code: [], konzept: [boese], doku: [], material: [] }, wurzel: po, codeOrdner: path.join(tmp, "s", "code") }), /Geheimnis/);
+    assert.equal(wissenAusKonzept("K.md", '# Ziel\npassword = "hunter2geheim"\n## Funktionen\nPlanung').some((w) => /hunter|password/.test(w.text)), false);
+  } finally { await rm(tmp, { recursive: true, force: true }); }
+});
+
+test("Befund 4: Windows-Sondernamen, Leerzeichen vorn, Doppelname nach NFC", () => {
+  for (const n of ["CONIN$", "conout$.txt", "COM¹", "lpt³.log", " vorne.txt", "a/ b"]) assert.ok(pfadFehler(n), n);
+  assert.equal(pfadFehler("com10.txt"), null);
+  assert.throws(() => zipEintraege(zip([["café.txt", "x"], ["café.txt", "y"]])), /Doppelter Name/);
+  assert.throws(() => zipEintraege(zip([["Café.txt", "x"], ["CAFÉ.TXT", "y"]])), /Doppelter Name/);
+});
+
+test("Befund 5: .git als Datei oder Ordner auf jeder Ebene, gefährliche .gitattributes", async () => {
+  for (const p of [".git", "sub/.git", "a/b/.git/config", "a/.GIT"]) assert.equal(ausschluss(p), ".git", p);
+  const r = await pruefen(zipQuelle(zip([["p/sub/.git", "gitdir: /etc"], ["p/.gitattributes", "*.js filter=boese\n"], ["p/sub/.gitattributes", "* text=auto\n"], ["p/a.js", "1"]])));
+  assert.ok(r.bericht.git);
+  assert.deepEqual(r.dateien.map((d) => d.rel).sort(), ["a.js", "sub/.gitattributes"]);
+  assert.deepEqual(r.bericht.gefaehrlich.map((g) => g.pfad), [".gitattributes"]);
+  assert.match(r.bericht.gefaehrlich[0].grund, /Git-Filter/);
+});
+
+test("Befund 6: weitere gefährliche Endungen, Skripte im Autostart", () => {
+  for (const p of ["x.command", "a.iso", "a.img", "a.vhd", "a.vhdx", "h.chm", "a.msix", "a.appx", "a.xll", "a.library-ms", "a.scpt", "a.jar", "a.vbs", "a.wsf", "a.hta",
+    "Start Menu/Programs/Startup/run.js", "autostart/x.js", "Startup/x.jse"]) assert.ok(gefaehrlich(p), p);
+  for (const p of ["vite.config.js", "src/main.js", "eslint.config.js", "src/startup.js"]) assert.equal(gefaehrlich(p), null, p);
+});
+
+test("Befund 7: Strukturliste nur label/title, keine Datenwerte, angehakte Personendaten-Dateien fehlen", async () => {
+  const d = {
+    "src/components/Menu.jsx": `[{ label: "Kunden" }, { title: "Planung" }, { name: "Max Muster" }, { text: "Hallo" }, { label: "max@muster.at" }, { label: "Tel 0664 1234567" }, { title: "Stand 01.02.2020" }, { label: "Termin 2026-11-02" }]`,
+    "src/daten/kunden.json": "[]",
+  };
+  const s = await strukturListe(Object.keys(d), (p) => Buffer.from(d[p]), { ohne: ["src/daten/kunden.json"] });
+  for (const w of ["Kunden", "Planung"]) assert.ok(s.includes(w), w);
+  for (const w of ["Max Muster", "Hallo", "max@", "1234567", "01.02.2020", "2026-11-02", "kunden.json"]) assert.ok(!s.includes(w), w);
+  assert.ok(datenWert("a@b") && datenWert("12345") && datenWert("3.4.2021") && !datenWert("Wochenplan"));
+});
+
+test("Befund 8: Repository erst anlegen, Sichtbarkeit prüfen – nicht privat → nichts hochgeladen", async () => {
+  const { repoEinlesen } = await import("../lib/repo.mjs");
+  const tmp = await mkdtemp(path.join(os.tmpdir(), "cs-einlesen-repo-"));
+  try {
+    const code = path.join(tmp, "code"); await mkdir(code); await writeFile(path.join(code, "a.js"), "1");
+    const { execFile } = await import("node:child_process"); const { promisify } = await import("node:util"); const run = promisify(execFile);
+    const aufrufe = []; let angelegt = false;
+    const sh = async (b, a, o) => {
+      aufrufe.push([b, ...a].join(" "));
+      if (b === "gh" && a[1] === "view") { if (!angelegt) throw new Error("fehlt"); return { stdout: "INTERNAL\n" }; }
+      if (b === "gh" && a[1] === "create") { angelegt = true; return { stdout: "" }; }
+      if (b === "gh") return { stdout: "tester" };
+      return run(b, a, o);
+    };
+    await assert.rejects(repoEinlesen({ sh, ordner: code, keineHooks: tmp, projekt: { id: "x-projekt", name: "X" } }), /nicht privat/);
+    assert.ok(!aufrufe.some((a) => a.includes(" push ")), "kein Hochladen");
   } finally { await rm(tmp, { recursive: true, force: true }); }
 });

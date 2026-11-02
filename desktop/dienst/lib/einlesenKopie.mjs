@@ -6,6 +6,12 @@ import path from "node:path";
 import { sicherNeu, relOk, kennungOk } from "./projektordner.mjs";
 import { geheimeDatei, geheimnisseZaehlen, pfadFehler } from "./einlesen.mjs";
 
+/** Letzte Sperre vor jedem Schreiben (alle Ziele: code, konzept, doku, material): Name und Inhalt dürfen kein Geheimnis sein. */
+function keinGeheimnis(rel, buf) {
+  if (geheimeDatei(rel) || geheimnisseZaehlen(buf, rel)) throw new Error(`„${String(rel).slice(0, 80)}“ enthält ein Geheimnis – abgebrochen, nichts weiter kopiert`);
+  return buf;
+}
+
 /** Gibt es <basis>/<kennung> noch nicht? (Ist der Zielordner schon vorhanden, wird abgebrochen.) */
 export async function zielFrei(basis, kennung) {
   if (!kennungOk(kennung)) throw new Error("Ungültige Kennung");
@@ -28,7 +34,7 @@ export async function einsortieren({ plan, wurzel, codeOrdner, melde = () => {} 
     for (const d of plan[art]) {
       const rel = vorn + d.rel;
       if (!relOk(rel)) { ausgelassen.push(d.rel); continue; }
-      try { await sicherNeu(wurzel, rel, await d.lesen()); kopiert++; }
+      try { await sicherNeu(wurzel, rel, keinGeheimnis(d.rel, await d.lesen())); kopiert++; }
       catch (e) { if (e?.code === "EEXIST") { ausgelassen.push(d.rel); continue; } throw e; }
     }
   }
@@ -37,7 +43,7 @@ export async function einsortieren({ plan, wurzel, codeOrdner, melde = () => {} 
     const ziel = path.resolve(codeOrdner, ...d.rel.split("/"));
     if (!ziel.startsWith(codeOrdner + path.sep)) { ausgelassen.push(d.rel); continue; }
     await mkdir(path.dirname(ziel), { recursive: true });
-    await writeFile(ziel, await d.lesen(), { flag: "wx" });
+    await writeFile(ziel, keinGeheimnis(d.rel, await d.lesen()), { flag: "wx" });
     kopiert++; code++;
     if (code % 500 === 0) melde(`${code} Code-Dateien kopiert …`);
   }
@@ -55,7 +61,7 @@ export async function geheimnisseImOrdner(ordner, { max = 5 * 1024 * 1024 } = {}
       if (st.isSymbolicLink()) { r.push(x); continue; }
       if (st.isDirectory()) { await gehe(p, x); continue; }
       if (!st.isFile() || st.size > max || geheimeDatei(x)) { r.push(x); continue; }
-      if (geheimnisseZaehlen((await readFile(p)).toString("latin1"))) r.push(x);
+      if (geheimnisseZaehlen(await readFile(p), x)) r.push(x);
     }
   };
   await gehe(ordner, "");

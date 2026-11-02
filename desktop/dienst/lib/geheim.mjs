@@ -38,6 +38,27 @@ export function ohneGeheimnisse(text) {
   return s;
 }
 
+// Code-Dateien: nur Zuweisungen mit wörtlichem Text zählen („token = getToken()“ ist kein Geheimnis); Platzhalter zählen nicht
+const CODE_DATEI = /\.(m?[jt]sx?|cjs|vue|svelte|astro|py|rb|go|rs|java|kt|cs|php|dart|swift|c|cc|cpp|h|hpp)$/i;
+const PLATZHALTER = /^(?:\$\{|\$[A-Z_]|%[A-Z_]|\{\{|<|process\.env|import\.meta|os\.environ|env\(|getenv|your[_-]|xxx|\*{3}|changeme|example|placeholder|dummy|test$|\[entfernt\])/i;
+/**
+ * Anzahl der Zuweisungen password/secret/token/api_key … = „Wert“ (gleiches Muster wie ohneGeheimnisse, Einlesen 0.15.0). Schalterwerte und
+ * Platzhalter zählen nicht; in Code-Dateien (rel) nur Werte in Anführungszeichen.
+ */
+export function zuweisungenZaehlen(text, rel = "") {
+  let n = 0; const code = CODE_DATEI.test(String(rel));
+  for (const m of String(text || "").matchAll(ZUWEISUNG)) {
+    const [, , k, , w] = m;
+    if (nurSchalter(k, w)) continue;
+    const zitiert = /^\\?["']/.test(w);
+    if (code && !zitiert) continue;
+    const roh = w.replace(/^\\?["']|\\?["']$/g, "");
+    if (roh.length < 6 || PLATZHALTER.test(roh)) continue;
+    n++;
+  }
+  return n;
+}
+
 export function kuerzen(text, max = 1500) {
   const s = String(text ?? "");
   return s.length > max ? s.slice(0, max - 1) + "…" : s;

@@ -78,6 +78,20 @@ ohne .env und Schlüssel).“ Die ZIP herunterladen (z. B. nach `D:\Downloads`),
 Das Original (ZIP bzw. Ordner) bleibt unverändert. Bricht das Einlesen ab, steht der Grund im Assistenten; ein schon angelegtes Projekt löschst du unter „Projekte verwalten“
 (das GitHub-Repository bleibt bestehen und muss bei GitHub gelöscht werden, bevor dieselbe Kennung neu eingelesen werden kann).
 
+## Nachbesserung nach der Sicherheitsprüfung (02.11.2026, Ergebnis GELB)
+| Nr. | Befund | Umsetzung |
+|---|---|---|
+| 1 | Geheime Dateien nach Namen | env-Dateien nach `(^|[.-_])env([.-_]|$)` (z. B. `.env.production`, `prod.env`, `app_env.txt`) und `.envrc`; dazu `.npmrc`, `.pypirc`, `.docker/config.json`, `.netrc`, `.git-credentials`, `*.p12`, `*.pfx`, `*.keystore`, `credentials.json`, `service-account*.json`. **Ausnahme:** Quell- und Typ-Dateien (`vite-env.d.ts`, `env.js` …) – sonst fiele bei jedem Vite-Projekt `src/vite-env.d.ts` weg; ihr Inhalt wird wie jede Datei auf Schlüssel geprüft. |
+| 2 | Schlüssel-Muster | zusätzlich `npm_…`, `AIza…`, `glpat-…`, `xox[baprs]-…`, jeder „BEGIN … PRIVATE KEY“ (auch PGP „PRIVATE KEY BLOCK“, OpenSSH, verschlüsselt), Stripe `sk_live_`/`rk_live_`, Slack-Webhooks. Zuweisungen `password/secret/token/api_key … = „Wert“` (Muster ZUWEISUNG aus `geheim.mjs`, `zuweisungenZaehlen`) zählen als Treffer – in Code-Dateien nur Werte in Anführungszeichen, Schalterwerte (`false`) und Platzhalter (`${…}`, `process.env…`, `your-…`) nicht. UTF-16 (BOM oder Null-Bytes) wird vor der Prüfung umgewandelt. **Bekannte Grenze:** Base64- oder anders kodierte Schlüssel werden nicht erkannt. |
+| 3 | Lesen und Wiederverwenden | Ordner-Dateien werden mit `O_NOFOLLOW` (macOS/Linux) geöffnet; Gerät/Inode und Größe müssen zum Durchlauf passen (`fstat` gegen `lstat`), sonst Abbruch. Jede Datei wird **einmal** gelesen; kopiert wird genau der geprüfte Inhalt (alle Ziele). Vor jedem Schreiben (code, konzept, doku, material) prüft `einsortieren` Name und Inhalt noch einmal; Wissens-Einträge mit Geheimnis fallen ganz weg. Gesamtgrenze dafür 512 MB. |
+| 4 | Pfade | auch `CONIN$`, `CONOUT$`, `COM¹–³`, `LPT¹–³` und Leerzeichen vorn abgelehnt; Doppelnamen nach NFC und klein geschrieben. |
+| 5 | .git | `.git` als Datei oder Ordner auf jeder Ebene ausgeschlossen; `.gitattributes` mit Filtern/Treibern (`gefaehrlicheAttribute`) wird nicht übernommen und als Hinweis gezeigt. |
+| 6 | Gefährliche Endungen | zusätzlich `.command .iso .img .vhd .vhdx .chm .msix .appx .xll .library-ms .scpt .jar .vbs .wsf .hta`; `.js/.jse/.vbs/.wsf/.hta` in Autostart-/Startmenü-Ordnern (Windows Script Host). Normale `.js` (z. B. `vite.config.js`) bleiben Code. |
+| 7 | Strukturliste | nur `label` und `title` (dazu Routen); Werte mit `@`, langen Ziffernfolgen oder Datumsangaben fallen weg; angehakte Personendaten-Dateien fehlen ganz (auch als Pfad). |
+| 8 | Repository | erst `gh repo create --private` (ohne `--push`), dann Sichtbarkeit genau `PRIVATE` prüfen (nicht „internal“), erst dann selbst `git -c core.hooksPath=<leer> push`; Zugang nur per `-c` für diesen Aufruf, nichts in der Git-Einstellung. |
+| 9 | Reste | Beim Start des Dienstes wird `<Daten>/einlesen/` geleert. |
+| 10 | Netzwerkpfade | `ws_einlesen_quelle` lehnt `\\Server\Freigabe` (auch `//…`, `\\?\UNC\…`) sofort mit klarer Meldung ab. |
+
 ## Offen / bewusst nicht gebaut
 - Zuordnung je Eintrag der **obersten Ebene** (Datei oder Ordner), nicht je einzelner Datei in Unterordnern.
 - Eingelesene `CLAUDE.md`/`AGENTS.md` liegen zusätzlich im Code (Teil des Projekts); ob Claude Code sie in Aufträgen von selbst liest, hängt von Claude Code ab – die Rangfolge der Regeln im Auftrag gilt trotzdem.
