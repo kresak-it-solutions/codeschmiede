@@ -3,8 +3,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { kontrast, luminanz, lesbarMachen, pruefeBaustein, zusammenfassung, verhaeltnis, istHex, SOLL } from "../../../web/src/kontrast.js";
-import { KATALOG, KATALOG_IDS, bausteinWerteBereinigen, bausteineBereinigen, mitStandard, nurAbweichung, SEITE } from "../../../web/src/bausteinKatalog.js";
-import { BAUSTEIN_IDS, bausteinVorschlag, bausteinAusFrage, designPrompt } from "../lib/design.mjs";
+import { KATALOG, KATALOG_IDS, ALT_ZU_NEU, bausteinVon, galerieKennung, bausteinWerteBereinigen, bausteineBereinigen, mitStandard, nurAbweichung, SEITE } from "../../../web/src/bausteinKatalog.js";
+import { BAUSTEIN_IDS, ALT_ZU_NEU as ALT_DIENST, bausteinVorschlag, bausteinAusFrage, designPrompt } from "../lib/design.mjs";
 
 test("Kontrast: bekannte Werte nach WCAG", () => {
   assert.equal(Math.round(kontrast("#000000", "#ffffff") * 100) / 100, 21);
@@ -51,8 +51,29 @@ test("Katalog: Kennungen gleich in Web, Werkstatt und Datenbank-Schema", async (
     for (const m of ["hell", "dunkel"]) for (const k of ["bg", "text", "rand"]) assert.ok(istHex(b.std[m][k]), `${b.id} ${m}.${k}`);
   }
   const { readFile } = await import("node:fs/promises");
-  const sql = await readFile(new URL("../../../supabase/migrations/0037_baustein_designer.sql", import.meta.url), "utf8");
-  for (const id of KATALOG_IDS) assert.ok(sql.includes(`'${id}'`), `0037 kennt ${id} nicht`);
+  const sql = await readFile(new URL("../../../supabase/migrations/0054_design_kennungen.sql", import.meta.url), "utf8");
+  for (const id of [...KATALOG_IDS, ...Object.keys(ALT_ZU_NEU)]) assert.ok(sql.includes(`'${id}'`), `0054 kennt ${id} nicht`);
+});
+
+test("Design-System 2.0: Kennungen wie Trainer to go (bausteine.js), alte werden abgebildet", () => {
+  // Stand Trainer to go src/lib/design/bausteine.js (BAUSTEINE, 02.11.2026) – ändert sich die Liste dort, hier, in 0054 und lib/design.mjs nachziehen
+  const TTG = ["knopf-haupt", "knopf-zweit", "knopf-umriss", "knopf-text", "knopf-gefahr", "symbolknopf", "eingabe", "schalter", "abzeichen-haupt",
+    "abzeichen-neben", "abzeichen-umriss", "abzeichen-gefahr", "status-zugesagt", "status-offen", "status-pill-ok", "status-pill-warn", "status-pill-bad",
+    "status-pill-info", "karte", "hauptkarte", "kachel-kennzahl", "tabelle", "liste", "symbol-kachel", "datei"];
+  assert.deepEqual([...BAUSTEIN_IDS].sort(), [...TTG].sort());
+  assert.deepEqual({ ...ALT_ZU_NEU }, { ...ALT_DIENST });
+  assert.deepEqual({ ...ALT_ZU_NEU }, { "knopf-neben": "knopf-zweit", "knopf-leise": "knopf-text", "knopf-symbol": "symbolknopf" });
+  assert.equal(bausteinVon("knopf-neben").id, "knopf-zweit");
+  assert.equal(galerieKennung("knopf-zweit"), "knopf-neben");
+  assert.equal(galerieKennung("status-pill-ok"), "status-pill-ok");
+  // alte und neue Kennung zugleich: die neue gewinnt; alte allein wird umbenannt
+  assert.deepEqual(bausteineBereinigen({ "knopf-neben": { ecken: 4 }, "knopf-zweit": { ecken: 9 } }), { "knopf-zweit": { ecken: 9 } });
+  assert.deepEqual(bausteineBereinigen({ "knopf-leise": { ecken: 4 } }), { "knopf-text": { ecken: 4 } });
+  // Werkstatt: alte Frage-Kennung → neue, Vorschlag unter alter Kennung wird unter der neuen gespeichert
+  assert.equal(bausteinAusFrage("[Baustein knopf-symbol] größer"), "symbolknopf");
+  assert.deepEqual(bausteinVorschlag({ bausteine: { "knopf-symbol": { groesse: "gross" } } }, "symbolknopf"), { bausteine: { symbolknopf: { groesse: "gross" } } });
+  assert.deepEqual(bausteinVorschlag({ bausteine: { "status-pill-ok": { hell: { bg: "#ECFDF5" } } } }, "status-pill-ok"), { bausteine: { "status-pill-ok": { hell: { bg: "#ecfdf5" } } } });
+  assert.match(designPrompt({ projektName: "X", frage: "[Baustein status-pill-warn] wärmer", werte: {} }), /nie in der Hauptfarbe/);
 });
 
 test("Katalog: Werte streng bereinigen, nur Abweichungen speichern", () => {

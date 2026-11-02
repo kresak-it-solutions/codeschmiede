@@ -90,6 +90,19 @@ Einrichtung › **Dieser PC** (0.9.8, Datenbank 0040): Seiten-Designer-Freigabe,
 Etappe 4 „Übernehmen“: alle offenen Design-Änderungen an einer Stelle (`web/src/Uebernehmen.jsx`) – „wirkt sofort“ (Freigabe-Reiter der App,
 Einzelzeilen, Ausrollen sofort/schrittweise/nur Testfassung, „Zurück auf Version N“) und „braucht Auftrag“ (Grunddesign, neue Bausteine).
 
+### Design-Chat und Baustein-Kennungen (seit 0.12.1, Datenbank 0054)
+Kennungen wie Trainer to go `src/lib/design/bausteine.js` (25): knopf-haupt · knopf-zweit · knopf-umriss · knopf-text · knopf-gefahr · symbolknopf ·
+eingabe · schalter · abzeichen-haupt/-neben/-umriss/-gefahr · status-zugesagt · status-offen · status-pill-ok/-warn/-bad/-info · karte · hauptkarte ·
+kachel-kennzahl · tabelle · liste · symbol-kachel · datei. Alt → neu: knopf-neben → knopf-zweit, knopf-leise → knopf-text, knopf-symbol → symbolknopf
+(Web `ALT_ZU_NEU`/`galerieKennung`, Werkstatt `lib/design.mjs`, Datenbank nimmt beide an). Gleich halten: `web/src/bausteinKatalog.js`,
+`desktop/dienst/lib/design.mjs`, Migration (zuletzt 0054) – der Test `desktop/dienst/test/kontrast.test.mjs` vergleicht alle drei und die Liste der App.
+Nicht in dieser Liste: die übrigen rund 20 Bausteine aus §5 (z. B. Seitenkopf, Reiter, Hinweis) – die steuert der App-Designer 3.0 über Tokens,
+die App speichert für sie keine Einzelwerte.
+**0054 einspielen (Gerhard):** am besten **direkt nach dem Zusammenführen**, spätestens bevor jemand im Baustein-Chat einen umbenannten oder neuen
+Baustein fragt: Actions › „Datenbank einspielen“ › Run workflow, Zweig `main`, Pfad `migrations/0054_design_kennungen.sql`. 0054 erweitert nur
+(alte Kennungen bleiben erlaubt), daher ist auch Einspielen **vor** dem Zusammenführen gefahrlos (Supabase › SQL Editor › Inhalt der Datei ausführen).
+Bis dahin meldet nur der Baustein-Chat bei knopf-zweit/-text, symbolknopf, status-pill-* und hauptkarte einen Fehler; alles andere läuft.
+
 ### Aufgaben (0.9.10, Entwurf frei von Gerhard 2026-10-25 13:50, Datenbank 0042)
 Menüpunkt **Aufgaben** direkt unter „Zu erledigen“ (`web/src/Aufgaben.jsx`; Plakette = offene Aufgaben, für die ich zuständig bin). Eine Aufgabe gehört
 zu einem Projekt: Titel, „Was soll geändert werden?“, Status (Offen / In Arbeit / Erledigt), Priorität (Hoch / Mittel / Niedrig), Fällig am, Zuständig
