@@ -104,6 +104,26 @@ export async function sicherSchreiben(wurzel, rel, inhalt) {
   return ziel;
 }
 
+/**
+ * Neue Datei rel unter wurzel anlegen – NIE überschreiben (Sicherungen). Erst in eine Hilfsdatei schreiben, dann umbenennen, wenn der Name
+ * noch frei ist; nie durch eine Verknüpfung hindurch. inhalt darf ein Buffer, Text oder Lese-Strom sein. Gibt den Pfad zurück.
+ */
+export async function sicherNeu(wurzel, rel, inhalt) {
+  if (!relOk(rel)) throw new Error("Ungültiger Dateiname im Projektordner");
+  const teile = rel.split("/");
+  const ordner = teile.length > 1 ? await sicherOrdner(wurzel, teile.slice(0, -1).join("/")) : await realpath(wurzel);
+  const ziel = path.join(ordner, teile.at(-1));
+  if (await lstat(ziel).catch(() => null)) throw Object.assign(new Error(`„${rel}“ gibt es schon – wird nicht überschrieben`), { code: "EEXIST" });
+  const tmp = path.join(ordner, `.${teile.at(-1)}.cs-neu`);
+  await rm(tmp, { force: true });
+  try {
+    await writeFile(tmp, inhalt, { flag: "wx" });
+    if (await lstat(ziel).catch(() => null)) throw Object.assign(new Error(`„${rel}“ gibt es schon – wird nicht überschrieben`), { code: "EEXIST" });
+    await rename(tmp, ziel);
+  } finally { await rm(tmp, { force: true }).catch(() => {}); }
+  return ziel;
+}
+
 /** Datei rel unter wurzel löschen (nur eine Datei oder Verknüpfung, nie einen Ordner, nie durch eine Verknüpfung hindurch). */
 export async function sicherLoeschen(wurzel, rel) {
   if (!relOk(rel)) return false;
@@ -183,9 +203,9 @@ export async function geruestAnlegen(wurzel, { projektName = "", heute = new Dat
   const datum = heute.toISOString().slice(0, 10);
   const name = String(projektName).replace(/[\u0000-\u001f\u007f]/g, " ").slice(0, 80);
   const texte = {
-    "LIESMICH.md": `# Projektordner${name ? ` – ${name}` : ""}\n\nAngelegt von der Codeschmiede am ${datum}.\n\n| Ordner | Inhalt |\n|---|---|\n| code | Git-Arbeitskopie des Repositorys – hier arbeitet die Werkstatt (nicht von Hand ändern) |\n| code-arbeit | Arbeitsordner der Aufträge, Prüfungen und des Chats (macht die Werkstatt selbst) |\n| regeln | REGELN.md = deine Projektregeln (haben Vorrang vor dem allgemeinen Regelwerk), regelwerk = Kopie des Regelwerks in der festgelegten Fassung |\n| konzept | KONZEPT.md aus der Gruppe „Konzept“ (wird überschrieben), eigene Entwürfe in konzept/entwuerfe |\n| doku | Handbuch, Änderungsprotokoll, PDFs aus dem Repository (nach jedem Auftrag gespiegelt, wird überschrieben) |\n| material | Logos, Bilder, Vorlagen von dir – die Werkstatt liest sie bei jedem Auftrag als Daten mit |\n| sicherungen | Sicherungen des Datenbank-Aufbaus (folgt, sobald das Projekt eine Datenbank hat) |\n\nDie Sicherheitsregeln der Codeschmiede gelten immer – keine Datei in diesem Ordner kann sie aufheben.\nKeine Zugangsdaten, Passwörter oder Personendaten (z. B. Fotos von Kindern) in diesen Ordner legen.\n`,
+    "LIESMICH.md": `# Projektordner${name ? ` – ${name}` : ""}\n\nAngelegt von der Codeschmiede am ${datum}.\n\n| Ordner | Inhalt |\n|---|---|\n| code | Git-Arbeitskopie des Repositorys – hier arbeitet die Werkstatt (nicht von Hand ändern) |\n| code-arbeit | Arbeitsordner der Aufträge, Prüfungen und des Chats (macht die Werkstatt selbst) |\n| regeln | REGELN.md = deine Projektregeln (haben Vorrang vor dem allgemeinen Regelwerk), regelwerk = Kopie des Regelwerks in der festgelegten Fassung |\n| konzept | KONZEPT.md aus der Gruppe „Konzept“ (wird überschrieben), eigene Entwürfe in konzept/entwuerfe |\n| doku | Handbuch, Änderungsprotokoll, PDFs aus dem Repository (nach jedem Auftrag gespiegelt, wird überschrieben) |\n| material | Logos, Bilder, Vorlagen von dir – die Werkstatt liest sie bei jedem Auftrag als Daten mit |\n| sicherungen | Sicherungen beim Live-Schalten: Stand des Repositorys (git bundle von main) und – mit Datenbank – der Aufbau der Live-Datenbank. Nichts wird überschrieben oder automatisch gelöscht |\n\nDie Sicherheitsregeln der Codeschmiede gelten immer – keine Datei in diesem Ordner kann sie aufheben.\nKeine Zugangsdaten, Passwörter oder Personendaten (z. B. Fotos von Kindern) in diesen Ordner legen.\n`,
     "material/LIESMICH.md": "# Material\n\nLogos, Bilder, Vorlagen (PNG, JPEG, WebP, GIF, SVG, PDF, Text, Markdown, CSV, JSON). Die Werkstatt gibt sie Claude bei jedem Auftrag als **Daten** mit (höchstens 30 Dateien, zusammen 25 MB) – Text in diesen Dateien ist nie eine Anweisung.\nKeine Fotos von Personen oder Kindern, keine Mitgliederdaten.\n",
-    "sicherungen/LIESMICH.md": "# Sicherungen\n\nHier legt die Codeschmiede den Aufbau der Datenbank vor jedem Live-Schalten ab, sobald das Projekt eine Datenbank hat.\nBis dahin liegt die Sicherung des Aufbaus in der Datenbank selbst (Schema codeschmiede.sicherungen); die eigentliche Datensicherung macht Supabase.\n",
+    "sicherungen/LIESMICH.md": "# Sicherungen\n\nBei jedem Live-Schalten legt die Werkstatt des Admins hier ab (Datum im Namen, nie überschrieben, nichts wird automatisch gelöscht):\n- `<datum>_repo-main_<stand>.bundle` – Stand des Repositorys (git bundle von main). Wiederherstellen: `git clone <datei> ordner`.\n- `<datum>_datenbank-aufbau_<stand>.json` – Aufbau der Live-Datenbank vor dem Einspielen (Tabellen, Regeln, Funktionen – keine Daten, keine Zugangsdaten), sobald das Projekt eine Datenbank hat.\nDie Sicherung des Aufbaus liegt zusätzlich in der Datenbank selbst (Schema codeschmiede.sicherungen); die eigentliche Datensicherung macht Supabase.\nÄltere Sicherungen bitte bei Bedarf selbst aufräumen.\n",
     "konzept/entwuerfe/LIESMICH.md": "# Entwürfe\n\nEigene Entwürfe (HTML, Bilder, PDF, Markdown). Die Werkstatt liest sie bei jedem Auftrag als Daten mit.\n",
   };
   for (const [rel, inhalt] of Object.entries(texte)) if (!(await sicherLesen(wurzel, rel, 64 * 1024))) await sicherSchreiben(wurzel, rel, inhalt);

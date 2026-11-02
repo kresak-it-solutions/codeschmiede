@@ -21,11 +21,11 @@ export function OrdnerBaum({ pfad }) {
     <div className="font-mono text-[13px] leading-7 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 px-3.5 py-2.5 overflow-x-auto" aria-label="Aufbau des Projektordners">
       <div><b className="text-emerald-700 dark:text-emerald-300 font-semibold break-all">{pfad || "<Projekte-Ordner>\\<kennung>"}</b></div>
       {z("code", "Git-Kopie des Repositorys, hier arbeitet die Werkstatt")}
-      {z("regeln", "REGELN.md (deine Projektregeln, Vorrang) und regelwerk (Kopie in der festgelegten Fassung)")}
+      {z("regeln", "REGELN.md (deine Projektregeln, Vorrang) und regelwerk (Kopie zum Lesen in der festgelegten Fassung)")}
       {z("konzept", "Konzept aus der Gruppe „Konzept“, eigene Entwürfe in entwuerfe")}
       {z("doku", "Handbuch, Änderungsprotokoll, PDFs – nach jedem Auftrag gespiegelt")}
       {z("material", "Logos, Bilder, Vorlagen von dir – liest die Werkstatt als Daten mit")}
-      {z("sicherungen", "Datenbank-Aufbau vor jedem Live-Schalten (sobald es eine gibt)", "└─")}
+      {z("sicherungen", "Repo-Stand und Datenbank-Aufbau bei jedem Live-Schalten (nie überschrieben)", "└─")}
     </div>);
 }
 
@@ -40,11 +40,11 @@ export function RegelnRangfolge({ konflikt = null }) {
         <div className={`${card} p-3.5 text-sm leading-relaxed`}><h4 className="font-semibold flex items-center gap-1.5 mb-1"><Scale className="w-4 h-4 text-emerald-700" aria-hidden="true" />2 · Projektregeln{pill("Vorrang")}</h4>
           <span className="font-mono text-xs">regeln\REGELN.md</span> im Projektordner: Sprache, Stil, Fachliches, Abläufe. Gehen dem allgemeinen Regelwerk vor.</div>
         <div className={`${card} p-3.5 text-sm leading-relaxed`}><h4 className="font-semibold flex items-center gap-1.5 mb-1"><BookOpen className="w-4 h-4 text-slate-500" aria-hidden="true" />3 · Allgemeines Regelwerk</h4>
-          Gilt für alles, was die Projektregeln nicht anders festlegen. Fassung je Projekt fest (<span className="font-mono text-xs">regeln\regelwerk</span>), eine neue Fassung nur nach deiner Entscheidung.</div>
+          Gilt für alles, was die Projektregeln nicht anders festlegen. Fassung je Projekt fest – Aufträge lesen sie direkt aus GitHub, <span className="font-mono text-xs">regeln\regelwerk</span> ist eine Kopie zum Lesen. Eine neue Fassung nur nach deiner Entscheidung („Anbindungen“ › „Neue Regelwerk-Fassung übernehmen“).</div>
       </div>
       {konflikt ? <p className={`${ROT} flex gap-2`} role="alert"><AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" aria-hidden="true" /><span>{konflikt}</span></p>
         : <p className={NOTIZ}>Widerspricht eine Projektregel einer Sicherheitsregel, zeigt die Codeschmiede das als rote Zeile unter „Anbindungen“ und im Auftrag an – die Sicherheitsregel gilt.</p>}
-      <p className="text-xs text-slate-500">Die Erkennung ist nur ein Hinweis – die Sicherheitsregeln gelten fest im Programm, auch wenn nichts rot ist. Eine geänderte <span className="font-mono">REGELN.md</span> gilt erst, wenn der Admin sie unter „Anbindungen“ bestätigt hat.</p>
+      <p className="text-xs text-slate-500">Die Erkennung ist nur ein Hinweis – die Sicherheitsregeln gelten fest im Programm, auch wenn nichts rot ist. Eine geänderte <span className="font-mono">REGELN.md</span> gilt erst, wenn der Admin sie unter „Anbindungen“ bestätigt hat – dann in Aufträgen, allen Chats (Konzept, Claude-Chat, Design, Kachel) und Prüfungen, auch bei anderen KI-Anbietern.</p>
     </section>);
 }
 

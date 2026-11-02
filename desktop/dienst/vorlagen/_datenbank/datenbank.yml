@@ -5,7 +5,9 @@ name: Datenbank
 # Zugang: je Umgebung das Geheimnis SUPABASE_DB_URL (Verbindungsadresse NUR dieser Datenbank, „Session pooler“) – trägst du selbst in
 # GitHub › Settings › Environments ein. Die Umgebungen lassen nur ihren Zweig zu (main bzw. live), andere Zweige kommen nicht an den Zugang.
 # Was eingespielt ist und die Sicherung des Aufbaus (vor jedem Einspielen in Live) liegen in der Datenbank selbst im Schema „codeschmiede“
-# (nicht über die App erreichbar). Jede Datei läuft in einer eigenen Transaktion: Fehler → nichts von ihr bleibt, nichts Weiteres läuft.
+# (nicht über die App erreichbar). Seit Codeschmiede 0.13.1 wird diese Sicherung (nur der Aufbau, keine Daten, keine Zugangsdaten) bei PRIVATEN
+# Repositories zusätzlich 7 Tage als Artefakt „datenbank-aufbau“ abgelegt – die Werkstatt des Admins legt sie in den Projektordner (sicherungen).
+# Jede Datei läuft in einer eigenen Transaktion: Fehler → nichts von ihr bleibt, nichts Weiteres läuft.
 # Grenzen: Eine Datei mit eigenem begin/commit hebt diese Klammer auf; „create index concurrently“ und „vacuum“ gehen hier nicht
 # (in einer Transaktion verboten) – solche Schritte gehören in eine eigene, von Hand ausgeführte Datei.
 on:
@@ -32,6 +34,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683   # v4.2.2
         with: { fetch-depth: 0, persist-credentials: false }
       - name: Einspielen
+        id: einspielen
         env:
           DB_URL: ${{ secrets.SUPABASE_DB_URL }}
           ZIEL: ${{ github.ref == 'refs/heads/live' && 'live' || 'test' }}
@@ -136,6 +139,11 @@ jobs:
                 'eingespielt', (select json_agg(datei order by datei) from codeschmiede.migrationen))::jsonb" > /dev/null 2>fehler.txt \
               || { echo "::error::Sicherung des Aufbaus fehlgeschlagen – nichts eingespielt: $(melde < fehler.txt)"; exit 1; }
             echo "::notice::Aufbau der Live-Datenbank gesichert (codeschmiede.sicherungen)"
+            # Für den Projektordner (sicherungen): genau diese Sicherung als Datei – nur der Aufbau, nie die Verbindungsadresse
+            mkdir -p "$RUNNER_TEMP/sicherung"
+            if q -c "select aufbau from codeschmiede.sicherungen order by id desc limit 1" > "$RUNNER_TEMP/sicherung/datenbank-aufbau.json" 2>fehler.txt; then
+              echo "sicherung=ja" >> "$GITHUB_OUTPUT"
+            else echo "::warning::Sicherung des Aufbaus nicht als Datei abgelegt (liegt in codeschmiede.sicherungen): $(melde < fehler.txt)"; fi
           fi
           for f in "${OFFEN[@]}"; do
             echo "Spiele ein: $f"
@@ -144,3 +152,12 @@ jobs:
             q --single-transaction -f einspielen.sql > /dev/null 2>fehler.txt || { echo "::error::$f konnte nicht in die $ZIEL-Datenbank eingespielt werden (nichts davon übernommen, nichts Weiteres eingespielt): $(melde < fehler.txt)"; exit 1; }
             echo "::notice::$ZIEL: $f eingespielt"
           done
+      # Nur bei privaten Repositories (Artefakte öffentlicher Repositories kann jeder mit GitHub-Konto laden), 7 Tage, auch wenn das Einspielen danach scheitert
+      - name: Sicherung des Aufbaus ablegen
+        if: ${{ always() && steps.einspielen.outputs.sicherung == 'ja' && github.event.repository.private }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: datenbank-aufbau
+          path: ${{ runner.temp }}/sicherung/datenbank-aufbau.json
+          retention-days: 7
+          if-no-files-found: ignore

@@ -200,7 +200,7 @@ export async function dbOffen(git, repo) {
  * Nach dem Live-Schalten: Ablauf „Datenbank“ auf live starten und auf das Ergebnis warten (höchstens warteMs).
  * Rückgabe: Hinweistext oder null (keine Live-Datenbank / kein Ablauf).
  */
-export async function dbLiveEinspielen({ sh, projekt, vorher = null, kennung = "", warteMs = 10 * 60 * 1000, pause = (ms) => new Promise((r) => setTimeout(r, ms)) }) {
+export async function dbLiveEinspielen({ sh, projekt, vorher = null, kennung = "", warteMs = 10 * 60 * 1000, ergebnis = null, pause = (ms) => new Promise((r) => setTimeout(r, ms)) }) {
   if (!projekt.repo || !projekt.db_live_ref) return null;
   const repo = projekt.repo; repoPruefen(repo);
   if (!(await ablaufAufMain(sh, repo))) return "Datenbank-Station noch nicht eingerichtet – Live-Datenbank nicht aktualisiert";
@@ -218,6 +218,8 @@ export async function dbLiveEinspielen({ sh, projekt, vorher = null, kennung = "
   }
   if (!lauf) return "Live-Datenbank: Ablauf nicht gestartet – bitte bei GitHub prüfen";
   if (lauf.status !== "completed") return "Live-Datenbank: Einspielen läuft noch – Ergebnis in der Ampel";
+  // Lauf für die Ablage der Sicherung des Aufbaus (Artefakt „datenbank-aufbau“, 0.13.1)
+  if (ergebnis && /^\d{1,20}$/.test(String(lauf.databaseId || ""))) ergebnis.lauf = String(lauf.databaseId);
   return lauf.conclusion === "success" ? "Live-Datenbank aktuell"
     : "ACHTUNG: Live-Datenbank konnte nicht aktualisiert werden – der Code ist schon live. Ablauf „Datenbank“ bei GitHub ansehen, ggf. „Zurück“";
 }

@@ -18,11 +18,12 @@ export function wissenText(wissen = [], grenze = 8000) {
   }
   return Object.entries(KAPITEL).filter(([k]) => nach[k]).map(([k, t]) => `${t}:\n${nach[k].map((x) => `- ${x}`).join("\n")}`).join("\n");
 }
-export function assistentPrompt({ projekt, ort, kontext, frage, verlauf = [], gruppen = [], features = [], wissen = [], anhaenge = "" }) {
+// regeln = Block „Rangfolge der Regeln“ (lib/regeln.mjs › regelBlockText, 0.13.1) – steht vor allem anderen
+export function assistentPrompt({ projekt, ort, kontext, frage, verlauf = [], gruppen = [], features = [], wissen = [], anhaenge = "", regeln = "" }) {
   const alt = verlauf.slice(-10).map((m) => `${m.von ? "Gerhard" : "Assistent"}: ${kurz(m.text, 900)}`).join("\n");
   const fl = features.slice(0, 300).map((x) => `${x.id} = ${x.name} (Gruppe ${x.gruppe_id})`).join("; ");
   const gl = gruppen.slice(0, 80).map((g) => `${g.id} = ${g.name}${g.global ? " (Globale Einstellungen – gilt für die ganze App)" : ""}`).join("; ");
-  return `Du bist der Assistent in der Codeschmiede – Gerhards Programmierumgebung – und arbeitest mit ihm am Projekt „${projekt.name}“ (Repository ${projekt.repo || "–"}).
+  return `${regeln ? `${regeln}\n\n` : ""}Du bist der Assistent in der Codeschmiede – Gerhards Programmierumgebung – und arbeitest mit ihm am Projekt „${projekt.name}“ (Repository ${projekt.repo || "–"}).
 Halte dich an die Regeln in AGENTS.md des Projekts (falls im Ordner vorhanden).
 Du bist erfahrener App-Entwickler, App-Designer und (bei Trainer to go) UEFA-A-Lizenz-Trainer; die App soll Dorfvereine und Profivereine gleichermaßen ansprechen.
 Der aktuelle Ordner ist der Stand von main des Projekts (oder nur seine Dokumentation mit DATEIEN.txt als Liste aller Dateien). Du darfst NUR lesen – nichts ändern, nichts ausführen, keine Programme starten.
