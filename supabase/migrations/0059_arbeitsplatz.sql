@@ -172,17 +172,24 @@ create table if not exists public.ws_code_live (
   gekuerzt boolean not null default false,
   aktualisiert timestamptz not null default now()
 );
+-- Sicherheitsprüfung 02.11.2026 (H1): verdächtige Git-Einstellung im Arbeitsordner → Code live für diesen Auftrag abgeschaltet (Hinweis in der Oberfläche)
+alter table public.ws_code_live add column if not exists abgeschaltet boolean not null default false;
+alter table public.ws_code_live drop constraint if exists ws_code_live_abgeschaltet_leer;
+alter table public.ws_code_live add constraint ws_code_live_abgeschaltet_leer check (not abgeschaltet or jsonb_array_length(dateien) = 0);
 create index if not exists ws_code_live_alt on public.ws_code_live (aktualisiert);
 alter table public.ws_code_live enable row level security;
 revoke all on public.ws_code_live from public, anon, authenticated;
 grant select on public.ws_code_live to authenticated;
 drop policy if exists ws_code_live_lesen on public.ws_code_live;
-create policy ws_code_live_lesen on public.ws_code_live for select to authenticated using (public.ws_sieht_projekt(projekt_id));
+-- nur frische Zeilen (Sicherheitsprüfung M1): auch wenn das Aufräumen einmal ausbleibt, ist nichts älter als 2 Stunden lesbar
+create policy ws_code_live_lesen on public.ws_code_live for select to authenticated
+  using (public.ws_sieht_projekt(projekt_id) and aktualisiert > now() - interval '2 hours');
 -- bewusst nicht in der Realtime-Veröffentlichung (wie ws_code_anfragen seit 0032); die Oberfläche fragt kurz ab
 do $$ begin alter publication supabase_realtime drop table public.ws_code_live; exception when others then null; end $$;
 
 -- Melden: nur die Werkstatt, die den Auftrag gerade bearbeitet (eigener, eingeschalteter PC, Auftrag „läuft“ auf genau diesem PC)
-create or replace function public.ws_code_live_melden(p_pc uuid, p_auftrag bigint, p_basis text, p_dateien jsonb, p_gekuerzt boolean default false) returns void
+drop function if exists public.ws_code_live_melden(uuid, bigint, text, jsonb, boolean);   -- frühere Entwurfs-Fassung ohne „abgeschaltet“
+create or replace function public.ws_code_live_melden(p_pc uuid, p_auftrag bigint, p_basis text, p_dateien jsonb, p_gekuerzt boolean default false, p_abgeschaltet boolean default false) returns void
 language plpgsql security definer set search_path = public as $$
 declare a public.ws_auftraege; pj text;
 begin
@@ -192,12 +199,16 @@ begin
   if a.id is null or a.stand <> 'laeuft' or a.werkstatt_pc is distinct from p_pc then raise exception 'Dieser Auftrag läuft nicht auf diesem PC'; end if;
   if p_basis is null or p_basis !~ '^[0-9a-f]{40}$' then raise exception 'Ungültiger Startstand'; end if;
   if not public.ws_code_live_ok(p_dateien) then raise exception 'Ungültige oder zu große Datei-Liste'; end if;
+  if coalesce(p_abgeschaltet, false) and jsonb_array_length(p_dateien) > 0 then raise exception 'Abgeschaltet heißt: keine Dateien'; end if;
+  -- einmal abgeschaltet bleibt abgeschaltet (bis der Auftrag „läuft“ verlässt)
+  if exists (select 1 from public.ws_code_live where auftrag_id = p_auftrag and abgeschaltet) and not coalesce(p_abgeschaltet, false) then
+    raise exception 'Code live ist für diesen Auftrag abgeschaltet'; end if;
   pj := public.ws_projekt_von_gruppe(a.gruppe_id);
   delete from public.ws_code_live where aktualisiert < now() - interval '2 hours';
-  insert into public.ws_code_live (auftrag_id, projekt_id, pc, basis_sha, dateien, gekuerzt, aktualisiert)
-    values (a.id, pj, p_pc, p_basis, p_dateien, coalesce(p_gekuerzt, false), now())
+  insert into public.ws_code_live (auftrag_id, projekt_id, pc, basis_sha, dateien, gekuerzt, abgeschaltet, aktualisiert)
+    values (a.id, pj, p_pc, p_basis, p_dateien, coalesce(p_gekuerzt, false), coalesce(p_abgeschaltet, false), now())
   on conflict (auftrag_id) do update set projekt_id = excluded.projekt_id, pc = excluded.pc, basis_sha = excluded.basis_sha,
-    dateien = excluded.dateien, gekuerzt = excluded.gekuerzt, aktualisiert = now();
+    dateien = excluded.dateien, gekuerzt = excluded.gekuerzt, abgeschaltet = excluded.abgeschaltet, aktualisiert = now();
 end $$;
 
 -- Nach dem Lauf: eigene Zeile löschen (auch wenn der Auftrag schon nicht mehr „läuft“)
@@ -208,8 +219,19 @@ begin
   delete from public.ws_code_live where auftrag_id = p_auftrag and pc = p_pc;
   delete from public.ws_code_live where aktualisiert < now() - interval '2 hours';
 end $$;
-revoke execute on function public.ws_code_live_melden(uuid, bigint, text, jsonb, boolean), public.ws_code_live_ende(uuid, bigint) from public, anon;
-grant execute on function public.ws_code_live_melden(uuid, bigint, text, jsonb, boolean), public.ws_code_live_ende(uuid, bigint) to authenticated;
+revoke execute on function public.ws_code_live_melden(uuid, bigint, text, jsonb, boolean, boolean), public.ws_code_live_ende(uuid, bigint) from public, anon;
+grant execute on function public.ws_code_live_melden(uuid, bigint, text, jsonb, boolean, boolean), public.ws_code_live_ende(uuid, bigint) to authenticated;
+
+-- Regelmäßiges Aufräumen (Sicherheitsprüfung M1): Es gibt kein pg_cron; ws_code_aufraeumen (0031/0032) ruft jeder Werkstatt-Dienst beim Start
+-- und danach alle 10 Minuten auf – ab jetzt räumt sie auch ws_code_live auf (älter als 2 Stunden).
+create or replace function public.ws_code_aufraeumen() returns void
+language sql security definer set search_path = public as $$
+  update public.ws_code_anfragen set inhalt = null, baum = null where erstellt < now() - interval '5 minutes' and (inhalt is not null or baum is not null);
+  delete from public.ws_code_anfragen where erstellt < now() - interval '1 hour';
+  delete from public.ws_code_live where aktualisiert < now() - interval '2 hours';
+$$;
+revoke execute on function public.ws_code_aufraeumen() from public, anon;
+grant execute on function public.ws_code_aufraeumen() to authenticated;
 
 -- Auftrag verlässt „läuft“ (fertig, Rückfrage, Fehler, Abbruch): Diff sofort weg
 create or replace function public.ws_code_live_aufraeumen() returns trigger
@@ -239,7 +261,7 @@ begin
     raise exception 'Das Projekt hat noch kein Repository';
   end if;
   if p_art = 'datei' and (not public.ws_code_pfad_ok(p_pfad) or public.ws_code_geheim(p_pfad)) then raise exception 'Diese Datei kann nicht geöffnet werden'; end if;
-  if p_art = 'diff' and p_zweig in ('main','live') then raise exception 'Der Vergleich geht nur für einen Auftrags-Zweig'; end if;
+  if p_art = 'diff' and lower(btrim(p_zweig)) in ('main','live') then raise exception 'Der Vergleich geht nur für einen Auftrags-Zweig'; end if;
   if p_pc is not null and not exists (select 1 from public.ws_werkstatt_pcs w where w.id = p_pc and w.benutzer_id = auth.uid()) then
     raise exception 'Unbekannter Werkstatt-PC';
   end if;

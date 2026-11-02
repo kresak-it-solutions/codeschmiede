@@ -117,6 +117,24 @@ select count(*) adm from ws_code_live;
 select count(*) dev from ws_code_live;
 :FREMD
 select count(*) fremd from ws_code_live;
+\echo [18b] Alte Zeile (älter als 2 Std.) ist für Admin und Entwickler unsichtbar (0, 0); ws_code_aufraeumen löscht sie (0 übrig)
+reset role;
+update ws_code_live set aktualisiert = now() - interval '3 hours';
+set role authenticated;
+:ADM
+select count(*) adm_alt from ws_code_live;
+:DEV
+select count(*) dev_alt from ws_code_live;
+select ws_code_aufraeumen() \g /dev/null
+reset role;
+select count(*) nach_aufraeumen from ws_code_live;
+set role authenticated;
+\echo [18c] Abgeschaltet mit Dateien -> FEHLER; abgeschaltet ohne Dateien -> OK (t); danach normal melden -> FEHLER
+:DEV
+select ws_code_live_melden('00000000-0000-0000-0000-0000000000d1', (select id from nr), repeat('a',40), '[{"p":"a.txt","art":"neu"}]', false, true);
+select ws_code_live_melden('00000000-0000-0000-0000-0000000000d1', (select id from nr), repeat('a',40), '[]', false, true) \g /dev/null
+select abgeschaltet from ws_code_live;
+select ws_code_live_melden('00000000-0000-0000-0000-0000000000d1', (select id from nr), repeat('a',40), '[{"p":"a.txt","art":"neu"}]');
 \echo [19] Auftrag verlässt „läuft“ (Rückfrage) -> Zeile weg (0)
 reset role;
 update ws_auftraege set stand = 'frage' where id = (select id from nr);
@@ -126,8 +144,10 @@ set role authenticated;
 :DEV
 select ws_code_live_melden('00000000-0000-0000-0000-0000000000d1', (select id from nr), repeat('a',40), '[]');
 
-\echo [21] Diff-Anfrage: auf main -> FEHLER; Auftrags-Zweig -> OK; Werkstatt nimmt sie (Art diff)
+\echo [21] Diff-Anfrage: auf main, MAIN, Live -> 3x FEHLER; Auftrags-Zweig -> OK; Werkstatt nimmt sie (Art diff)
 select ws_code_anfragen('trainer-to-go','main','diff',null,'00000000-0000-0000-0000-0000000000d1');
+select ws_code_anfragen('trainer-to-go','MAIN','diff',null,'00000000-0000-0000-0000-0000000000d1');
+select ws_code_anfragen('trainer-to-go','Live','diff',null,'00000000-0000-0000-0000-0000000000d1');
 select ws_code_anfragen('trainer-to-go','feature/cs-7-woche','diff',null,'00000000-0000-0000-0000-0000000000d1') > 0 angefragt;
 select art, zweig, pfad is null ohne_pfad from ws_code_nehmen('00000000-0000-0000-0000-0000000000d1');
 \echo [22] Antwort mit Geheimnis-Inhalt -> FEHLER; mit gültiger Liste -> OK (fertig)
@@ -138,10 +158,10 @@ select stand, jsonb_array_length(baum) from ws_code_anfragen order by id desc li
 select ws_code_anfragen('trainer-to-go','main','baum',null,'00000000-0000-0000-0000-0000000000d1') > 0 baum;
 select ws_code_anfragen('trainer-to-go','main','datei','src/App.jsx','00000000-0000-0000-0000-0000000000d1') > 0 datei;
 
-\echo [24] Rechte der Funktionen: anon darf keine der neuen Funktionen ausführen -> f (8x)
+\echo [24] Rechte der Funktionen: anon darf keine der neuen Funktionen ausführen -> f (9x)
 reset role;
 select has_function_privilege('anon', p.oid, 'execute') from pg_proc p
- where p.proname in ('ws_projekt_ziele_setzen','ws_feature_pruefweg_setzen','ws_punkt_weiterarbeiten','ws_code_live_melden','ws_code_live_ende','ws_code_live_ok','ws_ziele_ok','ws_ziele_aus_art')
+ where p.proname in ('ws_projekt_ziele_setzen','ws_feature_pruefweg_setzen','ws_punkt_weiterarbeiten','ws_code_live_melden','ws_code_live_ende','ws_code_live_ok','ws_ziele_ok','ws_ziele_aus_art','ws_code_aufraeumen')
  order by p.proname;
 \echo [25] Alle neuen SECURITY-DEFINER-Funktionen mit festem search_path -> 0 ohne
 select count(*) ohne_search_path from pg_proc p where p.prosecdef and p.proname in ('ws_projekt_ziele_setzen','ws_feature_pruefweg_setzen','ws_punkt_weiterarbeiten','ws_code_live_melden','ws_code_live_ende','ws_code_live_aufraeumen','ws_code_anfragen','ws_code_antwort')

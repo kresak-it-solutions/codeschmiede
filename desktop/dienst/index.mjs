@@ -52,7 +52,7 @@ import { setupNameOk, versionOrdner, releaseVersion, releaseWahl, tagImLive, ver
 import { sicherungsName, freierName, uebersicht as sicherungenUebersicht, sicherungenLampe, aufbauPruefen, aufbauArtefakt, BUNDLE_MAX } from "./lib/sicherungen.mjs";
 import { testseiteEinrichten, lotsePruefen, Lotse } from "./lib/testseite.mjs";
 import { laufSperren, sperrListe, gefaehrlicheGitConfig, gefaehrlicheAttribute, gitdirOk, linksNachAussen } from "./lib/rechte.mjs";
-import { diffSammeln, fingerabdruck } from "./lib/codeLive.mjs";
+import { diffSammeln, fingerabdruck, GitVerdaechtig } from "./lib/codeLive.mjs";
 
 const HIER = path.dirname(fileURLToPath(import.meta.url));
 // Claude Code finden. Windows: nativer Installer (claude.exe in %USERPROFILE%\.local\bin) oder npm (cli.js) – immer OHNE Shell
@@ -598,6 +598,7 @@ async function fuehreAus(auftrag, { fortsetzen = false, nacharbeit = false } = {
     await log(auftrag.id, "info", fremd ? `Werkstatt-PC ${cfg.pc_name || os.hostname()} programmiert mit ${werkzeugName(werkzeug)} (${modell}) auf ${zweig}`
       : `Werkstatt-PC ${cfg.pc_name || os.hostname()} arbeitet mit Modell ${modell} auf ${zweig}${lage === "klein" ? " (Abo-Limit wird knapp – kleineres Modell)" : ""}`);
     codeLiveStopp = await codeLiveStarten(auftrag, ordner);
+    codeLiveStopp = await codeLiveStarten(auftrag, projekt, ordner);
 
     let prompt = fremd
       // Fremde Werkzeuge: immer der ganze Auftrag mit Verlauf (keine Sitzung zum Fortsetzen); Commit/PR macht die Werkstatt
@@ -814,20 +815,31 @@ async function fuehreAus(auftrag, { fortsetzen = false, nacharbeit = false } = {
 // sammeln (lib/codeLive.mjs) und – nur wenn er sich geändert hat – über ws_code_live_melden in die flüchtige Tabelle ws_code_live schreiben.
 // Nur Git-Lesebefehle und echte Dateien im Arbeitsordner; kein Projekt-Code läuft. Nach dem Lauf: ws_code_live_ende (Zeile weg).
 const CODE_LIVE_TAKT = 5000;
-async function codeLiveStarten(auftrag, ordner) {
+// Härtung (Sicherheitsprüfung 02.11.2026, H1): git läuft fest mit --git-dir=<code>/.git/worktrees/<auftrag> und --work-tree=<ordner>, nie über die
+// .git-Datei; vor jeder Runde prüft diffSammeln .git-Datei, Verwaltung, config/config.worktree und info/attributes. Ein Treffer schaltet Code live
+// für diesen Auftrag ab (Hinweis in der Oberfläche und im Live-Log); Filter aus .gitattributes sind neutralisiert, Untermodule werden nie angesehen.
+async function codeLiveStarten(auftrag, projekt, ordner) {
+  let ort; try { ort = await repoOrt(projekt, { altErlaubt: true }); } catch { return null; }
+  const common = path.join(ort.repo, ".git");
+  const gitDir = path.join(common, "worktrees", path.basename(ordner));
   let basis = null;
-  try { basis = await gitLive(ordner, "merge-base", "HEAD", "origin/main"); } catch { /* ohne Startstand kein Code live */ }
+  try { basis = await gitLive(common, `--git-dir=${gitDir}`, "merge-base", "HEAD", "origin/main"); } catch { /* ohne Startstand kein Code live */ }
   if (!/^[0-9a-f]{40}$/.test(basis || "")) return null;
   let letzter = ""; let busy = false; let aus = false;
+  const abschalten = async (grund) => {
+    aus = true;
+    await log(auftrag.id, "fehler", `Code live abgeschaltet: verdächtige Git-Einstellung (${kuerzen(grund, 200)})`).catch(() => {});
+    await db.rpc("ws_code_live_melden", { p_pc: pcId, p_auftrag: auftrag.id, p_basis: basis, p_dateien: [], p_gekuerzt: false, p_abgeschaltet: true }).then(() => {}, () => {});
+  };
   const runde = async () => {
     if (busy || aus || stopp) return; busy = true;
     try {
-      const r = await diffSammeln({ git: gitLive, ordner, von: basis });
+      const r = await diffSammeln({ git: gitLive, ordner, von: basis, gitDir, common });
       const fp = fingerabdruck(r); if (fp === letzter) return;
-      const { error } = await db.rpc("ws_code_live_melden", { p_pc: pcId, p_auftrag: auftrag.id, p_basis: basis, p_dateien: r.dateien, p_gekuerzt: r.gekuerzt });
+      const { error } = await db.rpc("ws_code_live_melden", { p_pc: pcId, p_auftrag: auftrag.id, p_basis: basis, p_dateien: r.dateien, p_gekuerzt: r.gekuerzt, p_abgeschaltet: false });
       if (!error) letzter = fp;
       else if (/does not exist|schema cache/i.test(error.message)) aus = true;   // Datenbank 0059 noch nicht eingespielt
-    } catch { /* nächste Runde */ } finally { busy = false; }
+    } catch (e) { if (e instanceof GitVerdaechtig) await abschalten(e.message); /* sonst: nächste Runde */ } finally { busy = false; }
   };
   const t = setInterval(runde, CODE_LIVE_TAKT);
   runde();

@@ -90,7 +90,7 @@ die zur Datenbank passen). Ein Zurück je Feature ist offen (siehe Grenzen).
 | Prüfweg eines Features | `ws_features.pruefweg_typ`, `pruefweg_text` | Typ aus seite/fenster/befehl/kapitel; Text ≤ 200 Zeichen, ohne Steuer- und unsichtbare Zeichen, nur bei Typ ≠ seite; bei „seite“ gilt `vorschau_pfad` (gleiche Prüfung wie 0028). Setzen über `ws_feature_pruefweg_setzen` (Rechte wie `ws_feature_vorschau_setzen`, Protokoll). Spalten nicht direkt änderbar |
 | Offene Punkte | `ws_aufgaben` (0042) mit `feature_id` | unverändert |
 | Punkt → Auftrag | `ws_aufgabe_sendungen.auftrag_id` (0042) | `ws_punkt_weiterarbeiten(p_aufgabe, p_text)`: legt Sendung, Auftrag und erste Nachricht in einem Schritt an; gleiche Prüfungen wie `ws_aufgabe_senden` + `ws_aufgabe_als_auftrag`, Punkt muss zum Feature gehören, kein zweiter laufender Auftrag je Punkt, höchstens 100 am Tag |
-| Code live (flüchtig) | `ws_code_live` (eine Zeile je laufendem Auftrag) | schreibt nur die Werkstatt, die den Auftrag gerade bearbeitet (`ws_code_live_melden`: eigener PC, Auftrag „läuft“ auf genau diesem PC); Form und Größe geprüft (≤ 60 Dateien, ≤ 400 KB); lesen nur Mitglieder des Projekts (`ws_sieht_projekt`); gelöscht bei Auftragsende (Dienst + Trigger, sobald der Auftrag „läuft“ verlässt) und spätestens nach 2 Stunden; nicht in der Realtime-Veröffentlichung |
+| Code live (flüchtig) | `ws_code_live` (eine Zeile je laufendem Auftrag) | schreibt nur die Werkstatt, die den Auftrag gerade bearbeitet (`ws_code_live_melden`: eigener PC, Auftrag „läuft“ auf genau diesem PC); Form und Größe geprüft (≤ 60 Dateien, ≤ 400 KB); lesen nur Mitglieder des Projekts (`ws_sieht_projekt`); gelöscht bei Auftragsende (Dienst + Trigger, sobald der Auftrag „läuft“ verlässt) und regelmäßig über `ws_code_aufraeumen` (jeder Werkstatt-Dienst beim Start und alle 10 Minuten; kein pg_cron), lesbar nur, solange jünger als 2 Stunden; `abgeschaltet` = verdächtige Git-Einstellung (dann keine Dateien); nicht in der Realtime-Veröffentlichung |
 | Diff des letzten Auftrags | `ws_code_anfragen` mit neuer Art `diff` (0031/0032) | wie Baum/Datei: Antwort einer Werkstatt aus dem Abgleich-Klon, Inhalte nach 5 Minuten geleert, Zeile nach 1 Stunde gelöscht, lesen nur wer gefragt hat |
 
 ## Wie „Code live“ übertragen wird
@@ -108,6 +108,20 @@ ein Entwickler-PC arbeitet – also **muss der Diff über die Datenbank** gehen.
    - Binärdateien werden nur genannt. Größen: je Datei höchstens 400 Zeilen bzw. 24 KB Diff, gesamt 200 KB und 60 Dateien – darüber „gekürzt“.
    - Nur Pfade im Arbeitsordner (Pfad-Regel wie im Code-Editor); neue Dateien nur als echte Datei (`lstat`), **Verknüpfungen werden nicht gefolgt**,
      kein Ordner auf dem Weg darf eine Verknüpfung sein, Dateien über 512 KB nur genannt.
+2a. **Härtung gegen Git-Treiber** (Sicherheitsprüfung 02.11.2026, GELB → behoben): Git läuft im Arbeitsordner **fest** mit
+   `--git-dir=<code>/.git/worktrees/<auftrag>` und `--work-tree=<Arbeitsordner>` (cwd = Git-Verwaltung) – der `.git`-Datei des Arbeitsordners wird nie gefolgt.
+   Vor **jeder** Runde: `.git`-Datei zeigt genau auf diese Verwaltung (`gitdirOk` + Pfadvergleich), `commondir` passt, keine gefährlichen Schlüssel
+   (`gefaehrlicheGitConfig`) in `config`/`config.worktree` des Repositorys **und** der Worktree-Verwaltung, keine Treiber in `info/attributes`. Ein Treffer
+   schaltet Code live für diesen Auftrag ab („Code live abgeschaltet: verdächtige Git-Einstellung“ in der Oberfläche und im Live-Log, `ws_code_live.abgeschaltet`).
+   Zusätzlich bei jedem Aufruf: `--ignore-submodules=all` (diff und status) und `-c diff.ignoreSubmodules=all`, `status.submoduleSummary=false`,
+   `submodule.recurse=false`, `core.attributesFile=/dev/null` (Windows `NUL`) und für **jeden** Filter-Namen aus allen `.gitattributes` des Arbeitsordners
+   bzw. `info/attributes`: `filter.<name>.clean=`, `.smudge=`, `.process=` leer und `.required=false`. Ungültige Filter-Namen oder nicht vollständig prüfbare
+   Attribute → abgeschaltet. Tests zeigen: plain git führt die Filter aus (Gegenprobe), Code live nicht – weder über ein Untermodul mit eigener Konfiguration noch über
+   eine umgeleitete `.git`-Datei.
+2b. **Umbenannte Geheimnisse:** Im Baum-Modus erkennt `git diff --name-status --find-renames --find-copies` Umbenennungen und Kopien – ist die Quelle eine
+   Geheimnis-Datei, bleibt das Ziel ausgeblendet. In beiden Modi werden neue Dateien ausgeblendet, deren Inhalt (Blob-Kennung wie `git hash-object --no-filters`)
+   einer Geheimnis-Datei des Startstands entspricht.
+2c. **Echter Pfad:** Neue Dateien werden nach dem Öffnen am echten Pfad geprüft (Linux `/proc/self/fd`, sonst `realpath` nach dem Öffnen plus Gerät/Kennung).
 3. Der Dienst schreibt das Ergebnis über `ws_code_live_melden` (eine Zeile je Auftrag, überschrieben) und löscht sie nach dem Lauf (`ws_code_live_ende`);
    ein Trigger löscht sie zusätzlich, sobald der Auftrag „läuft“ verlässt, und alles älter als 2 Stunden fällt beim nächsten Melden weg.
 4. Die Oberfläche fragt die Zeile alle 3 Sekunden ab, solange „Code live“ offen ist und der Auftrag läuft (kein Realtime für diese Tabelle).
@@ -166,6 +180,9 @@ ein Entwickler-PC arbeitet – also **muss der Diff über die Datenbank** gehen.
 ## Bekannte Grenzen
 - Code live zeigt den Stand höchstens alle 5 Sekunden, nicht jeden Tastendruck; sehr große Änderungen sind gekürzt. Er braucht eine laufende Werkstatt.
 - Der Diff des letzten Auftrags braucht eine eingeschaltete Werkstatt (Admin-PC oder eigener PC) und den Zweig bei GitHub (nach dem Zusammenführen gelöschte Zweige: „nicht mehr vorhanden“).
+- **Restrisiko umbenannte Geheimnisse:** Erkannt werden umbenannte/kopierte Geheimnis-Dateien mit gleichem Inhalt (Arbeitsordner und Baum) bzw. mit ähnlichem
+  Inhalt (Baum, Ähnlichkeit ab 50 %). Nicht erkannt: eine Geheimnis-Datei, die erst im Lauf angelegt **und** dann umbenannt wird, ein stark umgeschriebener oder
+  zerstückelter Inhalt, und Inhalte, die nur durch Zeilenende-Umwandlung (autocrlf) abweichen. Dort greift nur noch die Maskierung bekannter Schlüssel-Muster.
 - Die Maskierung erkennt bekannte Schlüssel-Muster; ein Geheimnis ohne erkennbares Muster in einer normalen Code-Datei würde angezeigt (wie im Code-Editor). Geheimnisse gehören nie in den Code.
 - Kein „Zurück auf diesen Stand“ je Feature (nur das Zurücksetzen der ganzen App durch den Admin).
 - Ziele steuern in Stufe 1 nur Anzeige und Umschalter; Grundgerüst, Ampel und Abläufe richten sich weiter nach der Art.

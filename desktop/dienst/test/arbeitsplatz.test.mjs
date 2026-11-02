@@ -88,4 +88,9 @@ test("Dienst: Code live nur lesend, ohne Sperren, im finally beendet", async () 
   const lib = await readFile(new URL("../lib/codeLive.mjs", import.meta.url), "utf8");
   assert.match(lib, /"--no-ext-diff", "--no-textconv"/);
   assert.doesNotMatch(lib, /child_process|spawn\(/, "die Bibliothek startet selbst keine Programme");
+  // Sicherheitsprüfung 02.11.2026: fest --git-dir/--work-tree, Untermodule nie, Abschalten bei verdächtiger Einstellung
+  assert.match(s, /`--git-dir=\$\{gitDir\}`/);
+  assert.match(s, /GitVerdaechtig\) await abschalten/);
+  assert.match(lib, /"--ignore-submodules=all"/);
+  assert.match(lib, /core\.attributesFile=/);
 });

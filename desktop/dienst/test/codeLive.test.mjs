@@ -4,24 +4,30 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { mkdtemp, mkdir, writeFile, rm, symlink, link } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, rm, symlink, link, cp, access, readFile, open as oeffnen } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
-import { diffSammeln, diffAufbereiten, numstatLesen, neuAusStatus, neueDateiLesen, geheimDatei, GRENZEN } from "../lib/codeLive.mjs";
+import { diffSammeln, diffAufbereiten, numstatLesen, neuAusStatus, neueDateiLesen, geheimDatei, GRENZEN, GitVerdaechtig, sicherheitsArgs, filterNamen,
+  umbenennungenLesen, blobSha, echterPfadOk, arbeitsordnerPruefen } from "../lib/codeLive.mjs";
 
 const sh = promisify(execFile);
 const git = async (cwd, ...a) => (await sh("git", ["-c", "core.fsmonitor=false", ...a], { cwd, env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" }, maxBuffer: 20 * 1024 * 1024 })).stdout.trim();
 const commit = (d, m = "x") => git(d, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", m);
 
+// Wie in der Werkstatt: Arbeitskopie „code“ und Arbeitsordner als git worktree (Verwaltung unter code/.git/worktrees/auftrag-1)
 async function arbeitsordner() {
-  const d = await mkdtemp(path.join(os.tmpdir(), "cs-live-"));
-  await git(d, "init", "-q", "-b", "main");
-  await mkdir(path.join(d, "src"));
-  await writeFile(path.join(d, "src/a.js"), "export const a = 1;\nexport const b = 2;\n");
-  await writeFile(path.join(d, ".env"), "GEHEIM=alt\n");
-  await writeFile(path.join(d, "bild.png"), Buffer.from([0x89, 0x50, 0x00, 0x01]));
-  await git(d, "add", "-A"); await commit(d);
-  return { d, basis: await git(d, "rev-parse", "HEAD") };
+  const wurzel = await mkdtemp(path.join(os.tmpdir(), "cs-live-"));
+  const code = path.join(wurzel, "code"); await mkdir(code);
+  await git(code, "init", "-q", "-b", "main");
+  await mkdir(path.join(code, "src"));
+  await writeFile(path.join(code, "src/a.js"), "export const a = 1;\nexport const b = 2;\n");
+  await writeFile(path.join(code, ".env"), "GEHEIM=alt\n");
+  await writeFile(path.join(code, "bild.png"), Buffer.from([0x89, 0x50, 0x00, 0x01]));
+  await git(code, "add", "-A"); await commit(code);
+  const d = path.join(wurzel, "auftrag-1");
+  await git(code, "worktree", "add", "-q", "-b", "feature/cs-1-x", d, "main");
+  const common = path.join(code, ".git");
+  return { d, basis: await git(d, "rev-parse", "HEAD"), gitDir: path.join(common, "worktrees", "auftrag-1"), common, wurzel, code };
 }
 
 test("Geheimnis-Dateien werden erkannt", () => {
@@ -58,7 +64,7 @@ test("Diff: Größengrenze je Datei (Zeilen und Bytes) setzt „gekürzt“", ()
 });
 
 test("Arbeitsordner: geänderte, neue, geheime und binäre Dateien", async () => {
-  const { d, basis } = await arbeitsordner();
+  const { d, basis, gitDir, common, wurzel } = await arbeitsordner();
   try {
     await writeFile(path.join(d, "src/a.js"), "export const a = 1;\nexport const b = 3;\nconst password = \"supergeheim123\";\n");
     await git(d, "add", "src/a.js"); await commit(d, "werkstatt");                                                    // schon committet zählt auch (gegen den Startstand)
@@ -67,7 +73,7 @@ test("Arbeitsordner: geänderte, neue, geheime und binäre Dateien", async () =>
     await writeFile(path.join(d, "bild.png"), Buffer.from([0x89, 0x50, 0x00, 0x02, 0x03]));
     await writeFile(path.join(d, "src/neu.ts"), "export const neu = true;\n");
     await mkdir(path.join(d, ".codeschmiede-anhaenge")); await writeFile(path.join(d, ".codeschmiede-anhaenge/foto.txt"), "Anhang\n");
-    const r = await diffSammeln({ git, ordner: d, von: basis });
+    const r = await diffSammeln({ git, ordner: d, von: basis, gitDir, common });
     const nach = Object.fromEntries(r.dateien.map((x) => [x.p, x]));
     assert.equal(nach["src/a.js"].art, "geaendert");
     assert.match(nach["src/a.js"].zeilen, /\+export const b = 3;/);
@@ -80,18 +86,18 @@ test("Arbeitsordner: geänderte, neue, geheime und binäre Dateien", async () =>
     assert.ok(!r.dateien.some((x) => x.p.startsWith(".codeschmiede-anhaenge")), "Anhänge des Laufs nie zeigen");
     const alles = JSON.stringify(r);
     assert.ok(!/neuer-wert-xyz|nie-zeigen|GEHEIM=/.test(alles), "kein Inhalt aus Geheimnis-Dateien");
-  } finally { await rm(d, { recursive: true, force: true }); }
+  } finally { await rm(wurzel, { recursive: true, force: true }); }
 });
 
 test("Verknüpfungen werden nicht gefolgt – weder als Datei noch als Ordner auf dem Weg", async () => {
-  const { d, basis } = await arbeitsordner();
+  const { d, basis, gitDir, common, wurzel } = await arbeitsordner();
   const aussen = await mkdtemp(path.join(os.tmpdir(), "cs-aussen-"));
   try {
     await writeFile(path.join(aussen, "geheim.txt"), "AUSSERHALB DES ARBEITSORDNERS\n");
     await symlink(path.join(aussen, "geheim.txt"), path.join(d, "link.txt"));
     await symlink(aussen, path.join(d, "ordnerlink"));
     await link(path.join(aussen, "geheim.txt"), path.join(d, "hart.txt")).catch(() => {});
-    const r = await diffSammeln({ git, ordner: d, von: basis });
+    const r = await diffSammeln({ git, ordner: d, von: basis, gitDir, common });
     const alles = JSON.stringify(r);
     assert.ok(!alles.includes("AUSSERHALB"), alles);
     const nach = Object.fromEntries(r.dateien.map((x) => [x.p, x]));
@@ -100,39 +106,38 @@ test("Verknüpfungen werden nicht gefolgt – weder als Datei noch als Ordner au
     if (nach["hart.txt"]) assert.equal(nach["hart.txt"].art, "verknuepfung");
     // direkt: Ordner auf dem Weg ist eine Verknüpfung
     assert.equal((await neueDateiLesen(d, "ordnerlink/geheim.txt")).art, "verknuepfung");
-  } finally { await rm(d, { recursive: true, force: true }); await rm(aussen, { recursive: true, force: true }); }
+  } finally { await rm(wurzel, { recursive: true, force: true }); await rm(aussen, { recursive: true, force: true }); }
 });
 
 test("Keine Pfade außerhalb des Arbeitsordners", async () => {
-  const { d } = await arbeitsordner();
+  const { d, gitDir, common, wurzel } = await arbeitsordner();
   try {
     for (const p of ["../x", "a/../../x", "/etc/passwd", "..", ".git/config", "C:/Windows/x"]) assert.equal((await neueDateiLesen(d, p)).art, "fehlt", p);
     // auch wenn Git einen solchen Pfad meldete: er fällt weg
     const falsch = async (cwd, ...a) => (a.includes("--numstat") ? "1\t0\t../aussen.txt\0" + "1\t0\t.git/config\0" : a.includes("status") ? "?? ../x\0" : "");
-    const r = await diffSammeln({ git: falsch, ordner: d, von: "a".repeat(40) });
+    const r = await diffSammeln({ git: falsch, ordner: d, von: "a".repeat(40), gitDir, common });
     assert.deepEqual(r.dateien, []);
-  } finally { await rm(d, { recursive: true, force: true }); }
+  } finally { await rm(wurzel, { recursive: true, force: true }); }
 });
 
 test("Größengrenzen gesamt und Zahl der Dateien", async () => {
-  const { d, basis } = await arbeitsordner();
+  const { d, basis, gitDir, common, wurzel } = await arbeitsordner();
   try {
     for (let i = 0; i < 70; i++) await writeFile(path.join(d, `src/d${String(i).padStart(2, "0")}.txt`), Array.from({ length: 200 }, (_, k) => `zeile ${k} ${"x".repeat(40)}`).join("\n") + "\n");
     await writeFile(path.join(d, "riesig.txt"), "y".repeat(GRENZEN.neuMax + 10));
-    const r = await diffSammeln({ git, ordner: d, von: basis, grenzen: { ...GRENZEN, gesamt: 20 * 1024 } });
+    const r = await diffSammeln({ git, ordner: d, von: basis, gitDir, common, grenzen: { ...GRENZEN, gesamt: 20 * 1024 } });
     assert.ok(r.dateien.length <= GRENZEN.dateien); assert.ok(r.gekuerzt);
     const summe = r.dateien.reduce((n, x) => n + Buffer.byteLength(x.zeilen || ""), 0);
     assert.ok(summe <= 20 * 1024, String(summe));
-    const r2 = await diffSammeln({ git, ordner: d, von: basis });
+    const r2 = await diffSammeln({ git, ordner: d, von: basis, gitDir, common });
     const gross = r2.dateien.find((x) => x.p === "riesig.txt"); if (gross) assert.equal(gross.art, "gross");
     assert.ok(Buffer.byteLength(JSON.stringify(r2)) < 400 * 1024, "passt in die Datenbank-Grenze (ws_code_live_ok)");
-  } finally { await rm(d, { recursive: true, force: true }); }
+  } finally { await rm(wurzel, { recursive: true, force: true }); }
 });
 
 test("Baum-Modus (Zweig gegen main) liest keine Dateien, filtert gleich", async () => {
-  const { d, basis } = await arbeitsordner();
+  const { d, basis, gitDir, common, wurzel } = await arbeitsordner();
   try {
-    await git(d, "checkout", "-q", "-b", "feature/cs-1-x");
     await writeFile(path.join(d, "src/a.js"), "export const a = 9;\n"); await writeFile(path.join(d, "x.pem"), "-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----\n");
     await git(d, "add", "-A"); await commit(d, "zweig");
     const bis = await git(d, "rev-parse", "HEAD");
@@ -142,5 +147,130 @@ test("Baum-Modus (Zweig gegen main) liest keine Dateien, filtert gleich", async 
     assert.ok(ps.includes("src/a.js")); assert.ok(!ps.includes("nicht-committet.txt"));
     assert.deepEqual(r.dateien.find((x) => x.p === "x.pem"), { p: "x.pem", art: "ausgeblendet" });
     await assert.rejects(diffSammeln({ git, ordner: d, von: "main" }), /Ungültiger Stand/);
-  } finally { await rm(d, { recursive: true, force: true }); }
+  } finally { await rm(wurzel, { recursive: true, force: true }); }
+});
+
+// ---------- Sicherheitsprüfung 02.11.2026 (GELB): Treiber, Untermodule, umgeleitete .git-Datei, umbenannte Geheimnisse, echter Pfad ----------
+const da = (p) => access(p).then(() => true, () => false);
+const boeseConfig = (marke) => `[filter "boese"]\n\tclean = "sh -c 'touch ${marke}; cat'"\n\tsmudge = "sh -c 'touch ${marke}; cat'"\n`;
+
+test("(a) Untermodul mit eigenem Filter: plain git führt ihn aus, Code live nicht", async () => {
+  const { d, basis, gitDir, common, wurzel } = await arbeitsordner();
+  const marke = path.join(wurzel, "AUSGEFUEHRT_SUB");
+  try {
+    const sub = path.join(d, "sub"); await mkdir(sub);
+    await git(sub, "init", "-q", "-b", "main");
+    await writeFile(path.join(sub, "f.txt"), "eins\n"); await writeFile(path.join(sub, ".gitattributes"), "* filter=boese\n");
+    await git(sub, "add", "-A"); await commit(sub, "sub");
+    await writeFile(path.join(sub, ".git", "config"), (await readFile(path.join(sub, ".git", "config"), "utf8")) + boeseConfig(marke));
+    await git(d, "add", "sub"); await commit(d, "gitlink");
+    await writeFile(path.join(sub, "f.txt"), "zwei, geändert\n");
+    // Gegenprobe: ohne Härtung führt git status den Filter im Untermodul aus
+    await git(d, "status", "--porcelain").catch(() => {});
+    assert.ok(await da(marke), "Gegenprobe: der Angriff wirkt bei plain git");
+    await rm(marke, { force: true });
+    const r = await diffSammeln({ git, ordner: d, von: basis, gitDir, common });
+    assert.ok(!(await da(marke)), "Code live hat den Filter im Untermodul ausgeführt");
+    assert.ok(!r.dateien.some((x) => x.p.startsWith("sub/")));
+  } finally { await rm(wurzel, { recursive: true, force: true }); }
+});
+
+test("(b) umgeleitete .git-Datei (gitdir: ./fake) mit Filter: abgeschaltet, nichts ausgeführt", async () => {
+  const { d, basis, gitDir, common, wurzel } = await arbeitsordner();
+  const marke = path.join(wurzel, "AUSGEFUEHRT_B");
+  try {
+    await cp(gitDir, path.join(d, "fake"), { recursive: true });
+    await writeFile(path.join(d, "fake", "config"), `[core]\n\trepositoryformatversion = 0\n${boeseConfig(marke).replace("boese", "b")}`);
+    await writeFile(path.join(d, ".git"), "gitdir: ./fake\n");
+    await writeFile(path.join(d, ".gitattributes"), "* filter=b\n"); await writeFile(path.join(d, "src/a.js"), "geändert\n");
+    await assert.rejects(diffSammeln({ git, ordner: d, von: basis, gitDir, common }), (e) => e instanceof GitVerdaechtig && /\.git zeigt nicht/.test(e.message));
+    assert.ok(!(await da(marke)));
+    // Ohne Verwaltung (alte Aufrufweise) geht es gar nicht erst los
+    await assert.rejects(diffSammeln({ git, ordner: d, von: basis }), GitVerdaechtig);
+    assert.ok(!(await da(marke)));
+  } finally { await rm(wurzel, { recursive: true, force: true }); }
+});
+
+test("Filter aus .gitattributes werden neutralisiert (zweite Verteidigungslinie)", async () => {
+  const w = await mkdtemp(path.join(os.tmpdir(), "cs-filter-")); const marke = path.join(w, "AUSGEFUEHRT_F"); const r = path.join(w, "r");
+  try {
+    await mkdir(r); await git(r, "init", "-q", "-b", "main");
+    await writeFile(path.join(r, ".gitattributes"), "* filter=boese\n[attr]makro filter=zwei\n"); await writeFile(path.join(r, "a.txt"), "eins\n");
+    await git(r, "add", "-A"); await commit(r);
+    await writeFile(path.join(r, ".git", "config"), (await readFile(path.join(r, ".git", "config"), "utf8")) + boeseConfig(marke));
+    await writeFile(path.join(r, "a.txt"), "zwei\n");
+    assert.deepEqual(filterNamen([await readFile(path.join(r, ".gitattributes"), "utf8")]).namen, ["boese", "zwei"]);
+    assert.ok(filterNamen(["* filter=$(touch x)"]).ungueltig);
+    await git(r, "diff", "--numstat", "HEAD").catch(() => {});
+    assert.ok(await da(marke), "Gegenprobe: plain git diff startet den Filter"); await rm(marke, { force: true });
+    await git(r, ...sicherheitsArgs(["boese", "zwei"]), "diff", "--numstat", "--no-ext-diff", "--no-textconv", "HEAD");
+    await git(r, ...sicherheitsArgs(["boese"]), "status", "--porcelain=v1", "-z", "--untracked-files=all", "--ignore-submodules=all");
+    assert.ok(!(await da(marke)), "trotz Neutralisierung ausgeführt");
+  } finally { await rm(w, { recursive: true, force: true }); }
+});
+
+test("Gefährliche Einstellungen in config der Worktree-Verwaltung bzw. des Repositorys schalten ab", async () => {
+  const { d, basis, gitDir, common, wurzel } = await arbeitsordner();
+  try {
+    assert.deepEqual(await arbeitsordnerPruefen({ git, ordner: d, common, gitDir }), []);
+    await writeFile(path.join(gitDir, "config.worktree"), '[filter "x"]\n\tclean = touch /tmp/x\n');
+    await assert.rejects(diffSammeln({ git, ordner: d, von: basis, gitDir, common }), (e) => e instanceof GitVerdaechtig && /config\.worktree/.test(e.message));
+    await rm(path.join(gitDir, "config.worktree"));
+    await git(common, "config", "core.fsmonitor", "touch /tmp/y");
+    await assert.rejects(diffSammeln({ git, ordner: d, von: basis, gitDir, common }), GitVerdaechtig);
+    await git(common, "config", "--unset", "core.fsmonitor");
+    await writeFile(path.join(common, "info", "attributes"), "* diff=boese\n").catch(async () => { await mkdir(path.join(common, "info")); await writeFile(path.join(common, "info", "attributes"), "* diff=boese\n"); });
+    await assert.rejects(diffSammeln({ git, ordner: d, von: basis, gitDir, common }), (e) => /info\/attributes/.test(e.message));
+  } finally { await rm(wurzel, { recursive: true, force: true }); }
+});
+
+test("Umbenannte oder kopierte Geheimnis-Dateien bleiben ausgeblendet (Arbeitsordner)", async () => {
+  const { d, basis, gitDir, common, wurzel } = await arbeitsordner();
+  try {
+    await git(d, "mv", ".env", "einstellungen.txt");                                   // umbenannt (im Index)
+    await cp(path.join(d, "einstellungen.txt"), path.join(d, "kopie.txt"));              // kopiert, nicht erfasst
+    const r = await diffSammeln({ git, ordner: d, von: basis, gitDir, common });
+    const nach = Object.fromEntries(r.dateien.map((x) => [x.p, x]));
+    assert.deepEqual(nach["einstellungen.txt"], { p: "einstellungen.txt", art: "ausgeblendet" });
+    assert.deepEqual(nach["kopie.txt"], { p: "kopie.txt", art: "ausgeblendet" });
+    assert.ok(!JSON.stringify(r).includes("GEHEIM=alt"));
+    // Kennung wie git hash-object --no-filters
+    const buf = await readFile(path.join(d, "kopie.txt"));
+    assert.equal(blobSha(buf), await git(d, "hash-object", "--no-filters", "kopie.txt"));
+  } finally { await rm(wurzel, { recursive: true, force: true }); }
+});
+
+test("Umbenannte Geheimnis-Datei im Baum-Modus: Ziel ausgeblendet (auch leicht geändert)", async () => {
+  const { d, basis, wurzel } = await arbeitsordner();
+  try {
+    await writeFile(path.join(d, "schluessel.pem"), "-----BEGIN PRIVATE KEY-----\n" + "QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVo=\n".repeat(20) + "-----END PRIVATE KEY-----\n");
+    await git(d, "add", "-A"); await commit(d, "pem");
+    const mitte = await git(d, "rev-parse", "HEAD");
+    await git(d, "mv", "schluessel.pem", "docs/notiz.md").catch(async () => { await mkdir(path.join(d, "docs")); await git(d, "mv", "schluessel.pem", "docs/notiz.md"); });
+    await writeFile(path.join(d, "docs/notiz.md"), (await readFile(path.join(d, "docs/notiz.md"), "utf8")) + "eine Zeile mehr\n");
+    await git(d, "mv", ".env", "env.txt");
+    await git(d, "add", "-A"); await commit(d, "umbenannt");
+    const bis = await git(d, "rev-parse", "HEAD");
+    const r = await diffSammeln({ git, ordner: d, von: mitte, bis });
+    const nach = Object.fromEntries(r.dateien.map((x) => [x.p, x]));
+    assert.deepEqual(nach["docs/notiz.md"], { p: "docs/notiz.md", art: "ausgeblendet" });
+    assert.deepEqual(nach["env.txt"], { p: "env.txt", art: "ausgeblendet" });
+    assert.ok(!/QUJDREVG|GEHEIM=alt/.test(JSON.stringify(r)));
+    assert.deepEqual(umbenennungenLesen("R087\0a.pem\0b.md\0M\0x.js\0C100\0c\0d\0"), [{ art: "R", von: "a.pem", nach: "b.md" }, { art: "C", von: "c", nach: "d" }]);
+    void basis;
+  } finally { await rm(wurzel, { recursive: true, force: true }); }
+});
+
+test("Echter Pfad nach dem Öffnen: unter der Wurzel ok, sonst ausgeblendet", async () => {
+  const { d, wurzel } = await arbeitsordner();
+  try {
+    const ziel = path.join(d, "src/a.js"); const fh = await oeffnen(ziel, "r");
+    try {
+      const st = await fh.stat();
+      assert.equal(await echterPfadOk(fh, d, ziel, st), true);
+      assert.equal(await echterPfadOk(fh, path.join(wurzel, "anders"), ziel, st), false);
+      assert.equal(await echterPfadOk(fh, d, ziel, st, { plattform: "darwin" }), true);              // Rückfall realpath + dev/ino
+      assert.equal(await echterPfadOk(fh, d, ziel, { ...st, ino: st.ino + 1, dev: st.dev }, { plattform: "darwin" }), false);
+    } finally { await fh.close(); }
+  } finally { await rm(wurzel, { recursive: true, force: true }); }
 });

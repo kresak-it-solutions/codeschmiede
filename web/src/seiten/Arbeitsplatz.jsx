@@ -214,10 +214,10 @@ function CodeLive({ projekt, f, d, ich, onCode }) {
     let aus = false;
     const holen = async () => {
       if (document.visibilityState === "hidden") return;
-      const { data, error } = await supabase.from("ws_code_live").select("dateien, gekuerzt, aktualisiert").eq("auftrag_id", laufend.id).maybeSingle();
+      const { data, error } = await supabase.from("ws_code_live").select("dateien, gekuerzt, aktualisiert, abgeschaltet").eq("auftrag_id", laufend.id).maybeSingle();
       if (aus) return;
       if (error) setStand((s) => ({ ...s, laedt: false, fehler: error }));
-      else setStand({ laedt: false, fehler: null, dateien: data?.dateien || [], gekuerzt: !!data?.gekuerzt, zeit: data?.aktualisiert || null });
+      else setStand({ laedt: false, fehler: null, dateien: data?.dateien || [], gekuerzt: !!data?.gekuerzt, zeit: data?.aktualisiert || null, abgeschaltet: !!data?.abgeschaltet });
     };
     setStand({ laedt: true, fehler: null, dateien: null, gekuerzt: false, zeit: null });
     holen(); const t = setInterval(holen, 3000);
@@ -247,7 +247,9 @@ function CodeLive({ projekt, f, d, ich, onCode }) {
       {kopf}
       <p className="px-3 pt-2 text-xs text-slate-500 flex items-center gap-1.5"><Info className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />Nur ansehen. Geheimnis-Dateien (.env, Schlüssel) sind ausgeblendet, Schlüssel-Werte maskiert.</p>
       <div className="flex-1 min-h-0 overflow-y-auto p-3 flex flex-col gap-3">
-        {stand.fehler ? <Fehlerzustand klein titel="Änderungen konnten nicht geladen werden" fehler={stand.fehler} onErneut={laufend ? undefined : holeLetzten} />
+        {stand.abgeschaltet && <p role="alert" className="text-sm rounded-lg border border-red-300 bg-red-50 dark:bg-red-950/40 dark:border-red-900 text-red-800 dark:text-red-300 px-3 py-2">
+          Code live abgeschaltet: verdächtige Git-Einstellung im Arbeitsordner dieses Auftrags. Die Schritte siehst du weiter unten; bitte den Auftrag prüfen.</p>}
+        {stand.abgeschaltet ? null : stand.fehler ? <Fehlerzustand klein titel="Änderungen konnten nicht geladen werden" fehler={stand.fehler} onErneut={laufend ? undefined : holeLetzten} />
           : stand.laedt || stand.dateien === null ? (letzter || laufend ? <Laden zeilen={4} text="Änderungen werden geladen" /> : <Leerzustand klein Symbol={Code2} titel="Noch keine Änderungen" text="Sobald die Werkstatt an diesem Feature arbeitet, siehst du hier Zeile für Zeile, was sie ändert." />)
           : !dateien.length ? <Leerzustand klein Symbol={Code2} titel={laufend ? "Noch keine Datei geändert" : "Keine Änderungen gegenüber main"} text={laufend ? "Die Werkstatt liest gerade – die erste Änderung erscheint hier nach wenigen Sekunden." : "Der Zweig des letzten Auftrags unterscheidet sich nicht von main."} />
           : <>
