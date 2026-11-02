@@ -426,7 +426,7 @@ test("N1/N3/N4: keine Fehlalarme in normalem Code", () => {
   for (const [t, rel] of [
     ["const token = `${prefix}-abc`;", "a.js"], ['const cache_key = "user-list";', "a.js"], ['{ password: "Passwort eingeben" }', "a.js"], ['passwordLabel: "Passwort"', "a.js"],
     ['password: "$DB_PASSWORD"', "c.yml"], ['password: "%DB_PASSWORD%"', "c.yml"], ['const sortKey = "name";', "a.js"], ["interface X { token: string; }", "a.ts"],
-    ['const primary_key = "id"', "a.py"], ['const label = t.password || "Passwort";', "a.js"], ['const pwa = "manifest";', "a.js"], ['VITE_SUPABASE_ANON_KEY="eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoiYW5vbiJ9.abcdefghijklmnopqrstu"', ".env.example.txt"],
+    ['const primary_key = "id"', "a.py"], ['const pwa = "manifest";', "a.js"], ['VITE_SUPABASE_ANON_KEY="eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoiYW5vbiJ9.abcdefghijklmnopqrstu"', ".env.example.txt"],
     ['const publishableKey = "pk_test_abcdefghijklmnop12";', "a.js"], ['const pw = process.env.PW || "";', "a.js"], ['headers: { Authorization: `Bearer ${token}` }', "a.js"],
     ["curl -H 'Authorization: Bearer YOUR_ACCESS_TOKEN'", "README.md"], ["define('WP_DEBUG', true);", "w.php"], ["Basic authentication is supported", "README.md"],
     ['const key: string = props.key;', "a.ts"], ["password := os.Getenv(\"DB_PW\")", "m.go"]]) {
@@ -477,5 +477,75 @@ test("N5: GitHub Actions wird vor dem Hochladen abgeschaltet – geht das nicht,
     }
     const r = await pruefen(zipQuelle(zip([["p/.github/workflows/build.yml", "on: push"], ["p/.github/dependabot.yml", "x: 1"], ["p/a.js", "1"]])));
     assert.deepEqual(r.bericht.workflows, [".github/workflows/build.yml"]);
+  } finally { await rm(tmp, { recursive: true, force: true }); }
+});
+
+
+test("2. Nachprüfung 1: Einzelwort-Passwörter und Passphrasen zählen, nur Beschriftungen nicht", () => {
+  for (const [t, rel] of [['password: "Sommer"', "a.js"], ["secret: 'hunter'", "a.js"], ['const passwort = "Pillersee";', "a.js"], ['password = "Sommer"', "c.yml"],
+    ['const password = "correct horse battery staple";', "a.js"], ['secret: "mein Hund heisst Rex"', "c.yml"], ['const label = t.password || "Passwort";', "a.js"]]) assert.ok(geheimnisseZaehlen(t, rel) >= 1, t);
+  for (const [t, rel] of [['{ password: "Passwort eingeben" }', "a.js"], ['password: "Enter your password"', "a.js"], ['password: "Bitte Passwort eingeben"', "a.js"],
+    ['passwordPlaceholder: "Passwort"', "a.js"], ['passwordLabel: "Kennwort"', "a.js"], ['secretHint: "Mindestens 8 Zeichen"', "a.js"], ['password: "Neues Passwort"', "a.js"]]) assert.equal(geheimnisseZaehlen(t, rel), 0, t);
+});
+
+test("2. Nachprüfung 2: nur der anon-JWT ist ausgenommen", () => {
+  const jwt = (p) => `eyJhbGciOiJIUzI1NiJ9.${Buffer.from(JSON.stringify(p)).toString("base64url")}.abcdefghijklmnopqrstu`;
+  assert.equal(geheimnisseZaehlen(`SUPABASE_ANON_KEY="${jwt({ role: "anon" })}"`, "a.js"), 0);
+  for (const p of [{ sub: "user-1" }, { scope: "admin" }, {}, { role: "authenticated" }]) assert.ok(geheimnisseZaehlen(`const token = "${jwt(p)}";`, "a.js") >= 1, JSON.stringify(p));
+  assert.ok(geheimnisseZaehlen(`API_SECRET=${jwt({ iss: "x" })}`, "x.ini") >= 1);
+});
+
+test("2. Nachprüfung 3: öffentliche Namen nur als ganzer Namensteil, Gegenliste token/api_key", () => {
+  const zufall = "aB3dE5gH7jK9mN1pQ3sT5vW7";
+  for (const t of [`canonicalToken = "${zufall}"`, `NEXT_PUBLIC_API_TOKEN="${zufall}"`, `VITE_PUBLIC_API_KEY="${zufall}"`, `PK_TOKEN="${zufall}"`, `anonymousSecret = "${zufall}"`]) assert.ok(geheimnisseZaehlen(t, "x.env.txt") >= 1, t);
+  for (const t of [`VITE_SUPABASE_ANON_KEY="${zufall}"`, `anonKey = "${zufall}"`, `supabaseAnonKey = "${zufall}"`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY="${zufall}"`, `publicKey = "${zufall}"`, `PK_LIVE_KEY="${zufall}"`]) assert.equal(geheimnisseZaehlen(t, "x.cfg"), 0, t);
+});
+
+test("2. Nachprüfung 4/5: starke Schlüssel-Namen ab 8 Zeichen (auch Ziffern), sonst Untergrenze 6", () => {
+  for (const t of ['db_key = "12345678"', 'MASTER_KEY="87654321"', 'encryption_key: "abcdefgh"', 'signingKey = "s1gn1ng!"', 'secret_key = "98765432"', 'PRIVATE_KEY="zzzzzzzz"', 'app_secret = "11223344"']) assert.ok(geheimnisseZaehlen(t, "c.yml") >= 1, t);
+  for (const t of ['db_key = "1234567"', 'master_key = "abc"']) assert.equal(geheimnisseZaehlen(t, "c.yml"), 0, t);
+  assert.ok(geheimnisseZaehlen('password = "abc123"', "c.yml") >= 1);   // genau 6
+  assert.equal(geheimnisseZaehlen('password = "abc12"', "c.yml"), 0);    // 5 Zeichen: unter der Grenze
+});
+
+test("2. Nachprüfung 6: Platzhalter nur als ganzer Wert", () => {
+  for (const t of ['password: "your-password"', 'password: "<passwort>"', 'password: "xxxx"', 'password: "******"', 'password: "..."', 'password: "changeme"', 'secret: "example"', 'token: "dummy"', 'password: "placeholder"', 'password: "${DB_PW}"', 'password: "{{ pw }}"', 'password: "$DB_PW"', 'password: "%DB_PW%"', "secret: process.env.SECRET", 'password: os.environ["DB_PW"]', 'password: getenv("DB_PW")'])
+    assert.equal(geheimnisseZaehlen(t, "c.yml"), 0, t);
+  for (const t of ['password: "your-password-is-Sommer2024"x', 'password: "changeme123"', 'password: "test-Sommer9"', 'password: "examplePass1"', 'password: "xxxSommer"', 'password: "<b>Sommer2024"'])
+    assert.ok(geheimnisseZaehlen(t.replace(/"x$/, '"'), "c.yml") >= 1, t);
+});
+
+test("2. Nachprüfung 7/8: Bearer-Platzhalter, Stripe-Test, AWS ASIA", () => {
+  for (const t of ["Authorization: Bearer YOUR_ACCESS_TOKEN", "Authorization: Bearer <TOKEN_HIER>", "Bearer ACCESS_TOKEN_HERE"]) assert.equal(geheimnisseZaehlen(t, "README.md"), 0, t);
+  for (const t of ["Authorization: Bearer ABCDEFGHIJKLMNOPQRSTUV", "Bearer abcdef1234567890xyz", `sk_test_${"a".repeat(24)}`, `rk_test_${"b".repeat(24)}`, "ASIAIOSFODNN7EXAMPLE"]) assert.ok(geheimnisseZaehlen(t, "README.md") >= 1, t);
+});
+
+test("2. Nachprüfung 9: leeres privates Repository wird weiterverwendet, sonst klare Meldung", async () => {
+  const { repoEinlesen } = await import("../lib/repo.mjs");
+  const { execFile } = await import("node:child_process"); const { promisify } = await import("node:util"); const run = promisify(execFile);
+  const tmp = await mkdtemp(path.join(os.tmpdir(), "cs-einlesen-wieder-"));
+  try {
+    const code = path.join(tmp, "code"); await mkdir(code); await writeFile(path.join(code, "a.js"), "1");
+    const bare = path.join(tmp, "gh.git"); await run("git", ["init", "-q", "--bare", bare]);
+    const machSh = ({ sicht, zweige }) => { const aufrufe = []; const sh = async (b, a, o) => {
+      const z = [b, ...a].join(" "); aufrufe.push(z);
+      if (b === "gh" && a[1] === "view" && a.includes("visibility")) return { stdout: `${sicht}\n` };
+      if (b === "gh" && a[1] === "view") return { stdout: "{}" };   // gibt es schon
+      if (z.includes("/branches")) return { stdout: `${zweige}\n` };
+      if (z.includes("actions/permissions")) return { stdout: a.includes("PUT") ? "" : "false\n" };
+      if (b === "gh" && a[1] === "create") throw new Error("darf nicht neu anlegen");
+      if (b === "gh") return { stdout: "tester" };
+      if (b === "git" && a.includes("push")) return run("git", a.map((x) => (x.startsWith("https://github.com/") ? bare : x)), o);
+      return run(b, a, o);
+    }; return { sh, aufrufe }; };
+    for (const fall of [{ sicht: "PUBLIC", zweige: 0 }, { sicht: "PRIVATE", zweige: 1 }, { sicht: "INTERNAL", zweige: 0 }]) {
+      const { sh, aufrufe } = machSh(fall);
+      await assert.rejects(repoEinlesen({ sh, ordner: code, keineHooks: tmp, projekt: { id: "x-projekt", name: "X" } }), /liegt schon bei GitHub, bitte dort prüfen oder löschen/);
+      assert.ok(!aufrufe.some((x) => x.includes(" push ")), JSON.stringify(fall));
+    }
+    const { sh, aufrufe } = machSh({ sicht: "PRIVATE", zweige: 0 });
+    const r = await repoEinlesen({ sh, ordner: code, keineHooks: tmp, projekt: { id: "x-projekt", name: "X" } });
+    assert.equal(r.repo, "kresak-it-solutions/x-projekt");
+    assert.ok(aufrufe.some((x) => x.includes("-X PUT") && x.includes("enabled=false")) && aufrufe.some((x) => x.includes(" push ")) && !aufrufe.some((x) => x.includes("repo create")));
   } finally { await rm(tmp, { recursive: true, force: true }); }
 });

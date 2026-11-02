@@ -21,7 +21,7 @@ const URL_PASSWORT = /\b([a-z][a-z0-9+.-]*:\/\/[^\s:@\/]+:)[^\s@\/]+@/gi;
 // Namensteile sind begrenzt, damit lange Buchstabenketten den Dienst nicht ausbremsen (Prüfung 2026-10-24).
 // Seit 0.15.0 (Nachprüfung N1/N3): optionale Typangabe vor dem „=“ (TypeScript „apiKey: string = …“, Kotlin „val password: String = …“),
 // Go „:=“, Namen mit „_key“/„-key“ (SUPABASE_SERVICE_KEY, OPENAI_KEY), Werte in Backticks ohne „${“.
-const Z_NAME = String.raw`[A-Za-z0-9_-]{0,40}(?:pass(?:wort|word)?|pwd?(?![a-z])|secret|token|api[_-]?key|apikey|private[_-]?key|service[_-]?role[_-]?key|credential|[_-]key(?![a-z]))[A-Za-z0-9_-]{0,120}`;
+const Z_NAME = String.raw`[A-Za-z0-9_-]{0,40}(?:pass(?:wort|word)?|pwd?(?![a-z])|secret|token|api[_-]?key|apikey|private[_-]?key|service[_-]?role[_-]?key|credential|(?:db|master|encryption|signing|secret|private)[_-]?key|app[_-]?secret|[_-]key(?![a-z]))[A-Za-z0-9_-]{0,120}`;
 const Z_TRENNER = String.raw`((?:\s*:\s*[A-Za-z_][\w.]{0,40}(?:<[^<>\n]{0,40}>)?(?:\[\])?\??)?\s*(?::=|[:=])\s*)`;
 const ZUWEISUNG = new RegExp(String.raw`((?:\\?["'])?)(${Z_NAME})\1${Z_TRENNER}(\\?"[^"\n]{4,}"|\\?'[^'\n]{4,}'|` + "`(?:(?!\\$\\{)[^`\\n]){4,}`" + String.raw`|[^\s"'&` + "`" + String.raw`]{4,})`, "gi");
 // Fest eingetragener Ersatzwert: process.env.PW || "…", env.KEY ?? '…', $x ?: "…" (N1)
@@ -55,20 +55,42 @@ export function ohneGeheimnisse(text) {
 
 // Code-Dateien: nur Zuweisungen mit wörtlichem Text zählen („token = getToken()“ ist kein Geheimnis); Platzhalter zählen nicht
 const CODE_DATEI = /\.(m?[jt]sx?|cjs|vue|svelte|astro|py|rb|go|rs|java|kt|cs|php|dart|swift|c|cc|cpp|h|hpp)$/i;
-// Platzhalter: $VAR/%VAR% nur in Großschreibung (N4 – ein Passwort wie „$Ecret…“ zählt), Rest ohne Rücksicht auf Groß/Klein
-const PLATZHALTER_GROSS = /^(?:\$\{|\{\{|\$[A-Z_][A-Z0-9_]*$|%[A-Z_][A-Z0-9_]*%?$)/;
-const PLATZHALTER = /^(?:<|process\.env|import\.meta|os\.environ|env\(|getenv|your[_-]|xxx|\*{3}|changeme|example|placeholder|dummy|\[entfernt\])/i;
+// Platzhalter zählen nur, wenn der GANZE Wert einer ist (2. Nachprüfung, Punkt 6); $VAR/%VAR% nur in Großschreibung (N4: „$Ecret…“ zählt)
+const PLATZHALTER_GANZ = /^(?:<[^<>]+>|x+|\*+|\.\.\.|changeme|example|dummy|test|placeholder|\[entfernt\])$/i;
+const PLATZHALTER_YOUR = /^(?:your|YOUR)[_-][a-z_-]+$|^YOUR[_-][A-Z_-]+$/;   // your-password, YOUR_TOKEN – nicht „your-password-is-Sommer2024“
+const PLATZHALTER_GROSS = /^(?:\$\{[^{}]*\}|\{\{[^{}]*\}\}|\$[A-Z_][A-Z0-9_]*|%[A-Z_][A-Z0-9_]*%?)$/;
+// Verweis auf eine Umgebungsvariable als ganzer Wert (kein Geheimnis): process.env.X, import.meta.env.X, os.environ["X"], env("X"), getenv("X")
+// (ohne Anführungszeichen endet der erkannte Wert vor dem ersten Anführungszeichen: „os.environ[“, „getenv(“ – auch das ist nur ein Verweis)
+const UMGEBUNG = /^(?:(?:process\.env|import\.meta\.env|os\.environ)(?:\.[A-Za-z_]\w*|\[["'][A-Za-z_]\w*["']\])|(?:env|getenv|os\.getenv)\(\s*["']?[A-Za-z_]\w*["']?\s*\)|os\.environ\[|(?:os\.)?getenv\(|env\()$/;
 const STARK = /pass|pwd?(?![a-z])|secret|api[_-]?key|apikey|private[_-]?key|service[_-]?role|credential|token/i;
-/** Sieht ein Wert nach Geheimnis aus? Code: Beschriftungen aus reinen Wörtern („Passwort eingeben“) zählen nicht; schwache Namen (*_key) nur bei langen Zufallswerten. */
+// Starke Schlüssel-Namen: zählen schon ab 8 Zeichen, auch reine Ziffern (Punkt 4)
+const STARK_SCHLUESSEL = /(db|master|encryption|signing|secret|private)[_-]?key|app[_-]?secret/i;
+// Öffentliche Namen nur als ganzer Namensteil (Punkt 3): ANON_KEY, anonKey, supabaseAnonKey, PUBLISHABLE_KEY, publicKey, PK_… – nicht „canonical“
+const OEFFENTLICH_TEIL = /(^|[_-])(anon|publishable|public|pk)([_-]|$)|(^|[_-])site[_-]?key([_-]|$)/i;
+const OEFFENTLICH_CAMEL = /(^(anon|publishable|public|pk)(?=[A-Z0-9]))|([a-z0-9](Anon|Publishable|Public)(?=[A-Z0-9]|$))|siteKey/;
+// … aber nie, wenn der Name zusätzlich etwas Geheimes nennt (NEXT_PUBLIC_API_TOKEN, VITE_PUBLIC_API_KEY, PK_TOKEN zählen)
+const GEGENLISTE = /pass|pwd|secret|service[_-]?role|private|token|api[_-]?key|apikey/i;
+// Beschriftungen (UI-Text) erkennt man an Leerzeichen UND einem Beschriftungswort (Punkt 1)
+const BESCHRIFTUNG = /(^|[^\p{L}])(eingeben|enter|your|bitte|feld|eingabe|type|please|here|hier|ihr|ihre|dein|deine|neues|new|confirm|bestätigen|wiederholen|repeat|vergessen|forgot|anzeigen|show|ändern|change|zurücksetzen|reset|mindestens|least|zeichen|characters|ungültig|invalid|falsch|wrong|erforderlich|required)([^\p{L}]|$)/iu;
+// Name einer Beschriftung statt eines Werts: passwordLabel, password_placeholder, secretHint …
+const BESCHRIFTUNG_NAME = /(label|placeholder|hint|title|text|message|msg|error|tooltip|caption)$/i;
+const istJwt = (w) => /^eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}$/.test(w);
+const jwtRolle = (w) => { try { return JSON.parse(Buffer.from(w.split(".")[1], "base64url").toString("utf8"))?.role ?? null; } catch { return null; } };
+/**
+ * Sieht ein Wert nach Geheimnis aus? Untergrenze 6 Zeichen (starke Schlüssel-Namen 8, schwache Namen wie *_key 16 mit Buchstaben und Ziffern).
+ * Nicht gezählt werden: ganze Platzhalter, Verweise auf Umgebungsvariablen, anon-JWTs, öffentliche Namen ohne geheimen Namensteil, Beschriftungen
+ * (Leerzeichen + Beschriftungswort, bzw. Name endet auf Label/Placeholder/…).
+ */
 function wertZaehlt(name, roh, code) {
-  if (roh.length < 6 || PLATZHALTER_GROSS.test(roh) || PLATZHALTER.test(roh)) return false;
-  // JWTs entscheidet die Rollen-Prüfung (anon ist öffentlich); öffentliche Schlüssel (anon, publishable, public) sind keine Geheimnisse
-  if (/^eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}$/.test(roh)) return false;
-  if (/anon|publishable|public|site[_-]?key|(^|[_-])pk([_-]|$)/i.test(name) && !/pass|pwd|secret|service[_-]?role|private/i.test(name)) return false;
-  if (!STARK.test(name)) return roh.length >= 16 && !/\s/.test(roh) && /[A-Za-z]/.test(roh) && /\d/.test(roh);
-  if (code && /^[\p{L} .,:;!?()'’-]+$/u.test(roh) && roh.length < 16) return false;
-  if (code && /\s/.test(roh) && /^[\p{L} .,:;!?()'’-]+$/u.test(roh)) return false;
-  return true;
+  const w = String(roh).trim();
+  if (PLATZHALTER_GANZ.test(w) || PLATZHALTER_YOUR.test(w) || PLATZHALTER_GROSS.test(w) || UMGEBUNG.test(w)) return false;
+  if (istJwt(w)) return jwtRolle(w) !== "anon" && (STARK.test(name) || STARK_SCHLUESSEL.test(name));   // nur der öffentliche anon-JWT ist ausgenommen
+  if ((OEFFENTLICH_TEIL.test(name) || OEFFENTLICH_CAMEL.test(name)) && !GEGENLISTE.test(name)) return false;
+  if (BESCHRIFTUNG_NAME.test(name)) return false;
+  if (/\s/.test(w) && BESCHRIFTUNG.test(w)) return false;
+  if (STARK_SCHLUESSEL.test(name)) return w.length >= 8;
+  if (!STARK.test(name)) return w.length >= 16 && !/\s/.test(w) && /[A-Za-z]/.test(w) && /\d/.test(w);
+  return w.length >= 6;
 }
 /**
  * Anzahl der Zuweisungen password/secret/token/api_key/*_key … = „Wert“ (gleiche Muster wie ohneGeheimnisse, Einlesen 0.15.0): mit Typangabe,

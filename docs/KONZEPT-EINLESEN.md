@@ -103,14 +103,21 @@ Das Original (ZIP bzw. Ordner) bleibt unverändert. Bricht das Einlesen ab, steh
 | N6 | Doppelnamen im Ordner | Wie bei ZIP (NFC, Groß/Klein) → Abbruch. |
 | N7 | Weitere Endungen | Gefährlich: `.docm .dotm .xlsm .xltm .xlam .pptm .potm .ppam .settingcontent-ms .wsc .cab`; geheim: `.htpasswd`, `*.p8`, `*.tfvars`, `*.tfstate(.backup)`. |
 
-**Gegen Fehlalarme in normalem Code:** In Code-Dateien zählen nur Werte in Anführungszeichen/Backticks; Beschriftungen aus reinen Wörtern
-(`password: "Passwort eingeben"`) zählen nicht; Namen mit `_key` nur bei langen Zufallswerten (≥ 16 Zeichen mit Buchstaben und Ziffern, ohne Leerzeichen –
-`cache_key = "user-list"` zählt nicht); öffentliche Schlüssel (anon, publishable, public, pk) und JWTs (die Rolle entscheidet) zählen nicht;
-Platzhalter (`${…}`, `{{…}}`, `$VAR`, `%VAR%`, `process.env…`, `your-…`, `Bearer YOUR_TOKEN`) zählen nicht.
+## 2. Nachprüfung (02.11.2026, GELB) – Regeln für Zuweisungen (`geheim.mjs` › `wertZaehlt`)
+| Regel | Zählt (Geheimnis) | Zählt nicht |
+|---|---|---|
+| Untergrenze | starke Namen (password, secret, token, api_key, credential …) ab **6 Zeichen**; starke Schlüssel-Namen `db_key`, `master_key`, `encryption_key`, `signing_key`, `secret_key`, `private_key`, `app_secret` ab **8 Zeichen, auch reine Ziffern**; schwache Namen (`*_key`) ab 16 Zeichen mit Buchstaben und Ziffern | kürzere Werte |
+| Wörter | Einzelwort-Passwörter (`password: "Sommer"`, `const passwort = "Pillersee"`) und Passphrasen (`"correct horse battery staple"`) | nur Text mit Leerzeichen **und** Beschriftungswort (eingeben, enter, your, bitte, Feld, Eingabe, type, please, here, hier, neues, mindestens, Zeichen …), sowie Namen, die auf Label/Placeholder/Hint/Title/Text/Message/Error enden (`passwordLabel`) |
+| JWT | jeder JWT unter einem starken Namen, außer `role: "anon"` (auch ohne role, mit sub/scope …) | der öffentliche anon-JWT |
+| Öffentliche Namen | `canonicalToken`, `NEXT_PUBLIC_API_TOKEN`, `VITE_PUBLIC_API_KEY`, `PK_TOKEN` (Gegenliste token/api_key/secret/pass/private/service_role) | `anon`, `publishable`, `public`, `pk` nur als ganzer Namensteil (`ANON_KEY`, `anonKey`, `supabaseAnonKey`, `PUBLISHABLE_KEY`) |
+| Platzhalter | `your-password-is-Sommer2024`, `changeme123`, `<b>Sommer2024` | nur der **ganze** Wert: `your-…`/`YOUR_…` (nur Buchstaben), `<…>`, `xxx`, `***`, `...`, changeme, example, dummy, test, placeholder, `${…}`, `{{…}}`, `$VAR`/`%VAR%` (groß), Verweise wie `process.env.X`, `os.environ["X"]`, `getenv("X")` |
+| Bearer | jeder Token, auch in Großbuchstaben | nur Großschrift mit `YOUR`, `TOKEN` oder `<…>` (`Bearer YOUR_ACCESS_TOKEN`) |
+| Weitere Muster | Stripe `sk_test_`/`rk_test_`, AWS `ASIA…` | – |
+
+**Repository vorhanden:** Scheitert ein Versuch nach dem Anlegen (z. B. beim Abschalten von Actions), wird ein **leeres** (keine Zweige) und **privates** Repository genau dieser Kennung beim nächsten Versuch weiterverwendet; Actions wird wieder abgeschaltet und geprüft. Sonst: „Repository liegt schon bei GitHub, bitte dort prüfen oder löschen.“
 
 **Verbleibende Grenzen:** Base64- oder anders kodierte bzw. zusammengesetzte Schlüssel (`"sk-" + teil2`) werden nicht erkannt; Schlüssel in Binärdateien
-(Bilder, PDF, Office) nur, wenn sie als Klartext darin stehen; Beschriftungs-Ausnahme: ein Passwort, das nur aus Buchstaben und Leerzeichen besteht, wird in
-Code-Dateien nicht erkannt; die Erkennung ist eine Mustersuche – sie ersetzt nicht das Prüfen der Schlüssel durch den Admin vor dem Einschalten von Actions.
+(Bilder, PDF, Office) nur, wenn sie als Klartext darin stehen; eine Passphrase, die zufällig ein Beschriftungswort enthält (z. B. „bitte nicht raten“), wird nicht erkannt; Werte unter 6 Zeichen zählen nie; die Erkennung ist eine Mustersuche – sie ersetzt nicht das Prüfen der Schlüssel durch den Admin vor dem Einschalten von Actions.
 
 ## Offen / bewusst nicht gebaut
 - Zuordnung je Eintrag der **obersten Ebene** (Datei oder Ordner), nicht je einzelner Datei in Unterordnern.

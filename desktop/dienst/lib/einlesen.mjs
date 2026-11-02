@@ -172,7 +172,7 @@ const SCHLUESSEL = [
   /(?<![A-Za-z0-9])sk-(?:ant-|proj-|live-)?[A-Za-z0-9_-]{20,}/g,
   /(?<![A-Za-z0-9])gh[pousr]_[A-Za-z0-9]{20,}/g,
   /(?<![A-Za-z0-9])github_pat_[A-Za-z0-9_]{20,}/g,
-  /(?<![A-Za-z0-9])AKIA[0-9A-Z]{16}(?![0-9A-Z])/g,
+  /(?<![A-Za-z0-9])(?:AKIA|ASIA)[0-9A-Z]{16}(?![0-9A-Z])/g,
   /-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY(?: BLOCK)?-----/g,   // RSA/EC/OPENSSH/ENCRYPTED/PGP …
   /(?<![A-Za-z0-9])npm_[A-Za-z0-9]{30,}/g,
   /(?<![A-Za-z0-9])AIza[0-9A-Za-z_-]{35}/g,
@@ -181,7 +181,7 @@ const SCHLUESSEL = [
   /(?<![A-Za-z0-9])SG\.[\w-]{16,}\.[\w-]{16,}/g,                                   // SendGrid
   /Authorization["']?\s*[:=]\s*["'`]?Basic\s+[A-Za-z0-9+/]{12,}={0,2}/gi,           // Basic-Zugang im Kopf
   /(?<![A-Za-z0-9])(?:sb_secret_|sbp_)[A-Za-z0-9_-]{16,}/g,
-  /(?<![A-Za-z0-9])(?:sk|rk)_live_[A-Za-z0-9]{16,}/g,
+  /(?<![A-Za-z0-9])(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{16,}/g,
   /(?<![A-Za-z0-9])whsec_[A-Za-z0-9]{16,}/g,
   /(?<![A-Za-z0-9])xox[abprs]-[A-Za-z0-9-]{10,}/g,
   /:\/\/[^\s:@/'"]{1,64}:[^\s@/'"]{6,}@[A-Za-z0-9.-]+/g,   // Zugangsdaten in einer Adresse (postgres://name:passwort@…)
@@ -204,8 +204,8 @@ export function alsText(buf) {
 export function geheimnisseZaehlen(text, rel = "") {
   const t = Buffer.isBuffer(text) ? alsText(text) : String(text || "");
   let n = zuweisungenZaehlen(t, rel);
-  // Bearer-Token: Muster aus geheim.mjs (ohneGeheimnisse), Platzhalter in Großbuchstaben (YOUR_TOKEN_HERE) zählen nicht
-  for (const m of t.matchAll(new RegExp(BEARER.source, "g"))) if (!/^Bearer\s+[A-Z_<>{}$-]+=*$/.test(m[0])) n++;
+  // Bearer-Token: Muster aus geheim.mjs; als Platzhalter gilt nur Großschrift mit YOUR, TOKEN oder <…> (Bearer YOUR_ACCESS_TOKEN)
+  for (const m of t.matchAll(new RegExp(BEARER.source, "g"))) { const tok = m[0].replace(/^Bearer\s+/, ""); if (!(/^[A-Z0-9_<>{}$.-]+=*$/.test(tok) && /YOUR|TOKEN|<[^>]*>/.test(tok))) n++; }
   for (const m of SCHLUESSEL) n += (t.match(m) || []).length;
   for (const m of t.matchAll(JWT)) {
     try { const j = JSON.parse(Buffer.from(m[1], "base64url").toString("utf8")); if (j && typeof j === "object" && String(j.role || "").toLowerCase() === "service_role") n++; } catch { /* kein JWT */ }
