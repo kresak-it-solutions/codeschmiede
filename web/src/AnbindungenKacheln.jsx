@@ -2,7 +2,7 @@
 // Projektordner · GitHub · Testseite (Cloudflare Pages, kostenlos, per Knopf) · Datenbank (Wunsch vermerken, Kosten vorher bestätigen) ·
 // Fehler-Meldungen · Seiten-Designer (folgt). Ausgeführt wird von der Werkstatt des Admins; hier wird nur gewünscht und angezeigt.
 import React, { useEffect, useState } from "react";
-import { ExternalLink, Loader2, Rocket, Database, RefreshCw, X, ShieldCheck, Globe } from "lucide-react";
+import { ExternalLink, Loader2, Rocket, Database, RefreshCw, X, ShieldCheck, Globe, BookOpen } from "lucide-react";
 import { supabase } from "./supabase";
 import { btn, card, fehler, ghost, oeffneExtern, useBestaetigen } from "./bausteine/grund";
 import { useOrdnerStandDb, useProjektordner } from "./daten/projektordner";
@@ -41,6 +41,62 @@ function useRegelnStand(projektId) {
   return z;
 }
 
+const ART = { A: ["neu", "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"], M: ["geändert", "bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-300"], D: ["entfernt", "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300"] };
+const kurzSha = (s) => (s ? String(s).slice(0, 7) : "–");
+const REGELWERK_URL = "https://github.com/gerhardkresak-code/ai-dev-os";
+
+/**
+ * Regelwerk (gerhardkresak-code/ai-dev-os) in der festgelegten Fassung (0.13.1, Datenbank 0056). Neue Fassung nur nach Klick des Admins:
+ * „Neue Regelwerk-Fassung übernehmen“ vergleicht (Werkstatt des Admins), zeigt die geänderten Dateien, „Übernehmen“ legt fest (mit Protokoll).
+ */
+function RegelwerkKarte({ projekt, admin, toast }) {
+  const bestaetigen = useBestaetigen();
+  const [busy, setBusy] = useState("");
+  const [angefragt, setAngefragt] = useState(null);
+  const v = projekt.regelwerk_vergleich;
+  const vFrisch = v && v.zeit && (!angefragt || new Date(v.zeit) >= angefragt);
+  const wartet = angefragt && !vFrisch;
+  useEffect(() => { if (vFrisch && angefragt) setAngefragt(null); }, [vFrisch, angefragt]);
+  const vergleichen = async () => {
+    setBusy("vergleich");
+    try {
+      const { error } = await supabase.rpc("ws_projekt_aktion_anfordern", { p_projekt: projekt.id, p_art: "regelwerk_vergleich" });
+      if (error) throw error;
+      setAngefragt(new Date(Date.now() - 5000)); toast("Die Werkstatt des Admins vergleicht das Regelwerk – es wird noch nichts geändert");
+    } catch (e) { toast(fehler(e)); } finally { setBusy(""); }
+  };
+  const uebernehmen = async () => {
+    if (!(await bestaetigen({ titel: "Neue Regelwerk-Fassung übernehmen?", ja: "Übernehmen",
+      text: `Ab dem nächsten Auftrag gilt das Regelwerk in der Fassung ${kurzSha(v.neu)} (bisher ${kurzSha(v.fest)}).\n\nDie Kopie im Projektordner (regeln\\regelwerk) wird neu angelegt, die bisherige wandert nach regeln\\regelwerk-alt-<datum> – gelöscht wird nichts. Deine Projektregeln (REGELN.md) gehen weiter vor, die Sicherheitsregeln gelten immer.` }))) return;
+    setBusy("uebernehmen");
+    try {
+      const { error } = await supabase.rpc("ws_regelwerk_uebernehmen", { p_projekt: projekt.id, p_sha: v.neu });
+      if (error) throw error;
+      toast("Neue Fassung des Regelwerks festgelegt – die Werkstätten legen die Kopie im Projektordner neu an");
+    } catch (e) { toast(fehler(e)); } finally { setBusy(""); }
+  };
+  const text = projekt.regelwerk_fassung
+    ? `Festgelegte Fassung ${kurzSha(projekt.regelwerk_fassung)}${projekt.regelwerk_fassung_am ? ` seit ${new Date(projekt.regelwerk_fassung_am).toLocaleDateString("de-AT")}` : ""}. Aufträge lesen das Regelwerk nur in dieser Fassung aus dem geprüften Git-Klon des Regelwerks – Änderungen an der Kopie im Projektordner wirken nicht.`
+    : "Noch keine Fassung festgelegt – die Werkstatt des Admins legt beim nächsten Durchlauf die aktuelle Fassung fest (einmalig).";
+  return (
+    <Lampe stand={projekt.regelwerk_fassung ? "gruen" : "grau"} titel="Regelwerk (ai-dev-os)" text={text}>
+      {admin && <button type="button" className={`${ghost} self-start`} disabled={!!busy || wartet} onClick={vergleichen}>
+        {busy === "vergleich" || wartet ? <Loader2 className="w-4 h-4 animate-spin" /> : <BookOpen className="w-4 h-4" />}Neue Regelwerk-Fassung übernehmen</button>}
+      {wartet && <span className="text-xs text-slate-500">Vergleich läuft – die Werkstatt des Admins muss an sein.</span>}
+      {admin && vFrisch && (v.neu === v.fest || v.neu === projekt.regelwerk_fassung
+        ? <span className="text-xs text-slate-600 dark:text-slate-300">Die festgelegte Fassung ist schon die neueste (verglichen {new Date(v.zeit).toLocaleString("de-AT", { dateStyle: "short", timeStyle: "short" })}).</span>
+        : <div className="flex flex-col gap-2 rounded-lg border border-slate-200 dark:border-slate-800 p-2.5" aria-label="Vergleich des Regelwerks">
+            <span className="text-xs">Festgelegt: <b className="font-mono">{kurzSha(v.fest)}</b> · neueste: <b className="font-mono">{kurzSha(v.neu)}</b> · {(v.dateien || []).length} Datei(en) geändert</span>
+            {(v.dateien || []).length > 0 && <ul className="flex flex-col gap-1 max-h-48 overflow-auto text-xs" aria-label="Geänderte Dateien">{v.dateien.map((x) => (
+              <li key={`${x.art}-${x.pfad}`} className="flex items-center gap-2"><span className={`rounded-full px-2 py-0.5 font-semibold ${(ART[x.art] || ART.M)[1]}`}>{(ART[x.art] || ART.M)[0]}</span><span className="font-mono break-all">{x.pfad}</span></li>))}</ul>}
+            <button type="button" className={`${ghost} self-start h-9 text-xs`} onClick={() => oeffneExtern(v.fest ? `${REGELWERK_URL}/compare/${v.fest}...${v.neu}` : `${REGELWERK_URL}/commit/${v.neu}`)}><ExternalLink className="w-3.5 h-3.5" />Unterschied bei GitHub ansehen</button>
+            <button type="button" className={`${btn} self-start`} disabled={!!busy} onClick={uebernehmen}>{busy === "uebernehmen" ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}Übernehmen</button>
+            <span className="text-xs text-slate-500">Nichts passiert automatisch – erst mit „Übernehmen“ gilt die neue Fassung.</span>
+          </div>)}
+      {!admin && <span className="text-xs text-slate-500">Eine neue Fassung übernimmt nur der Admin.</span>}
+    </Lampe>);
+}
+
 export default function AnbindungenKacheln({ projekt, d, admin, toast }) {
   const ampel = projekt.anbindungen || {};
   const [ort] = useProjektordner([projekt.id]);
@@ -67,6 +123,8 @@ export default function AnbindungenKacheln({ projekt, d, admin, toast }) {
   const [busy, setBusy] = useState("");
   const web = !projekt.technik_art || ["web", "handy"].includes(projekt.technik_art);
   const pcName = (id) => (d.pcs || []).find((p) => p.id === id)?.name || "Werkstatt-PC";
+  // PCs, die eine ANDERE Fassung der REGELN.md melden – nach dem Bestätigen gilt dort keine (Nachprüfung 0.13.1, Punkt 5)
+  const andereVon = (sha) => [...new Set(regeln.zeilen.filter((z) => z.sha !== sha).map((z) => pcName(z.pc_id)))];
 
   // Projektordner: dieser PC (lokal) zuerst, sonst Meldung der Werkstatt-PCs
   const lokal = ort?.je?.[projekt.id];
@@ -124,6 +182,7 @@ export default function AnbindungenKacheln({ projekt, d, admin, toast }) {
           <span>Gemeldet von: {r.pcs.map(pcName).join(", ")}. Die Werkstatt nutzt nur die zuletzt von dir bestätigte Fassung{letzteFreigabe ? ` (zuletzt bestätigt ${new Date(letzteFreigabe).toLocaleString("de-AT", { dateStyle: "short", timeStyle: "short" })})` : " – bisher keine, es gelten die Projektregeln aus AGENTS.md"}. Prüfe den Text und bestätige ihn, wenn er von dir stammt.{r.konflikte > 0 ? ` Achtung: ${r.konflikte} Stelle(n) widersprechen der Sicherheit – dort gilt trotzdem die Sicherheitsregel.` : ""}</span>
           <details className="rounded-lg bg-white/70 dark:bg-slate-900/60 border border-amber-200 dark:border-amber-900"><summary className="cursor-pointer px-3 py-1.5 text-xs font-semibold">Text ansehen (Prüfsumme {r.sha.slice(0, 12)})</summary>
             <pre className="px-3 pb-3 text-xs whitespace-pre-wrap break-words max-h-80 overflow-auto font-mono text-slate-800 dark:text-slate-200">{r.text || ""}</pre></details>
+          {andereVon(r.sha).length > 0 && <span className="text-xs font-semibold">Hinweis: Auf {andereVon(r.sha).join(", ")} gilt dann keine Fassung, bis dort dieselbe Datei liegt.</span>}
           {admin ? <button type="button" className={`${btn} self-start`} disabled={!!busy} onClick={() => regelnBestaetigen(r.sha)}>{busy === `regeln-${r.sha}` ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}Diese Fassung bestätigen</button>
             : <span className="text-xs">Bestätigen kann nur der Admin.</span>}
         </div>))}
@@ -144,6 +203,9 @@ export default function AnbindungenKacheln({ projekt, d, admin, toast }) {
         </details>)}
       <ul className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
         <Lampe stand={po[0]} titel="Projektordner" text={po[1]} />
+        <RegelwerkKarte projekt={projekt} admin={admin} toast={toast} />
+        <Lampe stand={ampel.sicherungen?.stand || "grau"} titel="Sicherungen"
+          text={ampel.sicherungen?.text || "Beim Live-Schalten legt die Werkstatt des Admins den eben live geschalteten Repo-Stand (git bundle) und – mit Datenbank und privatem Repository – ihren gefilterten Aufbau in sicherungen ab. Nichts wird überschrieben oder automatisch gelöscht."} />
         <Lampe stand={ampel.github?.stand || (projekt.repo ? "grau" : "rot")} titel="GitHub" text={ampel.github?.text ? `${projekt.repo || ""} · ${ampel.github.text}` : projekt.repo || "Noch kein Repository – unter „Projekte verwalten“ anlegen"} />
         {web && <Lampe stand={testseite[0]} titel="Testseite (Cloudflare)" text={testseite[1]}>
           {admin && !tsDa && ts !== "laeuft" && <button type="button" className={`${btn} self-start`} disabled={!!busy || !projekt.repo} onClick={anfordern}>
@@ -153,6 +215,7 @@ export default function AnbindungenKacheln({ projekt, d, admin, toast }) {
           {tsDa && <a className="text-xs underline self-start" href={`https://${projekt.vorschau_domain}`} target="_blank" rel="noopener noreferrer">Testseite im Browser öffnen</a>}
           <span className="text-xs text-slate-500 flex gap-1.5"><Globe className="w-3.5 h-3.5 shrink-0 mt-0.5" aria-hidden="true" />Öffentlich: Testfassung (main) und Vorschauen der Werkstatt-Zweige (feature/cs-…) sind für jeden mit der Adresse erreichbar – keine echten Daten, in Zweig-Vorschauen nicht anmelden.</span>
         </Lampe>}
+        {(projekt.technik_art === "programm" || projekt.id === "codeschmiede") && <Lampe stand={ampel.setup?.stand || "grau"} titel="Setup-Dateien" text={ampel.setup?.text || "Nach jedem Live-Schalten (bzw. Release) legt die Werkstatt des Admins die Installationsdateien dieser Version in setup\\<version> ab. Nichts wird überschrieben oder automatisch gelöscht."} />}
         <Lampe stand={db[0]} titel="Datenbank" text={db[1]}>
           {admin && (!projekt.datenbank || projekt.datenbank === "keine") && (projekt.datenbank_wunsch
             ? <button type="button" className={`${ghost} self-start h-9 text-xs`} disabled={!!busy} onClick={() => dbWunsch(false)}><X className="w-3.5 h-3.5" />Wunsch zurückziehen</button>

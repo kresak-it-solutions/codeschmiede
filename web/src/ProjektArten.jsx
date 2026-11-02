@@ -30,8 +30,8 @@ const DATENBANK = {
   spielwiese: ["Spielwiese (gemeinsam)", "Abgetrennter Bereich in einer gemeinsamen Datenbank. Braucht Supabase Pro – wird erst nach deiner Bestätigung angelegt"],
   eigen: ["Eigenes Supabase-Projekt", "Für ernste Apps mit echten Nutzern"],
 };
-const AMPEL_NAMEN = { projektordner: "Projektordner (Admin-PC)", regeln: "Projektregeln", github: "GitHub", pruefung: "Prüfungen", build: "Build Windows/Mac", signatur: "Automatische Updates", sandbox: "Windows-Sandbox", testseite: "Testseite", testlauf: "Testlauf", datenbank: "Datenbank (Test)", datenbank_live: "Datenbank (Live)", fehler: "Fehler-Meldungen" };
-const AMPEL_REIHE = ["projektordner", "regeln", "github", "pruefung", "build", "testlauf", "testseite", "sandbox", "signatur", "datenbank", "datenbank_live", "fehler"];
+const AMPEL_NAMEN = { projektordner: "Projektordner (Admin-PC)", regeln: "Projektregeln", sicherungen: "Sicherungen (Admin-PC)", setup: "Setup-Dateien (Admin-PC)", github: "GitHub", pruefung: "Prüfungen", build: "Build Windows/Mac", signatur: "Automatische Updates", sandbox: "Windows-Sandbox", testseite: "Testseite", testlauf: "Testlauf", datenbank: "Datenbank (Test)", datenbank_live: "Datenbank (Live)", fehler: "Fehler-Meldungen" };
+const AMPEL_REIHE = ["projektordner", "regeln", "sicherungen", "setup", "github", "pruefung", "build", "testlauf", "testseite", "sandbox", "signatur", "datenbank", "datenbank_live", "fehler"];
 const PUNKT = { gruen: "bg-emerald-500 ring-emerald-500/25", gelb: "bg-amber-500 ring-amber-500/25", rot: "bg-red-500 ring-red-500/25", grau: "bg-slate-400 dark:bg-slate-600 ring-slate-400/20" };
 const STAND_TEXT = { gruen: "grün", gelb: "gelb", rot: "rot", grau: "grau" };
 
@@ -50,7 +50,8 @@ export function NeuesProjektAssistent({ toast, onClose, onFertig, projekte = [] 
   useEscape(onClose);   // nur der oberste Dialog (Review N2)
   const autoKennung = name.trim().toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40);
   const id = kennung || autoKennung;
-  const datenOk = /^[a-z0-9][a-z0-9-]{1,39}$/.test(id) && !!name.trim() && (!repo || /^[A-Za-z0-9-]+\/[A-Za-z0-9._-]+$/.test(repo.trim()));
+  // „regeln“ ist der Ordner der globalen Regeln im Projekte-Ordner (0.13.1) – keine Projekt-Kennung
+  const datenOk = /^[a-z0-9][a-z0-9-]{1,39}$/.test(id) && id !== "regeln" && !/^(con|prn|aux|nul|com[0-9]|lpt[0-9])$/.test(id) && !!name.trim() && (!repo || /^[A-Za-z0-9-]+\/[A-Za-z0-9._-]+$/.test(repo.trim()));
   const zeigeDesignArt = technik !== "werkzeug";
   const los = async () => {
     setBusy(true);

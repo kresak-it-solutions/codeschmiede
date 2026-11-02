@@ -1,5 +1,5 @@
 // Verbrauch – aus App.jsx ausgelagert (Befund B1 vom 01.11.2026, kein Verhaltenswechsel).
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { Gauge } from "lucide-react";
 import { btn, card, fehler, fmt, ghost, input } from "../bausteine/grund";
 import { isDesktop, tauri } from "../desktop";
@@ -14,21 +14,24 @@ export function Balken({ wert, warn, pause }) {
   const farbe = wert >= pause ? "bg-red-600" : wert >= warn ? "bg-amber-500" : "bg-emerald-600";
   return <span className="w-16 h-1.5 rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden inline-block align-middle"><i className={`block h-full ${farbe}`} style={{ width: `${w}%` }} /></span>;
 }
+// kein: Claude Code meldet kein 5-Stunden-Fenster (Abo „Ultra“); m: modell-eigene Wochenfenster, wie gemeldet (0.13.1)
 export function aboWerte(a) {
-  if (!a) return { f: null, w: null };
-  return { f: abgelaufen(a.fuenf_std_reset) ? 0 : a.fuenf_std_prozent, w: abgelaufen(a.woche_reset) ? 0 : a.woche_prozent };
+  if (!a) return { f: null, w: null, kein: false, m: [] };
+  const m = (Array.isArray(a.woche_modelle) ? a.woche_modelle : []).map((x) => ({ name: x.modell ? x.modell[0].toUpperCase() + x.modell.slice(1) : "?", p: abgelaufen(x.reset) ? 0 : x.prozent, reset: x.reset }));
+  return { f: a.fuenf_std_kein ? null : abgelaufen(a.fuenf_std_reset) ? 0 : a.fuenf_std_prozent, w: abgelaufen(a.woche_reset) ? 0 : a.woche_prozent, kein: !!a.fuenf_std_kein, m };
 }
 
 export function VerbrauchKurz({ d, ich, onClick }) {
   const a = d.abo.find((x) => x.benutzer_id === ich.id);
-  const { f, w } = aboWerte(a);
+  const { f, w, kein, m } = aboWerte(a);
   const warn = d.einstellungen?.abo_klein_ab_prozent ?? 75; const pause = d.einstellungen?.abo_pause_ab_prozent ?? 95;
-  const hoch = Math.max(f ?? 0, w ?? 0) >= warn;
+  const hoch = Math.max(f ?? 0, w ?? 0, ...m.map((x) => x.p ?? 0)) >= warn;
   const p = (x) => (x == null ? "–" : `${Math.round(x)} %`);
   return (
     <button type="button" onClick={onClick} className={`flex items-center gap-2.5 rounded-xl border px-3 py-1.5 text-sm ${hoch ? "border-amber-500 bg-amber-50 dark:bg-amber-950/40" : "border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900"}`} title="Nutzungslimits deines Claude-Abos (laut Claude Code)">
       <Gauge className={`w-4 h-4 ${hoch ? "text-amber-600" : "text-emerald-700"}`} />
-      {a ? <span className="flex items-center gap-2 tabular-nums"><span>5 Std. <b>{p(f)}</b></span><Balken wert={f} warn={warn} pause={pause} /><span>Woche <b>{p(w)}</b></span><Balken wert={w} warn={warn} pause={pause} /></span>
+      {a ? <span className="flex items-center gap-2 tabular-nums">{kein ? <span>5 Std.: <b>kein Limit</b></span> : <><span>5 Std. <b>{p(f)}</b></span><Balken wert={f} warn={warn} pause={pause} /></>}<span>Woche <b>{p(w)}</b></span><Balken wert={w} warn={warn} pause={pause} />
+        {m.map((x) => <Fragment key={x.name}><span>{x.name} <b>{p(x.p)}</b></span><Balken wert={x.p} warn={warn} pause={pause} /></Fragment>)}</span>
         : <span className="text-slate-600 dark:text-slate-300 font-semibold">Abo-Limits</span>}
     </button>
   );
@@ -57,7 +60,7 @@ export function Verbrauch({ d, ich, toast }) {
               <tbody>{d.abo.map((a) => { const { f, w } = aboWerte(a); return (
                 <tr key={a.benutzer_id} className="border-t border-slate-100 dark:border-slate-800">
                   <td className="px-4 py-2.5">{wer(a.benutzer_id)}</td>
-                  <td className="px-4 py-2.5 tabular-nums"><b>{f == null ? "–" : `${Math.round(f)} %`}</b> <Balken wert={f} warn={klein} pause={pause} /><div className="text-xs text-slate-500">zurück: {uhr(a.fuenf_std_reset)}</div></td>
+                  <td className="px-4 py-2.5 tabular-nums">{a.fuenf_std_kein ? <b>kein Limit</b> : <><b>{f == null ? "–" : `${Math.round(f)} %`}</b> <Balken wert={f} warn={klein} pause={pause} /><div className="text-xs text-slate-500">zurück: {uhr(a.fuenf_std_reset)}</div></>}</td>
                   <td className="px-4 py-2.5 tabular-nums"><b>{w == null ? "–" : `${Math.round(w)} %`}</b> <Balken wert={w} warn={klein} pause={pause} /><div className="text-xs text-slate-500">zurück: {uhr(a.woche_reset)}</div></td>
                   <td className="px-4 py-2.5 text-xs text-slate-500">{fmt(a.aktualisiert)}<br />{a.quelle === "statuszeile" ? "Statuszeile" : "Werkstatt"}</td>
                 </tr>); })}</tbody></table></div>)}

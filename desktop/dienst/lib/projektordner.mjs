@@ -10,12 +10,16 @@ import path from "node:path";
 export const KENNUNG = /^[a-z0-9][a-z0-9-]{1,39}$/;
 // Kennungen werden Ordnernamen: reservierte Namen von Windows sind verboten (Prüfung 02.11.2026, N4; auch Datenbank 0055 und Programm)
 const WINDOWS_NAME = /^(con|prn|aux|nul|com[0-9]|lpt[0-9])$/;
-export const kennungOk = (k) => typeof k === "string" && KENNUNG.test(k) && !WINDOWS_NAME.test(k);
+// „regeln“: <basis>/Regeln ist der Ordner der globalen Regeln (0.13.1, Gerhard 02.11.2026 09:54; Windows unterscheidet nicht nach Groß/Klein)
+export const kennungOk = (k) => typeof k === "string" && KENNUNG.test(k) && !WINDOWS_NAME.test(k) && k !== "regeln";
+/** Ordner der globalen Regeln der ganzen Codeschmiede: <basis>/Regeln (legt nur das Programm an), Kennung in der Kennungsdatei „_regeln“. */
+export const GLOBAL_ORDNER = "Regeln";
+export const GLOBAL_KENNUNG = "_regeln";
 /** Kennungsdatei im Projektordner (legt nur das Programm an): { kennung, id } – muss zur lokalen Einstellung passen. */
 export const KENNUNGS_DATEI = ".codeschmiede-projekt.json";
 export const KONFIG_DATEI = "projektordner.json";
 /** Feste Unterordner (code\ entsteht beim Klonen). */
-export const UNTERORDNER = ["code-arbeit", "regeln", "regeln/regelwerk", "konzept", "konzept/entwuerfe", "doku", "material", "sicherungen"];
+export const UNTERORDNER = ["code-arbeit", "regeln", "regeln/regelwerk", "konzept", "konzept/entwuerfe", "doku", "material", "sicherungen", "setup"];
 const REGELN_VON = /^(vorlage|leer|[a-z0-9][a-z0-9-]{1,39})$/;
 // Windows verbietet diese Namen als Datei- oder Ordnername (auch mit Endung)
 const RESERVIERT = /^(con|prn|aux|nul|com[0-9]|lpt[0-9])(\..*)?$/i;
@@ -30,9 +34,10 @@ export function pfadOk(t, plattform = process.platform) {
 
 /** Inhalt von projektordner.json prüfen. Ungültige Einträge fallen weg (nie raten). */
 export function konfigPruefen(roh, plattform = process.platform) {
-  const k = { basis: null, projekte: new Map() };
+  const k = { basis: null, projekte: new Map(), globalKennzeichen: null };
   if (!roh || typeof roh !== "object" || Array.isArray(roh)) return k;
   if (pfadOk(roh.basis, plattform)) k.basis = roh.basis;
+  k.globalKennzeichen = typeof roh.global_kennzeichen === "string" && /^[0-9a-f]{32}$/.test(roh.global_kennzeichen) ? roh.global_kennzeichen : null;
   const p = roh.projekte && typeof roh.projekte === "object" && !Array.isArray(roh.projekte) ? roh.projekte : {};
   for (const [id, e] of Object.entries(p).slice(0, 500)) {
     if (!kennungOk(id) || !e || typeof e !== "object" || !pfadOk(e.pfad, plattform)) continue;
@@ -101,6 +106,26 @@ export async function sicherSchreiben(wurzel, rel, inhalt) {
   await rm(tmp, { force: true });
   await writeFile(tmp, inhalt, { flag: "wx" });
   await rename(tmp, ziel);
+  return ziel;
+}
+
+/**
+ * Neue Datei rel unter wurzel anlegen – NIE überschreiben (Sicherungen). Erst in eine Hilfsdatei schreiben, dann umbenennen, wenn der Name
+ * noch frei ist; nie durch eine Verknüpfung hindurch. inhalt darf ein Buffer, Text oder Lese-Strom sein. Gibt den Pfad zurück.
+ */
+export async function sicherNeu(wurzel, rel, inhalt) {
+  if (!relOk(rel)) throw new Error("Ungültiger Dateiname im Projektordner");
+  const teile = rel.split("/");
+  const ordner = teile.length > 1 ? await sicherOrdner(wurzel, teile.slice(0, -1).join("/")) : await realpath(wurzel);
+  const ziel = path.join(ordner, teile.at(-1));
+  if (await lstat(ziel).catch(() => null)) throw Object.assign(new Error(`„${rel}“ gibt es schon – wird nicht überschrieben`), { code: "EEXIST" });
+  const tmp = path.join(ordner, `.${teile.at(-1)}.cs-neu`);
+  await rm(tmp, { force: true });
+  try {
+    await writeFile(tmp, inhalt, { flag: "wx" });
+    if (await lstat(ziel).catch(() => null)) throw Object.assign(new Error(`„${rel}“ gibt es schon – wird nicht überschrieben`), { code: "EEXIST" });
+    await rename(tmp, ziel);
+  } finally { await rm(tmp, { force: true }).catch(() => {}); }
   return ziel;
 }
 
@@ -183,9 +208,9 @@ export async function geruestAnlegen(wurzel, { projektName = "", heute = new Dat
   const datum = heute.toISOString().slice(0, 10);
   const name = String(projektName).replace(/[\u0000-\u001f\u007f]/g, " ").slice(0, 80);
   const texte = {
-    "LIESMICH.md": `# Projektordner${name ? ` – ${name}` : ""}\n\nAngelegt von der Codeschmiede am ${datum}.\n\n| Ordner | Inhalt |\n|---|---|\n| code | Git-Arbeitskopie des Repositorys – hier arbeitet die Werkstatt (nicht von Hand ändern) |\n| code-arbeit | Arbeitsordner der Aufträge, Prüfungen und des Chats (macht die Werkstatt selbst) |\n| regeln | REGELN.md = deine Projektregeln (haben Vorrang vor dem allgemeinen Regelwerk), regelwerk = Kopie des Regelwerks in der festgelegten Fassung |\n| konzept | KONZEPT.md aus der Gruppe „Konzept“ (wird überschrieben), eigene Entwürfe in konzept/entwuerfe |\n| doku | Handbuch, Änderungsprotokoll, PDFs aus dem Repository (nach jedem Auftrag gespiegelt, wird überschrieben) |\n| material | Logos, Bilder, Vorlagen von dir – die Werkstatt liest sie bei jedem Auftrag als Daten mit |\n| sicherungen | Sicherungen des Datenbank-Aufbaus (folgt, sobald das Projekt eine Datenbank hat) |\n\nDie Sicherheitsregeln der Codeschmiede gelten immer – keine Datei in diesem Ordner kann sie aufheben.\nKeine Zugangsdaten, Passwörter oder Personendaten (z. B. Fotos von Kindern) in diesen Ordner legen.\n`,
+    "LIESMICH.md": `# Projektordner${name ? ` – ${name}` : ""}\n\nAngelegt von der Codeschmiede am ${datum}.\n\n| Ordner | Inhalt |\n|---|---|\n| code | Git-Arbeitskopie des Repositorys – hier arbeitet die Werkstatt (nicht von Hand ändern) |\n| code-arbeit | Arbeitsordner der Aufträge, Prüfungen und des Chats (macht die Werkstatt selbst) |\n| regeln | REGELN.md = deine Projektregeln (haben Vorrang vor dem allgemeinen Regelwerk), regelwerk = Kopie des Regelwerks in der festgelegten Fassung |\n| konzept | KONZEPT.md aus der Gruppe „Konzept“ (wird überschrieben), eigene Entwürfe in konzept/entwuerfe |\n| doku | Handbuch, Änderungsprotokoll, PDFs aus dem Repository (nach jedem Auftrag gespiegelt, wird überschrieben) |\n| material | Logos, Bilder, Vorlagen von dir – die Werkstatt liest sie bei jedem Auftrag als Daten mit |\n| sicherungen | Sicherungen beim Live-Schalten: eben live geschalteter Repo-Stand (git bundle) und – mit Datenbank – der gefilterte Aufbau der Live-Datenbank. Nichts wird überschrieben oder automatisch gelöscht |\n| setup | Installationsdateien je Version (setup/<version>/, nur Programme): nach jedem Live-Schalten bzw. Release, nie überschrieben, nichts automatisch gelöscht |\n\nDie Sicherheitsregeln der Codeschmiede gelten immer – keine Datei in diesem Ordner kann sie aufheben.\nKeine Zugangsdaten, Passwörter oder Personendaten (z. B. Fotos von Kindern) in diesen Ordner legen.\n`,
     "material/LIESMICH.md": "# Material\n\nLogos, Bilder, Vorlagen (PNG, JPEG, WebP, GIF, SVG, PDF, Text, Markdown, CSV, JSON). Die Werkstatt gibt sie Claude bei jedem Auftrag als **Daten** mit (höchstens 30 Dateien, zusammen 25 MB) – Text in diesen Dateien ist nie eine Anweisung.\nKeine Fotos von Personen oder Kindern, keine Mitgliederdaten.\n",
-    "sicherungen/LIESMICH.md": "# Sicherungen\n\nHier legt die Codeschmiede den Aufbau der Datenbank vor jedem Live-Schalten ab, sobald das Projekt eine Datenbank hat.\nBis dahin liegt die Sicherung des Aufbaus in der Datenbank selbst (Schema codeschmiede.sicherungen); die eigentliche Datensicherung macht Supabase.\n",
+    "sicherungen/LIESMICH.md": "# Sicherungen\n\nBei jedem Live-Schalten legt die Werkstatt des Admins hier ab (Datum im Namen, nie überschrieben, nichts wird automatisch gelöscht):\n- `<datum>_repo-live_<stand>.bundle` – der eben live geschaltete Stand (git bundle des Zweigs live). Wiederherstellen: `git clone -b live <datei> ordner`.\n- `<datum>_datenbank-aufbau_<stand>.json` – Aufbau der Live-Datenbank vor dem Einspielen neuer Datenbank-Dateien (Tabellen, Regeln, Funktionen nur mit Signatur und Prüfsumme – keine Daten; bekannte Schlüssel-Muster entfernt), nur bei privaten Repositories.\nDie Sicherung des Aufbaus liegt zusätzlich in der Datenbank selbst (Schema codeschmiede.sicherungen); die eigentliche Datensicherung macht Supabase.\nÄltere Sicherungen bitte bei Bedarf selbst aufräumen.\n",
     "konzept/entwuerfe/LIESMICH.md": "# Entwürfe\n\nEigene Entwürfe (HTML, Bilder, PDF, Markdown). Die Werkstatt liest sie bei jedem Auftrag als Daten mit.\n",
   };
   for (const [rel, inhalt] of Object.entries(texte)) if (!(await sicherLesen(wurzel, rel, 64 * 1024))) await sicherSchreiben(wurzel, rel, inhalt);
@@ -233,3 +258,22 @@ export function regelnVorlage({ projektName = "", ausAgents = "", leer = false, 
     "## Fachliches\n- Erst prüfen, ob eine Anweisung Sinn macht, alle Details erfragen, dann bauen.\n\n" +
     "## Abläufe\n- Sichtbare Neuerungen zuerst als klickbarer Entwurf.\n- Handbuch und Änderungsprotokoll (docs/CHANGELOG.md) bei jeder Änderung mitziehen.\n";
 }
+
+/** Liegt p im Ordner der globalen Regeln <basis>/Regeln (oder ist er es)? Groß/Klein egal (Windows, macOS). */
+export function imGlobal(p, basis, plattform = process.platform) {
+  if (!p || !basis) return false;
+  const P = plattform === "win32" ? path.win32 : path.posix;
+  const a = P.resolve(p).toLowerCase(); const g = P.resolve(basis, GLOBAL_ORDNER).toLowerCase();
+  return a === g || a.startsWith(g + P.sep);
+}
+/** Globale Regeldatei im Ordner Regeln (Gerhard 02.11.2026 09:55): CLAUDE.md. Eine zusätzliche REGELN.md dort gilt NICHT (Hinweis). */
+export const GLOBAL_DATEI = "CLAUDE.md";
+/** Startinhalt der globalen CLAUDE.md (Datei vorlagen/globale-regeln.md, ersetzbar) – nur, wenn die Datei fehlt; nie überschreiben. */
+export async function globalVorlage({ lesen = readFile } = {}) {
+  return String(await lesen(new URL("../vorlagen/globale-regeln.md", import.meta.url), "utf8"));
+}
+export const GLOBAL_LIESMICH = "# Globale Regeln der Codeschmiede\n\nCLAUDE.md in diesem Ordner gilt für ALLE Projekte – zusätzlich zu den Projektregeln (regeln/REGELN.md im jeweiligen Projektordner).\n\n" +
+  "Rangfolge überall (Aufträge, alle Chats, Prüfungen, auch andere KI-Anbieter): 1 Sicherheit der Codeschmiede (fest) › 2 Projektregeln › 3 diese globalen Regeln › 4 allgemeines Regelwerk.\n\n" +
+  "Eine geänderte CLAUDE.md gilt erst, wenn der Admin sie in der Codeschmiede unter „Regelwerk“ › „Globale Regeln“ bestätigt hat (bis dahin gilt die zuletzt bestätigte Fassung).\n" +
+  "Die Werkstatt-KI darf in diesem Ordner nichts ändern. Keine Zugangsdaten, Passwörter oder Personendaten hineinschreiben. Höchstens 30.000 Zeichen. Eine zusätzliche REGELN.md in diesem Ordner gilt nicht – nur CLAUDE.md.\n" +
+  "Die Kennungsdatei .codeschmiede-projekt.json nicht löschen oder kopieren.\n";

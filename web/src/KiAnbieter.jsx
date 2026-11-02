@@ -39,17 +39,17 @@ const AUFGABEN = [
   ["chat", "Chat überall (Fragen, Ausloten)", ""],
   ["konzept", "Konzept & Rückfragen vor dem Bauen", "Ergebnis ist die Konzept-Karte im Chat"],
   ["design", "Design-Chat im App-Designer", ""],
-  ["pruefung", "Unabhängige Prüfungen", "Fremde Anbieter prüfen nur auf PCs mit Sandbox (Mac/Linux); unter Windows prüft Claude. Claude bleibt immer als Rückfall."],
+  ["pruefung", "Unabhängige Prüfungen", "Fremde Anbieter prüfen nur auf PCs mit Sandbox (Mac/Linux) – sonst wartet die Prüfung. Kein Rückfall auf Claude, wenn Claude hier nicht steht; die Prüfung per Knopf kann nur Claude."],
   ["doku", "Dokumentation & Handbuch", "wird genutzt, sobald Doku-Aufträge getrennt laufen (Etappe 4)"],
   ["texte", "Texte & Übersetzungen", "wird genutzt, sobald Text-Aufträge getrennt laufen (Etappe 4)"],
   ["bilder", "Bilder & Grafiken", "wird mit Etappe 5 (Marke, Logo) genutzt; nur Anbieter, die Bilder erzeugen können"],
-  ["bauen", "Bauen & Programmieren", "immer Claude – auf Wunsch ChatGPT als Ersatz, nur wenn Claudes Limit voll ist"],
+  ["bauen", "Bauen & Programmieren", "nur Claude Code – bei vollem Limit wartet der Auftrag (kein Ersatz mehr, Entscheidung 02.11.2026)"],
 ];
 // Ohne Admin-Einstellung gilt nur Claude (Prüfung M5). VORSCHLAG = Entwurf 1.2 zum Übernehmen.
 const STANDARD = Object.fromEntries(["chat", "konzept", "design", "pruefung", "doku", "texte", "bilder", "bauen"].map((a) => [a, [{ anbieter: "claude", ...({ konzept: { modell: "opus" }, pruefung: { modell: "opus" }, texte: { modell: "haiku" } }[a] || {}) }]]));
 // Vorschläge: je Zuständigkeit die 3 ehrlich besten Anbieter (Gerhard 2026-10-23 22:54 „ernst gemeint, 100 % ehrlich, immer 3“).
 // Grundlage Stand 23.10.2026: LMArena (WebDev, Text, Bild), Artificial Analysis Intelligence Index, LiveBench – siehe GRUND.
-// Reihenfolge = wer zuerst drankommt; bei vollem Limit geht es zum nächsten. Bauen bleibt nach Gerhards Regel Claude (+ ChatGPT nur als Ersatz).
+// Reihenfolge = wer zuerst drankommt – nur innerhalb der eingestellten Liste (verpflichtend, kein Ausweichen, 0.13.1). Bauen nur Claude Code.
 const VORSCHLAG = {
   chat: [{ anbieter: "claude", modell: "sonnet" }, { anbieter: "gemini" }, { anbieter: "chatgpt" }],
   konzept: [{ anbieter: "claude", modell: "opus" }, { anbieter: "chatgpt" }, { anbieter: "gemini" }],
@@ -58,7 +58,7 @@ const VORSCHLAG = {
   doku: [{ anbieter: "claude", modell: "sonnet" }, { anbieter: "gemini" }, { anbieter: "chatgpt" }],
   texte: [{ anbieter: "claude", modell: "sonnet" }, { anbieter: "chatgpt" }, { anbieter: "gemini" }],
   bilder: [{ anbieter: "chatgpt" }, { anbieter: "claude", modell: "opus" }, { anbieter: "gemini" }],
-  bauen: [{ anbieter: "claude" }, { anbieter: "chatgpt" }],
+  bauen: [{ anbieter: "claude" }],
 };
 const GRUND = {
   chat: "Claude führt den unabhängigen Intelligenz-Index, Sonnet ist dabei schnell und günstig; Gemini liegt bei den Text-Abstimmungen (LMArena) vorne; ChatGPT ist der starke Dritte.",
@@ -68,7 +68,7 @@ const GRUND = {
   doku: "Handbuch und Doku: Claude hat die höchste gemessene Faktentreue und sehr gutes Deutsch; Gemini ist stark bei sehr langen Dokumenten; ChatGPT als Dritter.",
   texte: "Texte und Übersetzungen: Claude bleibt bei Fachbegriffen über lange Texte am einheitlichsten, ChatGPT formuliert flüssig, Gemini als Dritter. Mistral wäre die EU-Wahl, ist in den Vergleichen aber nicht vorne und wurde für Deutsch nicht getestet.",
   bilder: "Bild-Rangliste (LMArena): 1. ChatGPT (GPT Image 2). Fürs Nachbauen von Logos als bearbeitbare Formen ist Claude Opus sehr gut; Gemini als Dritter. Grok liegt bei Bildern auf Platz 2, ist hier aber noch nicht als Bild-Anbieter angebunden.",
-  bauen: "Bauen ist nach deiner Regel fest Claude (führt WebDev und Programmier-Tests); ChatGPT nur als Ersatz, wenn Claudes Limit voll ist – darum hier nur 2.",
+  bauen: "Bauen ist nach deiner Regel fest Claude Code (führt WebDev und Programmier-Tests). Seit 02.11.2026 ohne Ersatz: bei vollem Limit wartet der Auftrag.",
 };
 
 const MODELL = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,59}$/;
@@ -108,25 +108,24 @@ function Zeile({ id, titel, hinweis, eintrag, admin, onSpeichern, anbieter = ANB
   // Prüfungen nur eingebaute Anbieter (eigene Programme laufen ohne Sandbox)
   const frei = Object.keys(anbieter).filter((a) => !reihe.some((e) => e.anbieter === a) && !(id === "pruefung" && !ANBIETER[a]));
   const speichern = async () => { setBusy(true); await onSpeichern(id, reihe, ab); setBusy(false); };
-  // Programmieren (Gerhard 2026-10-23 „Nur als Ersatz“): Claude fest, als zweiter Eintrag nur ChatGPT (Codex)
+  // Programmieren: nur Claude Code, kein Ersatz (Entscheidung Gerhard 02.11.2026 10:00 – das frühere „ChatGPT als Ersatz“ entfällt)
   if (fest) {
-    const ersatz = reihe[1]?.anbieter === "chatgpt";
     return (
       <div className="border-t border-slate-100 dark:border-slate-800 p-3 grid gap-2 lg:grid-cols-[240px_minmax(0,1fr)_auto] items-start">
         <div><div className="font-semibold text-sm flex items-center gap-1.5"><Lock className="w-3.5 h-3.5 text-slate-400" />{titel}</div>{hinweis && <div className="text-xs text-slate-500">{hinweis}</div>}</div>
         <div className="flex flex-col gap-1.5 text-xs">
-          <span className="flex flex-wrap items-center gap-1.5"><span className="inline-flex rounded-full px-2.5 py-0.5 font-semibold border border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">1. Claude</span>
-            <label className="inline-flex items-center gap-1">Ersatz bei vollem Limit:
-              {admin ? <select className={sel} value={ersatz ? "chatgpt" : ""} onChange={(e) => setReihe(e.target.value ? [{ anbieter: "claude" }, { anbieter: "chatgpt" }] : [{ anbieter: "claude" }])}>
-                <option value="">keiner – warten</option><option value="chatgpt">ChatGPT (Codex)</option></select> : <b>{ersatz ? "ChatGPT (Codex)" : "keiner"}</b>}</label></span>
-          {ersatz && <span className="text-xs text-amber-700 dark:text-amber-300">ChatGPT programmiert nur, wenn Claudes Abo-Limit voll ist – auf Mac und Linux in der Betriebssystem-Sandbox (nur der Auftragsordner), unter Windows nicht. Commit und Pull Request macht die Werkstatt, die Prüfungen immer Claude.</span>}
+          <span className="flex flex-wrap items-center gap-1.5"><span className="inline-flex rounded-full px-2.5 py-0.5 font-semibold border border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">1. Claude Code</span>
+            <span className="text-slate-500">kein Ersatz – bei vollem Limit wartet der Auftrag</span></span>
+          {reihe.length > 1 && <span className="text-xs text-amber-700 dark:text-amber-300">Hier ist noch „ChatGPT als Ersatz“ gespeichert – es wird nicht mehr genutzt. {admin ? "Speichern entfernt es." : ""}</span>}
         </div>
+        {admin && reihe.length > 1 ? <div className="flex items-center gap-2 text-xs"><button type="button" className={ghost} disabled={busy} onClick={() => { setReihe([{ anbieter: "claude" }]); }}><X className="w-3.5 h-3.5" />Ersatz entfernen</button></div> : <div />}
         <div className="flex items-center gap-2 text-xs">{admin && <button type="button" className={ghost} disabled={busy || !geaendert} onClick={speichern}>{busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}Speichern</button>}</div>
       </div>);
   }
   return (
     <div className="border-t border-slate-100 dark:border-slate-800 p-3 grid gap-2 lg:grid-cols-[240px_minmax(0,1fr)_auto] items-start">
-      <div><div className="font-semibold text-sm flex items-center gap-1.5">{fest && <Lock className="w-3.5 h-3.5 text-slate-400" />}{titel}</div>{hinweis && <div className="text-xs text-slate-500">{hinweis}</div>}</div>
+      <div><div className="font-semibold text-sm flex items-center gap-1.5">{fest && <Lock className="w-3.5 h-3.5 text-slate-400" />}{titel}</div>{hinweis && <div className="text-xs text-slate-500">{hinweis}</div>}
+        {!eintrag && <div className="text-xs font-semibold text-amber-700 dark:text-amber-300">Noch nicht gespeichert – diese Aufgabe wartet, bis die Zuständigkeit gespeichert ist (kein Ausweichen).</div>}</div>
       <div className="flex flex-wrap items-center gap-1.5">
         {reihe.map((e, i) => {
           const a = anbieter[e.anbieter] || { name: e.anbieter, modelle: ["automatisch"] }; const eigenes = e.modell && !a.modelle.includes(e.modell);
@@ -305,7 +304,7 @@ export default function KiAnbieter({ d, ich, toast }) {
   return (
     <section className="flex flex-col gap-4" aria-label="KI-Anbieter">
       <div><h2 className="font-display font-bold text-xl leading-tight flex items-center gap-2"><Cpu className="w-5 h-5 text-emerald-700" />KI-Anbieter</h2>
-        <p className="text-sm text-slate-500">Wer übernimmt was: Anbieter und Modell je Aufgabe, in Reihenfolge. Der nächste übernimmt, wenn ein Limit voll ist oder ein Anbieter auf dem PC nicht gekoppelt ist. Jeder nutzt sein eigenes Abo.</p></div>
+        <p className="text-sm text-slate-500">Wer übernimmt was: Anbieter und Modell je Aufgabe, in Reihenfolge. <b>Verpflichtend – kein Ausweichen:</b> Es werden nur die hier eingestellten Anbieter genommen (der nächste in der Liste übernimmt, wenn ein Limit voll ist oder ein Anbieter auf dem PC nicht gekoppelt ist). Ist keiner davon nutzbar, wartet die Aufgabe mit der Meldung „wartet auf …“. Programmieren macht nur Claude Code. Jeder nutzt sein eigenes Abo.</p></div>
 
       <Eignung liste={liste} />
 

@@ -114,9 +114,11 @@ export default function AboLimits({ d, ich, toast, onSchliessen, onVerbrauch }) 
         <div className="p-4 flex flex-col gap-3 overflow-auto" role="tabpanel">
           <div className="flex items-center gap-2"><span className={`w-2.5 h-2.5 rounded-full ${kiFarbe(aktiv).punkt}`} aria-hidden="true" />
             <b>{name(aktiv)}</b>{aktiv === "claude" && /\(([^)]+)\)/.test(k?.hinweis || "") && <span className="text-xs text-slate-500">{/\(([^)]+)\)/.exec(k.hinweis)[1]}</span>}</div>
-          {aktiv === "claude" ? (abo && (abo.fuenf_std_prozent != null || abo.woche_prozent != null) ? <>
-            <Balken titel="5 Std." prozent={abo.fuenf_std_prozent} reset={abo.fuenf_std_reset} warn={warn} pause={pause} />
+          {aktiv === "claude" ? (abo && (abo.fuenf_std_prozent != null || abo.woche_prozent != null || abo.fuenf_std_kein) ? <>
+            {abo.fuenf_std_kein ? <div className="grid grid-cols-[70px_minmax(0,1fr)] items-center gap-2 text-sm"><span className="text-slate-600 dark:text-slate-300">5 Std.</span><b>kein Limit</b><span className="col-start-2 -mt-1 text-xs text-slate-500">Claude Code meldet für dein Abo kein 5-Stunden-Fenster</span></div>
+              : <Balken titel="5 Std." prozent={abo.fuenf_std_prozent} reset={abo.fuenf_std_reset} warn={warn} pause={pause} />}
             <Balken titel="Woche" prozent={abo.woche_prozent} reset={abo.woche_reset} warn={warn} pause={pause} />
+            {(Array.isArray(abo.woche_modelle) ? abo.woche_modelle : []).map((x) => <Balken key={x.modell} titel={`Woche ${x.modell[0].toUpperCase()}${x.modell.slice(1)}`} prozent={x.prozent} reset={x.reset} warn={warn} pause={pause} />)}
             <span className="text-xs text-slate-500">{abo.quelle === "abruf" ? "kostenloser Abruf bei Anthropic" : abo.quelle === "mini" ? "aus einer Mini-Anfrage" : "aus Claude Code"}</span></>
             : <p className="text-sm text-slate-600 dark:text-slate-300 flex gap-2"><Info className="w-4 h-4 shrink-0 mt-0.5 text-slate-400" />Noch keine Werte – unten „Jetzt aktualisieren“ drücken.</p>)
           : k?.limits?.length ? <>

@@ -44,7 +44,7 @@ test("Index: Schreiben nur im Arbeitsordner frei, Verbote je Lauf, ls ohne Platz
   // „wort*“ direkt am Befehl (z. B. „ls*“ = auch „lsof“); „feature/cs-*“ ist ein gewollter Zweig-Anfang
   for (const m of erlaubt.match(/"Bash\([^"]*\)"/g)) assert.ok(!/[( ][a-z]+\*\)"$/.test(m), `Platzhalter ohne Leerzeichen: ${m}`);
   assert.ok(erlaubt.includes('"Bash(ls)"') && erlaubt.includes('"Bash(ls *)"'));
-  assert.ok(/deny: laufVerbote/.test(q) && /sperrListe\(\{ ordner, wurzel: laufWurzel, datenOrdner: cfg\.daten_ordner \}\)/.test(q));
+  assert.ok(/deny: laufVerbote/.test(q) && /sperrListe\(\{ ordner, wurzel: laufWurzel, datenOrdner: cfg\.daten_ordner, global: await globalSperre\(\) \}\)/.test(q));
   assert.ok(/const GIT_SICHER = \["-c", "core\.fsmonitor=false"/.test(q));
   assert.ok(!/sh\("git", \[(?!\.\.\.GIT_SICHER)/.test(q), "jeder git-Aufruf über GIT_SICHER");
 });
@@ -152,4 +152,22 @@ test("Verknüpfungen, die aus dem Arbeitsordner hinauszeigen, werden gefunden", 
     assert.ok((await linksNachAussen(o)).includes(`${path.join("src", "hart.txt")} (harter Link)`));
     assert.ok(!(await linksNachAussen(o)).some((x) => x.startsWith("node_modules")));
   } finally { await rm(o, { recursive: true, force: true }); await rm(d, { recursive: true, force: true }); }
+});
+
+test("Wirkung globale Regeln (0.13.1): <basis>/Regeln/** immer gesperrt – POSIX und Windows, Groß/Klein egal", async () => {
+  const B = "/Volumes/Platte/Codeschmiede"; const W = `${B}/vereinsheft`; const cwd = `${W}/code-arbeit/auftrag-5`; const G = `${B}/Regeln`;
+  const baum = { [W]: ["code", "code-arbeit", "regeln"], [`${W}/code-arbeit`]: ["auftrag-5"] };
+  const verbote = inhalt(laufSperren({ ordner: cwd, plattform: "linux", sperren: await sperrListe({ ordner: cwd, wurzel: W, global: G, plattform: "linux", lesen: lesenAus(baum) }) }));
+  for (const f of [`${G}/CLAUDE.md`, `${G}/REGELN.md`, `${G}/.codeschmiede-projekt.json`, `${G}/unter/x.md`, `${B}/regeln/CLAUDE.md`, `${B}/REGELN/CLAUDE.md`]) assert.equal(wirkung(f, verbote, cwd), "verweigert", f);
+  assert.equal(wirkung(`${cwd}/src/a.js`, verbote, cwd), "erlaubt");
+  assert.equal(wirkung(`${cwd}/Regeln/CLAUDE.md`, verbote, cwd), "erlaubt", "ein Ordner „Regeln“ im eigenen Arbeitsordner bleibt frei");
+  const WB = "D:\\Codeschmiede"; const WW = `${WB}\\trainer-to-go`; const wcwd = `${WW}\\code-arbeit\\auftrag-5`;
+  const wbaum = { [WW]: ["code", "code-arbeit"], [`${WW}\\code-arbeit`]: ["auftrag-5"] };
+  const regeln = inhalt(laufSperren({ ordner: wcwd, plattform: "win32", sperren: await sperrListe({ ordner: wcwd, wurzel: WW, global: `${WB}\\Regeln`, plattform: "win32", lesen: lesenAus(wbaum) }) }));
+  const ic = (p) => `/${p[0].toLowerCase()}${p.slice(2).replace(/\\/g, "/")}`;
+  WIN = true;
+  try {
+    for (const f of ["Regeln\\CLAUDE.md", "regeln\\claude.md", "REGELN\\x\\y.md"]) assert.equal(wirkung(ic(`${WB}\\${f}`), regeln, ic(wcwd)), "verweigert", f);
+    assert.equal(wirkung(ic(`${wcwd}\\src\\a.js`), regeln, ic(wcwd)), "erlaubt");
+  } finally { WIN = false; }
 });

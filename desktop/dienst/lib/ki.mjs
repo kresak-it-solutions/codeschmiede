@@ -30,21 +30,26 @@ export const STANDARD = {
 export const MODELL = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,59}$/;   // nie mit „-“ beginnend (Prüfung M2: sonst Schalter wie --yolo)
 
 /** Reihe prüfen/bereinigen (gleiche Regeln wie ws_ki_reihe_ok in der Datenbank). */
-export function reiheFuer(aufgabe, eintrag, mitSandbox = undefined) {
-  // Programmieren: immer zuerst Claude; als Ersatz nur ChatGPT (Codex), wenn der Admin es eingestellt hat (Gerhard 2026-10-23 „Nur als Ersatz“)
-  if (aufgabe === "bauen") {
-    const zweit = Array.isArray(eintrag?.reihe) && eintrag.reihe[0]?.anbieter === "claude" && eintrag.reihe[1]?.anbieter === "chatgpt" ? eintrag.reihe[1] : null;
-    return zweit ? [{ anbieter: "claude" }, { anbieter: "chatgpt", ...(typeof zweit.modell === "string" && MODELL.test(zweit.modell) && zweit.modell !== "automatisch" ? { modell: zweit.modell } : {}) }] : [{ anbieter: "claude" }];
-  }
-  // Prüfungen durch fremde Anbieter nur, wenn dieser PC eine Betriebssystem-Sandbox hat (macOS/Linux); sonst nur Claude (Nachprüfung 2026-10-23)
-  if (aufgabe === "pruefung" && !(mitSandbox ?? sandboxArt())) { const c = (eintrag?.reihe || []).find((e) => e?.anbieter === "claude"); return [{ anbieter: "claude", ...(c?.modell && MODELL.test(c.modell) ? { modell: c.modell } : { modell: "opus" }) }]; }
+// Seit 0.13.1 (Entscheidung Gerhard 02.11.2026 10:00): Die eingestellten Anbieter sind VERPFLICHTEND – kein stilles Ausweichen auf einen anderen
+// Anbieter. Die Reihenfolge gilt nur innerhalb der eingestellten Liste; ist keiner davon nutzbar, wartet die Aufgabe („wartet auf …“).
+// Programmieren macht nur Claude Code (Entscheidung 23.10.) – das frühere Ausweichen auf ChatGPT (Codex) bei vollem Limit entfällt.
+// Prüfungen durch fremde Anbieter weiterhin nur auf PCs mit Betriebssystem-Sandbox – sonst wartet die Prüfung (kein Rückfall auf Claude mehr).
+export function reiheFuer(aufgabe, eintrag) {
+  if (aufgabe === "bauen") return [{ anbieter: "claude" }];
   const r = Array.isArray(eintrag?.reihe) ? eintrag.reihe : STANDARD[aufgabe] || STANDARD.chat;
   const gesehen = new Set();
   // Eingebaute und vom Admin angelegte Anbieter (Kennung); eigene Anbieter nie für Prüfungen (keine Sandbox für unbekannte Programme)
   const reihe = r.filter((e) => e && /^[a-z][a-z0-9-]{1,30}$/.test(e.anbieter || "") && !(aufgabe === "pruefung" && !ANBIETER[e.anbieter]) && !gesehen.has(e.anbieter) && gesehen.add(e.anbieter))
     .map((e) => ({ anbieter: e.anbieter, ...(typeof e.modell === "string" && MODELL.test(e.modell) && e.modell !== "automatisch" ? { modell: e.modell } : {}) }));
-  if (aufgabe === "pruefung" && !reihe.some((e) => e.anbieter === "claude")) reihe.push({ anbieter: "claude", modell: "opus" });   // Rückfall
-  return reihe.length ? reihe : (STANDARD[aufgabe] || STANDARD.chat);
+  // Keine gültige Einstellung (z. B. nur eigene Anbieter für Prüfungen): leer – die Aufgabe wartet, statt etwas anderes zu nehmen
+  if (!Array.isArray(eintrag?.reihe)) return reihe.length ? reihe : (STANDARD[aufgabe] || STANDARD.chat);
+  return reihe;
+}
+/** Meldung, wenn kein eingestellter Anbieter nutzbar ist: „wartet auf ChatGPT: Limit voll · Gemini: nicht gekoppelt“. */
+export function wartetText(gruende, namen = (a) => ANBIETER[a]?.name || a) {
+  const l = gruende.filter((g) => g && g.anbieter);
+  if (!l.length) return "wartet: für diese Aufgabe ist kein gültiger KI-Anbieter eingestellt (KI-Anbieter › Zuständigkeiten)";
+  return `wartet auf ${l.map((g) => `${namen(g.anbieter)}: ${g.grund}`).join(" · ")} – kein Ausweichen auf einen anderen Anbieter (Einstellung unter „KI-Anbieter“)`.slice(0, 600);
 }
 
 /** Woran erkennt man „Limit voll“ in der Ausgabe eines Anbieters? */
