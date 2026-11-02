@@ -208,8 +208,11 @@ export function programmIn(id, dir, { plattform = process.platform, arch = proce
   const login = gibt(shim) ? shim : null;
   const ziel = ZIEL[`${plattform}-${arch}`];
   if (id === "codex" && ziel) {
-    const kand = [path.join(pkg, "vendor", ziel, "codex", "codex")];
-    try { for (const n of liste(path.join(nm, "@openai"))) if (/^codex-/.test(n)) kand.push(path.join(nm, "@openai", n, "vendor", ziel, "codex", "codex")); } catch { /* keine */ }
+    // Wie codex-cli/bin/codex.js (rust-v0.166.0): Plattform-Paket @openai/codex-<os>-<arch> (npm-Alias auf @openai/codex@<v>-<os>-<arch>),
+    // Programm in vendor/<ziel>/bin/codex; danach das Hauptpaket und die ältere Ablage vendor/<ziel>/codex/codex
+    const plattformPaket = path.join(nm, "@openai", `codex-${plattform}-${arch}`);
+    const kand = [path.join(plattformPaket, "vendor", ziel, "bin", "codex"), path.join(pkg, "vendor", ziel, "bin", "codex"),
+      path.join(plattformPaket, "vendor", ziel, "codex", "codex"), path.join(pkg, "vendor", ziel, "codex", "codex")];
     for (const k of kand) { const r = gibt(k) && drin(k); if (r) return { befehl: r, vorne: [], nodeNoetig: false, login }; }
   }
   if (id === "opencode") {

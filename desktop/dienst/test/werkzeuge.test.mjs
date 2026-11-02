@@ -336,7 +336,8 @@ test("Lock-Datei: nur feste Version, nur registry.npmjs.org, nur sha512", () => 
 test("Programmsuche: natives Codex bzw. OpenCode (dann kein node in der Sperre), Gemini als Node-Programm", async () => {
   const d = echt(await tmp("cs-wz-inst-")); const nm = path.join(d, "node_modules");
   const c = path.join(nm, "@openai", "codex"); await mkdir(path.join(c, "bin"), { recursive: true }); await writeFile(path.join(c, "package.json"), '{"bin":{"codex":"bin/codex.js"}}'); await writeFile(path.join(c, "bin", "codex.js"), "");
-  const nat = path.join(c, "vendor", "aarch64-apple-darwin", "codex", "codex"); await mkdir(path.dirname(nat), { recursive: true }); await writeFile(nat, "");
+  // Ablage wie Codex 0.166.0: Plattform-Paket @openai/codex-darwin-arm64, Programm vendor/<ziel>/bin/codex
+  const nat = path.join(nm, "@openai", "codex-darwin-arm64", "vendor", "aarch64-apple-darwin", "bin", "codex"); await mkdir(path.dirname(nat), { recursive: true }); await writeFile(nat, "");
   assert.deepEqual(programmIn("codex", d, { plattform: "darwin", arch: "arm64" }), { befehl: nat, vorne: [], nodeNoetig: false, login: null });
   assert.equal(programmIn("codex", d, { plattform: "darwin", arch: "x64" }).nodeNoetig, true);   // kein natives Programm für x64 → Node-Rückfall
   const g = path.join(nm, "@google", "gemini-cli"); await mkdir(path.join(g, "dist"), { recursive: true }); await writeFile(path.join(g, "package.json"), '{"bin":{"gemini":"dist/index.js"}}'); await writeFile(path.join(g, "dist", "index.js"), "");
