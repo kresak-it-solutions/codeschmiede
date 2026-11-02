@@ -45,8 +45,8 @@ Zusammengeführt wird nur auf Gerhards Wort (in der Codeschmiede: Knopf „Freig
   auf einem PC nicht installiert, nicht angemeldet oder hat es den Sperren-Test nicht bestanden, wartet der Auftrag („wartet auf <Werkzeug>“) – kein anderes
   Werkzeug springt ein, auch nicht Claude; ein Auftrag macht mit seinem Werkzeug fertig. Keine Zugangsdaten in der Codeschmiede (Anmelden macht die Person im
   Werkzeug). Installieren nur auf Entwickler-PCs aus der offiziellen Quelle in fester Version (Lock-Datei, ohne Skripte). Fremde Werkzeuge nur in der
-  Betriebssystem-Sperre der Codeschmiede (schreiben nur im Arbeitsordner, nie Regeln\, setup\, andere Projekte, REGELN.md, .git) – **unter Windows gesperrt**
-  (keine Windows-Sandbox als Ausweg), nie auf dem Admin-PC. Sperren-Test je PC und Version Pflicht. Commit/PR macht bei fremden Werkzeugen die Werkstatt.
+  Betriebssystem-Sperre der Codeschmiede (schreiben nur im Arbeitsordner, nie Regeln\, setup\, andere Projekte, REGELN.md, .git) – **unter Windows und Linux gesperrt**
+  (keine Windows-Sandbox als Ausweg; Linux: Programmstarts nicht begrenzbar), nie auf dem Admin-PC; Gemini CLI derzeit überall gesperrt (Ordner-Vertrauen). Sperren-Test je PC und Version Pflicht. Commit/PR macht bei fremden Werkzeugen die Werkstatt.
   Datenbank 0057.
 - **2026-11-02 10:00 – KI-Anbieter verpflichtend, Setup-Dateien, Limits „Ultra“ (0.13.1):** Die unter „KI-Anbieter“ je Aufgabe eingestellten Anbieter
   werden **verpflichtend** genommen – kein stilles Ausweichen auf einen anderen Anbieter (Chats, Design, Kachel-Chat nur innerhalb der Zuständigkeit,
