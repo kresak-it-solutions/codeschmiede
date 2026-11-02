@@ -204,8 +204,8 @@ export function alsText(buf) {
 export function geheimnisseZaehlen(text, rel = "") {
   const t = Buffer.isBuffer(text) ? alsText(text) : String(text || "");
   let n = zuweisungenZaehlen(t, rel);
-  // Bearer-Token: Muster aus geheim.mjs; als Platzhalter gilt nur Großschrift mit YOUR, TOKEN oder <…> (Bearer YOUR_ACCESS_TOKEN)
-  for (const m of t.matchAll(new RegExp(BEARER.source, "g"))) { const tok = m[0].replace(/^Bearer\s+/, ""); if (!(/^[A-Z0-9_<>{}$.-]+=*$/.test(tok) && /YOUR|TOKEN|<[^>]*>/.test(tok))) n++; }
+  // Bearer-Token: Muster aus geheim.mjs; Platzhalter nur als GANZER Wert ohne Ziffern (B5): YOUR_…, <…>, …TOKEN…
+  for (const m of t.matchAll(new RegExp(BEARER.source, "g"))) { const tok = m[0].replace(/^Bearer\s+/, "").replace(/=+$/, ""); if (!/^(YOUR_[A-Z_]+|<[^>]+>|[A-Z_]*TOKEN[A-Z_]*)$/.test(tok)) n++; }
   for (const m of SCHLUESSEL) n += (t.match(m) || []).length;
   for (const m of t.matchAll(JWT)) {
     try { const j = JSON.parse(Buffer.from(m[1], "base64url").toString("utf8")); if (j && typeof j === "object" && String(j.role || "").toLowerCase() === "service_role") n++; } catch { /* kein JWT */ }

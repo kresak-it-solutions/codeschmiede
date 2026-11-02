@@ -28,6 +28,9 @@ create table if not exists public.ws_einlesen (
   erstellt timestamptz not null default now(),
   geaendert timestamptz not null default now()
 );
+-- Kennung des beim Einlesen angelegten Repositorys (3. Nachprüfung B4): nur ein so angelegtes, unberührtes Repository darf ein späterer Versuch weiterverwenden
+alter table public.ws_einlesen add column if not exists repo_id bigint check (repo_id is null or repo_id > 0);
+alter table public.ws_einlesen add column if not exists repo_node_id text check (repo_node_id is null or repo_node_id ~ '^[A-Za-z0-9_=-]{1,100}$');
 create unique index if not exists ws_einlesen_ein_projekt on public.ws_einlesen (projekt_id) where projekt_id is not null;
 create index if not exists ws_einlesen_stand on public.ws_einlesen (stand, geaendert);
 alter table public.ws_einlesen enable row level security;
@@ -184,6 +187,20 @@ begin
   insert into public.ws_protokoll (wer, was, details) values (auth.uid(), 'einlesen_repo', jsonb_build_object('id', p_id, 'projekt', e.projekt_id, 'repo', p_repo));
 end $$;
 
+-- Werkstatt: Kennung des eben angelegten Repositorys im Vorgang merken (nur der haltende PC, nur während des Einlesens, nur einmal)
+create or replace function public.ws_einlesen_repo_merken(p_pc uuid, p_id bigint, p_repo_id bigint, p_node_id text) returns void
+language plpgsql security definer set search_path = public as $$
+declare e public.ws_einlesen;
+begin
+  if not public.ws_ist_admin() then raise exception 'Nur die Werkstatt des Admins'; end if;
+  select * into e from public.ws_einlesen where id = p_id for update;
+  if e.id is null or e.pc is distinct from p_pc or e.stand <> 'einlesen_laeuft'
+     or not exists (select 1 from public.ws_werkstatt_pcs w where w.id = p_pc and w.benutzer_id = auth.uid()) then raise exception 'Kein laufendes Einlesen dieser Werkstatt'; end if;
+  if p_repo_id is null or p_repo_id <= 0 or p_node_id is null or p_node_id !~ '^[A-Za-z0-9_=-]{1,100}$' then raise exception 'Ungültige Kennung des Repositorys'; end if;
+  if e.repo_id is not null and (e.repo_id <> p_repo_id or e.repo_node_id <> p_node_id) then raise exception 'Für diesen Vorgang ist schon ein anderes Repository gemerkt'; end if;
+  update public.ws_einlesen set repo_id = p_repo_id, repo_node_id = p_node_id, geaendert = now() where id = p_id;
+end $$;
+
 -- Admin: angehakte Gruppen und Features übernehmen (Bereich „App“, Features Stand „test“ = im Hauptstand, noch nicht live) → fertig
 create or replace function public.ws_einlesen_uebernehmen(p_id bigint, p_gruppen jsonb) returns int
 language plpgsql security definer set search_path = public as $$
@@ -231,9 +248,11 @@ revoke execute on function public.ws_einlesen_text_ok(text), public.ws_einlesen_
 grant execute on function public.ws_einlesen_text_ok(text), public.ws_einlesen_gruppen_ok(jsonb) to authenticated;
 revoke execute on function public.ws_einlesen_anfordern(text, text, text), public.ws_einlesen_nehmen(uuid, text[]),
   public.ws_einlesen_melden(uuid, bigint, text, jsonb, jsonb, text, text), public.ws_einlesen_starten(bigint, text, jsonb),
-  public.ws_einlesen_repo(uuid, bigint, text), public.ws_einlesen_uebernehmen(bigint, jsonb), public.ws_einlesen_abbrechen(bigint) from public, anon;
+  public.ws_einlesen_repo(uuid, bigint, text), public.ws_einlesen_uebernehmen(bigint, jsonb), public.ws_einlesen_abbrechen(bigint),
+  public.ws_einlesen_repo_merken(uuid, bigint, bigint, text) from public, anon;
 grant execute on function public.ws_einlesen_anfordern(text, text, text), public.ws_einlesen_nehmen(uuid, text[]),
   public.ws_einlesen_melden(uuid, bigint, text, jsonb, jsonb, text, text), public.ws_einlesen_starten(bigint, text, jsonb),
-  public.ws_einlesen_repo(uuid, bigint, text), public.ws_einlesen_uebernehmen(bigint, jsonb), public.ws_einlesen_abbrechen(bigint) to authenticated;
+  public.ws_einlesen_repo(uuid, bigint, text), public.ws_einlesen_uebernehmen(bigint, jsonb), public.ws_einlesen_abbrechen(bigint),
+  public.ws_einlesen_repo_merken(uuid, bigint, bigint, text) to authenticated;
 
 commit;

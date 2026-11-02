@@ -25,9 +25,13 @@ const Z_NAME = String.raw`[A-Za-z0-9_-]{0,40}(?:pass(?:wort|word)?|pwd?(?![a-z])
 const Z_TRENNER = String.raw`((?:\s*:\s*[A-Za-z_][\w.]{0,40}(?:<[^<>\n]{0,40}>)?(?:\[\])?\??)?\s*(?::=|[:=])\s*)`;
 const ZUWEISUNG = new RegExp(String.raw`((?:\\?["'])?)(${Z_NAME})\1${Z_TRENNER}(\\?"[^"\n]{4,}"|\\?'[^'\n]{4,}'|` + "`(?:(?!\\$\\{)[^`\\n]){4,}`" + String.raw`|[^\s"'&` + "`" + String.raw`]{4,})`, "gi");
 // Fest eingetragener Ersatzwert: process.env.PW || "…", env.KEY ?? '…', $x ?: "…" (N1)
-const ERSATZWERT = new RegExp(String.raw`((?:\\?["'])?)(${Z_NAME})\1${Z_TRENNER}([^\n;]{0,160}?(?:\|\||\?\?|\?:)\s*)(["'` + "`" + String.raw`])([^"'` + "`" + String.raw`\n]{4,})\5`, "gi");
+const ERSATZWERT = new RegExp(String.raw`((?:\\?["'])?)(${Z_NAME})\1${Z_TRENNER}([^\n;]{0,160}?(?:\|\||\?\?|\?:|\sor\s)\s*)(["'` + "`" + String.raw`])([^"'` + "`" + String.raw`\n]{4,})\5`, "gi");
 // … auch, wenn der Name rechts steht: process.env.DB_PASSWORD ?? "…", config["api_key"] || '…'
-const ERSATZ_NACH = new RegExp(String.raw`(?<![A-Za-z0-9])(${Z_NAME})["'\]]{0,2}\s*(?:\|\||\?\?|\?:)\s*(["'` + "`" + String.raw`])([^"'` + "`" + String.raw`\n]{4,})\2`, "gi");
+const ERSATZ_NACH = new RegExp(String.raw`(?<![A-Za-z0-9])(${Z_NAME})["'\])]{0,2}\s*(?:\|\||\?\?|\?:|\sor\s)\s*(["'` + "`" + String.raw`])([^"'` + "`" + String.raw`\n]{4,})\2`, "gi");
+// Standardwert beim Lesen einer Umgebungsvariablen (3. Nachprüfung B2): getenv("X", "…"), os.getenv, os.environ.get, PHP env("X", "…"),
+// Ruby ENV.fetch("X", "…") – geprüft wird der Standardwert unter dem Namen der Zuweisung bzw. der Variablen
+const ENV_STANDARD = new RegExp(String.raw`(?:(?<![A-Za-z0-9])(${Z_NAME})["'\]]{0,2}${Z_TRENNER})?(?:os\.getenv|getenv|os\.environ\.get|ENV\.fetch|env)\(\s*(["'])([A-Za-z_][\w.-]{0,80})\3\s*,\s*(["'` + "`" + String.raw`])([^"'` + "`" + String.raw`\n]{1,200})\5`, "gi");
+const NAME_GANZ = new RegExp(String.raw`^${Z_NAME}$`, "i");
 // PHP: define('DB_PASSWORD', '…') (N3)
 const PHP_DEFINE = /define\(\s*(["'])([A-Z0-9_]*(?:PASSWORD|PASSWD|PASS|PWD|SECRET|KEY|TOKEN|SALT)[A-Z0-9_]*)\1\s*,\s*(["'])([^"'\n]{4,})\3/gi;
 // Reine Schalterwerte sind keine Geheimnisse (persist-credentials: false; fetch credentials: "omit").
@@ -46,6 +50,7 @@ export function ohneGeheimnisse(text) {
   let s = String(text);
   for (const m of MUSTER) s = s.replace(m, "[entfernt]");
   s = s.replace(URL_PASSWORT, "$1[entfernt]@");
+  s = s.replace(ENV_STANDARD, (alles, k, z, q1, v, q2, w) => alles.slice(0, alles.length - w.length - 1) + `[entfernt]${q2}`);
   s = s.replace(ZUWEISUNG, (alles, q, k, z, w) => (nurSchalter(k, w) ? alles : `${q}${k}${q}${z}[entfernt]`));
   s = s.replace(ERSATZWERT, (alles, q, k, z, vor, a) => `${q}${k}${q}${z}${vor}${a}[entfernt]${a}`);
   s = s.replace(ERSATZ_NACH, (alles, k, a) => alles.slice(0, alles.lastIndexOf(a, alles.length - 2) + 1) + `[entfernt]${a}`);
@@ -58,6 +63,8 @@ const CODE_DATEI = /\.(m?[jt]sx?|cjs|vue|svelte|astro|py|rb|go|rs|java|kt|cs|php
 // Platzhalter zählen nur, wenn der GANZE Wert einer ist (2. Nachprüfung, Punkt 6); $VAR/%VAR% nur in Großschreibung (N4: „$Ecret…“ zählt)
 const PLATZHALTER_GANZ = /^(?:<[^<>]+>|x+|\*+|\.\.\.|changeme|example|dummy|test|placeholder|\[entfernt\])$/i;
 const PLATZHALTER_YOUR = /^(?:your|YOUR)[_-][a-z_-]+$|^YOUR[_-][A-Z_-]+$/;   // your-password, YOUR_TOKEN – nicht „your-password-is-Sommer2024“
+// ${VAR:-wert} / ${VAR-wert} / ${VAR:=wert} sind KEINE Platzhalter – der Standardwert wird geprüft (B2)
+const SHELL_STANDARD = /^\$\{[A-Za-z_]\w*:?[-=](.*)\}$/s;
 const PLATZHALTER_GROSS = /^(?:\$\{[^{}]*\}|\{\{[^{}]*\}\}|\$[A-Z_][A-Z0-9_]*|%[A-Z_][A-Z0-9_]*%?)$/;
 // Verweis auf eine Umgebungsvariable als ganzer Wert (kein Geheimnis): process.env.X, import.meta.env.X, os.environ["X"], env("X"), getenv("X")
 // (ohne Anführungszeichen endet der erkannte Wert vor dem ersten Anführungszeichen: „os.environ[“, „getenv(“ – auch das ist nur ein Verweis)
@@ -83,10 +90,15 @@ const jwtRolle = (w) => { try { return JSON.parse(Buffer.from(w.split(".")[1], "
  */
 function wertZaehlt(name, roh, code) {
   const w = String(roh).trim();
+  const standard = SHELL_STANDARD.exec(w);
+  if (standard) return standard[1].length > 0 && wertZaehlt(name, standard[1], code);
   if (PLATZHALTER_GANZ.test(w) || PLATZHALTER_YOUR.test(w) || PLATZHALTER_GROSS.test(w) || UMGEBUNG.test(w)) return false;
   if (istJwt(w)) return jwtRolle(w) !== "anon" && (STARK.test(name) || STARK_SCHLUESSEL.test(name));   // nur der öffentliche anon-JWT ist ausgenommen
-  if ((OEFFENTLICH_TEIL.test(name) || OEFFENTLICH_CAMEL.test(name)) && !GEGENLISTE.test(name)) return false;
-  if (BESCHRIFTUNG_NAME.test(name)) return false;
+  // Öffentlich nur ohne geheimen Namensteil – auch starke Schlüssel-Namen heben das auf (B3: pk_signing_key, public_db_key zählen)
+  if ((OEFFENTLICH_TEIL.test(name) || OEFFENTLICH_CAMEL.test(name)) && !GEGENLISTE.test(name) && !STARK_SCHLUESSEL.test(name)) return false;
+  // Beschriftungs-Name (passwordLabel …) nur in Code-Dateien und nur, wenn der Wert wie UI-Text aussieht (B1): nur Buchstaben/Leerzeichen/Satzzeichen
+  // oder mit Beschriftungswort. „Xk9!mQ2pLz“, „Pillersee77“, „Sommer2024!“ zählen auch unter passwordHint/…Title/…Text.
+  if (code && BESCHRIFTUNG_NAME.test(name) && (/^[\p{L} .,:;!?()'’-]+$/u.test(w) || BESCHRIFTUNG.test(w))) return false;
   if (/\s/.test(w) && BESCHRIFTUNG.test(w)) return false;
   if (STARK_SCHLUESSEL.test(name)) return w.length >= 8;
   if (!STARK.test(name)) return w.length >= 16 && !/\s/.test(w) && /[A-Za-z]/.test(w) && /\d/.test(w);
@@ -109,6 +121,10 @@ export function zuweisungenZaehlen(text, rel = "") {
   const ersatz = new Set();
   for (const m of t.matchAll(ERSATZWERT)) if (wertZaehlt(m[2], m[6], code)) { n++; ersatz.add(m.index + m[0].length); }
   for (const m of t.matchAll(ERSATZ_NACH)) if (!ersatz.has(m.index + m[0].length) && wertZaehlt(m[1], m[3], code)) n++;
+  for (const m of t.matchAll(ENV_STANDARD)) {
+    const k = [m[1], m[4]].find((x) => x && NAME_GANZ.test(x));
+    if (k && wertZaehlt(k, m[6], code)) n++;
+  }
   for (const m of t.matchAll(PHP_DEFINE)) if (wertZaehlt("secret", m[4], false)) n++;   // Konstanten …PASSWORD/SECRET/KEY/TOKEN/SALT sind immer geheim
   return n;
 }

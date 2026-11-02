@@ -2570,7 +2570,18 @@ async function einlesenAusfuehren(v, q) {
     if (raus.length) throw new Error("Im Code liegen Verknüpfungen – abgebrochen, nichts hochgeladen");
     await schritt("Privates Repository wird angelegt");
     const keineHooks = path.join(stage, "keine-hooks"); await mkdir(keineHooks, { recursive: true });
-    const { repo } = await repoEinlesen({ sh, ordner: code, keineHooks, projekt, melde: (t) => melde("status", `Einlesen: ${t}`) });
+    // Kennung des Repositorys (id/node_id) lokal merken – außerhalb von <Daten>/einlesen/ (wird beim Start geleert) – und in der Vorgangszeile
+    const repoDatei = path.join(cfg.daten_ordner, "einlesen-repos.json");
+    const gemerktAlle = await readFile(repoDatei, "utf8").then((t) => JSON.parse(t), () => ({}));
+    const repoName = `kresak-it-solutions/${projekt.id}`;
+    const merken = async (k) => {
+      const alle = await readFile(repoDatei, "utf8").then((t) => JSON.parse(t), () => ({}));
+      alle[repoName] = { id: k.id, node_id: k.node_id, zeit: new Date().toISOString() };
+      await writeFile(repoDatei, JSON.stringify(alle, null, 1));
+      await db.rpc("ws_einlesen_repo_merken", { p_pc: pcId, p_id: v.id, p_repo_id: k.id, p_node_id: k.node_id }).then(() => {}, () => {});
+    };
+    const { repo } = await repoEinlesen({ sh, ordner: code, keineHooks, projekt, melde: (t) => melde("status", `Einlesen: ${t}`),
+      gemerkt: gemerktAlle && typeof gemerktAlle === "object" ? gemerktAlle[repoName] || null : null, merken });
     const { error: er } = await db.rpc("ws_einlesen_repo", { p_pc: pcId, p_id: v.id, p_repo: repo });
     if (er) throw new Error(`Repository ${repo} angelegt, aber nicht eingetragen: ${er.message} – bitte unter „Projekte verwalten“ selbst eintragen`);
     await rm(stage, { recursive: true, force: true }).catch(() => {});   // Wegwerf-Kopie mit Git-Einstellungen des ersten Hochladens

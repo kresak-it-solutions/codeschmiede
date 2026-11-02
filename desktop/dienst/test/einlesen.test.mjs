@@ -12,6 +12,7 @@ import {
   technikErkennen, zielVorschlag, auswahlPruefen, kopierPlan, strukturListe, gruppenPrompt, gruppenAntwort, wissenAusKonzept, regelnAusEingelesen, berichtZeilen, alsText, datenWert,
 } from "../lib/einlesen.mjs";
 import { einsortieren, zielFrei, geheimnisseImOrdner } from "../lib/einlesenKopie.mjs";
+import { ohneGeheimnisse as ohneGeheimnisseFuerTest } from "../lib/geheim.mjs";
 
 /** Kleine ZIP bauen. Eintrag: [name, inhalt, { groesse, attr, von, flags, methode }] */
 function zip(eintraege, { ende = {} } = {}) {
@@ -520,32 +521,78 @@ test("2. Nachprüfung 7/8: Bearer-Platzhalter, Stripe-Test, AWS ASIA", () => {
   for (const t of ["Authorization: Bearer ABCDEFGHIJKLMNOPQRSTUV", "Bearer abcdef1234567890xyz", `sk_test_${"a".repeat(24)}`, `rk_test_${"b".repeat(24)}`, "ASIAIOSFODNN7EXAMPLE"]) assert.ok(geheimnisseZaehlen(t, "README.md") >= 1, t);
 });
 
-test("2. Nachprüfung 9: leeres privates Repository wird weiterverwendet, sonst klare Meldung", async () => {
+
+
+test("B1: Beschriftungs-Namen nur in Code und nur bei UI-Text", () => {
+  for (const [t, rel] of [['secretText = "Xk9!mQ2pLz"', "a.js"], ['passwordHint = "Xk9!mQ2pLz"', "a.js"], ['adminPasswordTitle = "Pillersee77"', "a.js"], ['dbPasswordText = "Sommer2024!"', "a.js"],
+    ['masterKeyCaption: "8f3a9b2c1d4e"', "a.js"], ["SECRET_TEXT=Xk9mQ2pLz12", "x.ini"], ['passwordLabel: "Kennwort"', "c.yml"]]) assert.ok(geheimnisseZaehlen(t, rel) >= 1, t);
+  for (const [t, rel] of [['passwordLabel: "Kennwort"', "a.js"], ['passwordHint: "Mindestens 8 Zeichen"', "a.js"], ['secretTitle: "Geheimer Bereich"', "a.ts"], ['passwordPlaceholder: "Ihr Passwort (8+ Zeichen)"', "a.jsx"]]) assert.equal(geheimnisseZaehlen(t, rel), 0, t);
+});
+
+test("B2: Standardwerte von Umgebungsvariablen werden geprüft", () => {
+  for (const [t, rel] of [['DB_PASSWORD: "${DB_PASSWORD:-geheim123}"', "c.yml"], ["password=${PW-Sommer2024}", "x.sh"], ['secret: "${S:=Xk9mQ2pLz}"', "c.yml"],
+    ['password = os.getenv("DB_PW", "geheim123")', "a.py"], ['pw = os.environ.get("DB_PASSWORD", "geheim123")', "a.py"], ["$pw = env('DB_PASSWORD', 'geheim123');", "a.php"],
+    ['secret = ENV.fetch("APP_SECRET", "geheim123")', "a.rb"], ['token := getenv("API_TOKEN", "abc123def")', "m.go"], ['password = os.environ.get("X") or "geheim123"', "a.py"], ['pw = config.password or "geheim123"', "a.py"]])
+    assert.ok(geheimnisseZaehlen(t, rel) >= 1, t);
+  for (const [t, rel] of [['DB_PASSWORD: "${DB_PASSWORD:-}"', "c.yml"], ['DB_PASSWORD: "${DB_PASSWORD}"', "c.yml"], ['host = os.getenv("DB_HOST", "localhost")', "a.py"],
+    ['password = os.getenv("DB_PW", "")', "a.py"], ['password = os.getenv("DB_PW", "changeme")', "a.py"], ['port = ENV.fetch("PORT", "3000")', "a.rb"], ['name = user.name or "Gast"', "a.py"]])
+    assert.equal(geheimnisseZaehlen(t, rel), 0, t);
+  const o = ohneGeheimnisseFuerTest('password = os.getenv("DB_PW", "geheim123")'); assert.ok(!o.includes("geheim123"));
+});
+
+test("B3: starke Schlüssel-Namen zählen auch mit pk_/public_/anon-Teil", () => {
+  for (const t of ['pk_signing_key = "abcdefgh1"', 'public_db_key = "12345678"', 'anon_master_key = "12345678"', 'publicEncryptionKey = "abcdefgh"']) assert.ok(geheimnisseZaehlen(t, "a.py") >= 1, t);
+  for (const t of ['public_key = "abcdefgh12"', 'PK_LIVE_KEY = "abcdefgh12345678xyz"']) assert.equal(geheimnisseZaehlen(t, "a.py"), 0, t);
+});
+
+test("B5: Bearer-Platzhalter nur als ganzer Wert ohne Ziffern", () => {
+  for (const t of ["Bearer YOUR_ACCESS_TOKEN", "Bearer ACCESS_TOKEN_HERE", "Bearer GITHUB_TOKEN_VALUE"]) assert.equal(geheimnisseZaehlen(t, "README.md"), 0, t);
+  for (const t of ["Bearer YOUR_TOKEN_12345678901", "Bearer ABCDEFGHIJKLMNOPQRSTUV", "Bearer TOKEN1234567890ABCDEF", "Bearer abcTOKENdefghijklmnop"]) assert.ok(geheimnisseZaehlen(t, "README.md") >= 1, t);
+});
+
+test("B4: vorhandenes Repository nur bei gemerkter Kennung und unberührt weiterverwenden", async () => {
   const { repoEinlesen } = await import("../lib/repo.mjs");
   const { execFile } = await import("node:child_process"); const { promisify } = await import("node:util"); const run = promisify(execFile);
-  const tmp = await mkdtemp(path.join(os.tmpdir(), "cs-einlesen-wieder-"));
+  const tmp = await mkdtemp(path.join(os.tmpdir(), "cs-einlesen-b4-"));
   try {
     const code = path.join(tmp, "code"); await mkdir(code); await writeFile(path.join(code, "a.js"), "1");
     const bare = path.join(tmp, "gh.git"); await run("git", ["init", "-q", "--bare", bare]);
-    const machSh = ({ sicht, zweige }) => { const aufrufe = []; const sh = async (b, a, o) => {
+    const gut = { id: 4711, node_id: "R_kgDOAbc", sichtbarkeit: "private", branches: "409", tags: 0, hooks: 0, keys: 0, rulesets: 0, leute: ["tester"] };
+    const machSh = (r, { da = true } = {}) => { const aufrufe = []; let angelegt = da; const sh = async (b, a, o) => {
       const z = [b, ...a].join(" "); aufrufe.push(z);
-      if (b === "gh" && a[1] === "view" && a.includes("visibility")) return { stdout: `${sicht}\n` };
-      if (b === "gh" && a[1] === "view") return { stdout: "{}" };   // gibt es schon
-      if (z.includes("/branches")) return { stdout: `${zweige}\n` };
+      if (b === "gh" && a[0] === "api" && a[1] === "user") return { stdout: "tester\n" };
+      if (b === "gh" && a[1] === "view" && a.includes("visibility")) return { stdout: `${r.sichtbarkeit.toUpperCase()}\n` };
+      if (b === "gh" && a[1] === "view") { if (!angelegt) throw new Error("fehlt"); return { stdout: "{}" }; }
+      if (b === "gh" && a[1] === "create") { angelegt = true; return { stdout: "" }; }
+      if (b === "gh" && a[0] === "api" && a[1] === "repos/kresak-it-solutions/x-projekt") return { stdout: JSON.stringify({ id: r.id, node_id: r.node_id, sichtbarkeit: r.sichtbarkeit }) };
+      for (const k of ["branches", "tags", "hooks", "keys", "rulesets"]) if (z.includes(`/x-projekt/${k} `)) { if (r[k] === "409") throw Object.assign(new Error("HTTP 409: Git Repository is empty."), { stderr: "HTTP 409" }); return { stdout: `${r[k]}\n` }; }
+      if (z.includes("collaborators")) return { stdout: JSON.stringify(r.leute) };
       if (z.includes("actions/permissions")) return { stdout: a.includes("PUT") ? "" : "false\n" };
-      if (b === "gh" && a[1] === "create") throw new Error("darf nicht neu anlegen");
-      if (b === "gh") return { stdout: "tester" };
       if (b === "git" && a.includes("push")) return run("git", a.map((x) => (x.startsWith("https://github.com/") ? bare : x)), o);
+      if (b === "gh") return { stdout: "" };
       return run(b, a, o);
     }; return { sh, aufrufe }; };
-    for (const fall of [{ sicht: "PUBLIC", zweige: 0 }, { sicht: "PRIVATE", zweige: 1 }, { sicht: "INTERNAL", zweige: 0 }]) {
-      const { sh, aufrufe } = machSh(fall);
-      await assert.rejects(repoEinlesen({ sh, ordner: code, keineHooks: tmp, projekt: { id: "x-projekt", name: "X" } }), /liegt schon bei GitHub, bitte dort prüfen oder löschen/);
-      assert.ok(!aufrufe.some((x) => x.includes(" push ")), JSON.stringify(fall));
+    const lauf = async (r, gemerkt, o) => { await rm(path.join(code, ".git"), { recursive: true, force: true }); const x = machSh(r, o); const merk = [];
+      const p = repoEinlesen({ sh: x.sh, ordner: code, keineHooks: tmp, projekt: { id: "x-projekt", name: "X" }, gemerkt, merken: async (k) => { merk.push(k); } });
+      return { p, aufrufe: x.aufrufe, merk }; };
+    const gemerkt = { id: 4711, node_id: "R_kgDOAbc" };
+    for (const [fall, r, gm, grund] of [["ohne gemerkte Kennung", gut, null, /nicht von diesem PC/], ["andere id", { ...gut, id: 999 }, gemerkt, /nicht von diesem PC/],
+      ["andere node_id", { ...gut, node_id: "R_x" }, gemerkt, /nicht von diesem PC/], ["öffentlich", { ...gut, sichtbarkeit: "public" }, gemerkt, /nicht privat/],
+      ["Zweig da", { ...gut, branches: 1 }, gemerkt, /Zweige/], ["Tag", { ...gut, tags: 1 }, gemerkt, /Tags/], ["Hook", { ...gut, hooks: 1 }, gemerkt, /Webhooks/],
+      ["Deploy-Key", { ...gut, keys: 1 }, gemerkt, /Deploy-Keys/], ["Ruleset", { ...gut, rulesets: 2 }, gemerkt, /Rulesets/], ["Mitarbeiter", { ...gut, leute: ["tester", "fremd"] }, gemerkt, /Mitarbeiter/]]) {
+      const { p, aufrufe } = await lauf(r, gm);
+      await assert.rejects(p, (e) => /liegt schon bei GitHub, bitte dort prüfen oder löschen/.test(e.message) && grund.test(e.message), fall);
+      assert.ok(!aufrufe.some((x) => x.includes(" push ") || x.includes("repo create")), `${fall}: nichts angelegt oder hochgeladen`);
     }
-    const { sh, aufrufe } = machSh({ sicht: "PRIVATE", zweige: 0 });
-    const r = await repoEinlesen({ sh, ordner: code, keineHooks: tmp, projekt: { id: "x-projekt", name: "X" } });
+    const ok = await lauf(gut, gemerkt); const r = await ok.p;
     assert.equal(r.repo, "kresak-it-solutions/x-projekt");
-    assert.ok(aufrufe.some((x) => x.includes("-X PUT") && x.includes("enabled=false")) && aufrufe.some((x) => x.includes(" push ")) && !aufrufe.some((x) => x.includes("repo create")));
+    assert.ok(!ok.aufrufe.some((x) => x.includes("repo create")) && ok.aufrufe.some((x) => x.includes("enabled=false")) && ok.aufrufe.some((x) => x.includes(" push ")), "weiterverwendet, Actions aus, hochgeladen");
+    // Neu anlegen: Kennung wird sofort gemerkt (vor Actions und Push) – frisches Ziel-Repository für diesen Lauf
+    await rm(bare, { recursive: true, force: true }); await run("git", ["init", "-q", "--bare", bare]);
+    const neu = await lauf(gut, null, { da: false }); await neu.p;
+    assert.deepEqual(neu.merk, [{ id: 4711, node_id: "R_kgDOAbc" }]);
+    const iCreate = neu.aufrufe.findIndex((x) => x.includes("repo create")); const iId = neu.aufrufe.findIndex((x, i) => i > iCreate && x.includes("repos/kresak-it-solutions/x-projekt") && x.includes("node_id"));
+    const iAus = neu.aufrufe.findIndex((x) => x.includes("enabled=false"));
+    assert.ok(iCreate >= 0 && iId > iCreate && iAus > iId, "anlegen → Kennung merken → Actions aus");
   } finally { await rm(tmp, { recursive: true, force: true }); }
 });

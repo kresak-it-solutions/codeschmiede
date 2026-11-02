@@ -56,6 +56,12 @@ select ws_einlesen_starten((select id from ws_einlesen where quelle=:Q1),'therma
 :ADM
 select ws_einlesen_starten((select id from ws_einlesen where quelle=:Q1),'thermax','{"zuordnung":{"src":"code"},"personen":[],"wissen":true}') \g /dev/null
 select stand from ws_einlesen_nehmen(:APC, array[:Q1]);
+\echo [15b] Repository-Kennung merken: fremder PC -> FEHLER; gültig -> gemerkt; andere Kennung -> FEHLER; ungültige node_id -> FEHLER
+select ws_einlesen_repo_merken(:DPC,(select id from ws_einlesen where quelle=:Q1),4711,'R_kgDOAbc');
+select ws_einlesen_repo_merken(:APC,(select id from ws_einlesen where quelle=:Q1),4711,'R_kgDOAbc') \g /dev/null
+select repo_id, repo_node_id from ws_einlesen where quelle=:Q1;
+select ws_einlesen_repo_merken(:APC,(select id from ws_einlesen where quelle=:Q1),4712,'R_kgDOXyz');
+select ws_einlesen_repo_merken(:APC,(select id from ws_einlesen where quelle=:Q1),4711,'R_kg/../x');
 \echo [16] Fremder Repository-Name -> FEHLER
 select ws_einlesen_repo(:APC,(select id from ws_einlesen where quelle=:Q1),'kresak-it-solutions/anderes');
 \echo [17] Repository vom fremden PC -> FEHLER

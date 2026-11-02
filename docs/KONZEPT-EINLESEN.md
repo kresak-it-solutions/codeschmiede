@@ -114,7 +114,14 @@ Das Original (ZIP bzw. Ordner) bleibt unverändert. Bricht das Einlesen ab, steh
 | Bearer | jeder Token, auch in Großbuchstaben | nur Großschrift mit `YOUR`, `TOKEN` oder `<…>` (`Bearer YOUR_ACCESS_TOKEN`) |
 | Weitere Muster | Stripe `sk_test_`/`rk_test_`, AWS `ASIA…` | – |
 
-**Repository vorhanden:** Scheitert ein Versuch nach dem Anlegen (z. B. beim Abschalten von Actions), wird ein **leeres** (keine Zweige) und **privates** Repository genau dieser Kennung beim nächsten Versuch weiterverwendet; Actions wird wieder abgeschaltet und geprüft. Sonst: „Repository liegt schon bei GitHub, bitte dort prüfen oder löschen.“
+## 3. Nachprüfung (02.11.2026, GELB, B1–B5)
+| Nr. | Umsetzung |
+|---|---|
+| B1 | Beschriftungs-Namen (`…Label`, `…Hint`, `…Title`, `…Text`, `…Caption` …) sind nur **in Code-Dateien** und nur bei **UI-Text** ausgenommen (nur Buchstaben, Leerzeichen, Satzzeichen – oder mit Beschriftungswort). `passwordHint = "Xk9!mQ2pLz"`, `adminPasswordTitle = "Pillersee77"`, `masterKeyCaption: "8f3a9b2c1d4e"`, `SECRET_TEXT=Xk9mQ2pLz12` (.ini) zählen. |
+| B2 | `${VAR:-wert}`, `${VAR-wert}`, `${VAR:=wert}` sind keine Platzhalter – der Standardwert wird geprüft. Ebenso der zweite Wert von `getenv(…, "x")`, `os.getenv`, `os.environ.get`, PHP `env("X", "…")`, Ruby `ENV.fetch("X", "…")` (unter dem Namen der Zuweisung oder der Variablen). Python `or` gilt als Ersatzwert wie `||`/`??`. |
+| B3 | Starke Schlüssel-Namen zählen auch mit `pk_`/`public_`/`anon`-Teil (`pk_signing_key`, `public_db_key`). |
+| B4 | Beim Anlegen merkt sich die Werkstatt die Kennung des Repositorys (`id`, `node_id`) lokal (`<Daten>/einlesen-repos.json`) und in der Vorgangszeile (`ws_einlesen.repo_id`, `repo_node_id`, Funktion `ws_einlesen_repo_merken`). Ein vorhandenes Repository wird nur weiterverwendet bei **gleicher Kennung** und wenn es privat und leer ist (keine Zweige; 409 „empty“ gilt als leer), ohne Webhooks, Deploy-Keys, Tags, Rulesets und ohne Mitarbeiter außer dem eigenen Konto; Actions wird dann wieder abgeschaltet und geprüft. Sonst: „Repository … liegt schon bei GitHub, bitte dort prüfen oder löschen (Grund).“ – nichts hochgeladen. |
+| B5 | Bearer-Platzhalter nur als ganzer Wert ohne Ziffern: `^(YOUR_[A-Z_]+|<[^>]+>|[A-Z_]*TOKEN[A-Z_]*)$`. |
 
 **Verbleibende Grenzen:** Base64- oder anders kodierte bzw. zusammengesetzte Schlüssel (`"sk-" + teil2`) werden nicht erkannt; Schlüssel in Binärdateien
 (Bilder, PDF, Office) nur, wenn sie als Klartext darin stehen; eine Passphrase, die zufällig ein Beschriftungswort enthält (z. B. „bitte nicht raten“), wird nicht erkannt; Werte unter 6 Zeichen zählen nie; die Erkennung ist eine Mustersuche – sie ersetzt nicht das Prüfen der Schlüssel durch den Admin vor dem Einschalten von Actions.
