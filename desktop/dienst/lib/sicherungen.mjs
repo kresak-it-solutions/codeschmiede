@@ -48,6 +48,26 @@ export function sicherungenLampe(u) {
 }
 
 /**
+ * Filter für Standardwerte und Regel-Ausdrücke im Datenbank-Aufbau – GLEICH wie pg_temp.cs_ohne im Ablauf „Datenbank“ (vorlagen/_datenbank/datenbank.yml;
+ * sql = Text genau so, wie er dort steht, Reihenfolge = Reihenfolge der Anwendung). Ein Test prüft, dass beide Seiten übereinstimmen.
+ */
+export const AUFBAU_MUSTER = [
+  { sql: String.raw`'eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}', '[ENTFERNT]', 'g'`, re: /eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g, ersatz: "[ENTFERNT]" },
+  { sql: String.raw`'(sb_secret_|sb_publishable_|sbp_|ghp_|gho_|ghu_|ghs_|ghr_|github_pat_|sk-ant-|sk-proj-|sk_live_|sk_test_|rk_live_|whsec_|AKIA)[A-Za-z0-9_-]{8,}', '[ENTFERNT]', 'g'`,
+    re: /(sb_secret_|sb_publishable_|sbp_|ghp_|gho_|ghu_|ghs_|ghr_|github_pat_|sk-ant-|sk-proj-|sk_live_|sk_test_|rk_live_|whsec_|AKIA)[A-Za-z0-9_-]{8,}/g, ersatz: "[ENTFERNT]" },
+  { sql: String.raw`'sk-[A-Za-z0-9_-]{20,}', '[ENTFERNT]', 'g'`, re: /sk-[A-Za-z0-9_-]{20,}/g, ersatz: "[ENTFERNT]" },
+  { sql: String.raw`'bearer\s+[A-Za-z0-9._~+/=-]{12,}', 'Bearer [ENTFERNT]', 'gi'`, re: /bearer\s+[A-Za-z0-9._~+/=-]{12,}/gi, ersatz: "Bearer [ENTFERNT]" },
+  { sql: String.raw`'\y(pw|pwd|pass|passwd|passwort|password|kennwort|secret|token|api[_-]?key|apikey|service_role|authorization)([\x22'' ]*\s*[:=]\s*[\x22'' ]*)[^\x22''\s,;)]{4,}', '\1\2[ENTFERNT]', 'gi'`,
+    re: /\b(pw|pwd|pass|passwd|passwort|password|kennwort|secret|token|api[_-]?key|apikey|service_role|authorization)(["' ]*\s*[:=]\s*["' ]*)[^"'\s,;)]{4,}/gi, ersatz: "$1$2[ENTFERNT]" },
+  { sql: String.raw`'postgres(ql)?://[^\s''\x22]+', '[ENTFERNT]', 'gi'`, re: /postgres(ql)?:\/\/[^\s'"]+/gi, ersatz: "[ENTFERNT]" },
+];
+/** Einen Wert filtern wie pg_temp.cs_ohne (null bleibt null). */
+export const aufbauFilter = (t) => (t == null ? t : AUFBAU_MUSTER.reduce((x, m) => x.replace(m.re, m.ersatz), String(t)));
+/** Alle Text-Werte eines JSON-Werts filtern (Schlüssel bleiben). */
+const tiefFiltern = (v) => (typeof v === "string" ? ohneGeheimnisse(aufbauFilter(v)) : Array.isArray(v) ? v.map(tiefFiltern)
+  : v && typeof v === "object" ? Object.fromEntries(Object.entries(v).map(([k, w]) => [k, tiefFiltern(w)])) : v);
+
+/**
  * Aufbau der Datenbank prüfen: JSON-Objekt nur mit den Schlüsseln, die der Ablauf „Datenbank“ schreibt; Geheimnisse werden gefiltert.
  * Rückgabe: { text (schön formatiert), gefiltert } oder Fehler.
  */
@@ -62,11 +82,15 @@ export function aufbauPruefen(roh) {
     throw new Error("Aufbau der Datenbank enthält Funktions-Texte (Ablauf „Datenbank“ älter als 0.13.1?) – nicht abgelegt");
   }
   const schoen = JSON.stringify(j, null, 1);
-  // Werte im Aufbau (Standardwerte, Funktionen, Regeln) könnten von Hand eingetragene Schlüssel enthalten – filtern, Ergebnis muss gültig bleiben
-  const sauber = ohneGeheimnisse(schoen);
-  try { JSON.parse(sauber); } catch { throw new Error("Aufbau der Datenbank enthält Zugangsdaten, die sich nicht sauber entfernen lassen – nicht abgelegt"); }
+  // Werte (Standardwerte, Regel-Ausdrücke …) noch einmal filtern – gleiche Muster wie im Ablauf (AUFBAU_MUSTER) und ohneGeheimnisse, je Wert
+  // (das JSON bleibt so immer gültig)
+  const sauber = JSON.stringify(tiefFiltern(j), null, 1);
   return { text: `${sauber}\n`, gefiltert: sauber !== schoen };
 }
+
+// CRC-32 (ZIP), eigene Tabelle – zlib.crc32 gibt es erst ab Node 20.15/22.2
+const CRC_TAFEL = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+export function crc32(buf) { let c = 0xffffffff; for (const x of buf) c = CRC_TAFEL[(c ^ x) & 0xff] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; }
 
 /**
  * Genau eine Datei aus einem ZIP lesen (Artefakt-Download von GitHub): nur ein Eintrag mit genau diesem Namen, nicht verschlüsselt, kein ZIP64,
@@ -93,9 +117,10 @@ export function zipEinzeln(buf, name, max) {
   const daten = b.subarray(start, start + gepackt);
   let aus;
   if (methode === 0) aus = daten;
-  else if (methode === 8) { try { aus = inflateRawSync(daten, { maxOutputLength: max }); } catch { fehl("Sicherung des Datenbank-Aufbaus ist zu groß oder beschädigt – nicht abgelegt"); } }
+  else if (methode === 8) { try { aus = inflateRawSync(daten, { maxOutputLength: Math.max(1, Math.min(groesse, max)) }); } catch { fehl("Sicherung des Datenbank-Aufbaus ist zu groß oder beschädigt – nicht abgelegt"); } }
   else fehl();
   if (aus.length !== groesse || aus.length > max) fehl();
+  if (crc32(aus) !== b.readUInt32LE(cd + 16)) fehl("Sicherung des Datenbank-Aufbaus ist beschädigt (Prüfsumme) – nicht abgelegt");
   return aus;
 }
 

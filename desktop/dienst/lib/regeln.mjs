@@ -46,6 +46,9 @@ const MUSTER = [
   { thema: "Prüfmaßstab", regel: "pruefung", verneinbar: false, re: R(String.raw`\b(?:befunde?|fehler|mängel|maengel|probleme|schwachstellen|sicherheitslücken|warnungen)\b[^.!?\n]{0,40}\b(?:nicht|nie|niemals)\s+(?:melden|nennen|berichten|aufführen|auffuehren|erwähnen|erwaehnen)\b`) },
   { thema: "Prüfmaßstab", regel: "pruefung", verneinbar: false, re: R(String.raw`\b(?:rot|rote\s+befunde?)\b[^.!?\n]{0,20}(?:→|->|=>|\bals\b|\bzu\b|\bnur\b)\s*(?:orange|gelb|hinweis)\b|\bnie(?:mals)?\s+rot\b|\b(?:höchstens|hoechstens|immer|nur)\s+(?:orange|gelb)\b|\bkein(?:e|en)?\s+(?:rot(?:en)?|rote[ns]?)\s+(?:befund|ergebnis)`) },
   { thema: "Prüfmaßstab", regel: "pruefung", verneinbar: false, re: R(String.raw`\b(?:rls|row[- ]level[- ]security|datenschutz|dsgvo|sicherheit|rechte|berechtigungen)\b[^.!?\n]{0,40}\b(?:nicht|nie|niemals|nicht\s+mehr)\s+(?:prüfen|pruefen|kontrollieren|ansehen|beachten|bewerten)\b|\b(?:nicht|nie|niemals)\s+(?:auf\s+)?(?:rls|row[- ]level[- ]security|datenschutz|dsgvo|sicherheit)\w*\s+(?:prüfen|pruefen|achten|kontrollieren)\b`) },
+  { thema: "Prüfmaßstab", regel: "pruefung", verneinbar: false, re: R(String.raw`\brot\s+(?:nur|erst|ausschließlich|ausschliesslich)\s+(?:bei|wenn|für|fuer|falls)\b|\bim\s+zweifel\s+(?:immer\s+|lieber\s+)?(?:grün|gruen|bestanden|freigeben|ok|orange)\b`) },
+  { thema: "Prüfmaßstab", regel: "pruefung", verneinbar: true, re: R(String.raw`\b(?:rls|row[- ]level[- ]security|datenschutz|dsgvo|sicherheit\w*|rechte|berechtigungen)\b[^.!?\n]{0,40}\b(?:ignorieren|übergehen|uebergehen|überspringen|ueberspringen|weglassen|auslassen|ausklammern)\b`) },
+  { thema: "Prüfmaßstab", regel: "pruefung", verneinbar: false, re: R(String.raw`\b(?:nicht|kein|keine)\s+(?:teil|bestandteil|gegenstand)\s+(?:der|einer|jeder)\s+(?:sicherheits-?|feature-?)?(?:prüfung|pruefung|review)\b`) },
   { thema: "Sicherheitsregeln aufheben", regel: null, verneinbar: true, re: R(String.raw`\b(?:sicherheitsregeln?|sicherheit|sperren|einschränkungen|erlaubnis-?anfragen)\b[^.!?\n]{0,30}\b(?:ignorieren|aufheben|gelten\s+nicht|abschalten|umgehen|außer\s+kraft)\b`) },
   { thema: "Sicherheitsregeln aufheben", regel: null, verneinbar: false, re: R(String.raw`\bignoriere\b[^.!?\n]{0,40}(?:regeln|anweisungen|sicherheit)`) },
 ];
@@ -129,8 +132,8 @@ export function regelBlock({ projektregeln = "", regelwerk = null, konflikte = [
 // Gleiche Rangfolge wie im Bau-Auftrag (1 Sicherheit fest › 2 zuletzt BESTÄTIGTE Fassung der REGELN.md › 3 Regelwerk), aber als
 // abgegrenzter Block mit zufälliger Grenze und Längengrenze. Andere KI-Anbieter (ChatGPT, Gemini …) bekommen ihn genauso als Text.
 /** Steuerzeilen, die die Werkstatt in Antworten auswertet – in Projektregeln werden sie entschärft (nie als echte Zeile im Prompt). */
-// Auch nach Listen-, Zitat-, Überschrift- und Fett-Zeichen („- “, „* “, „> “, „1. “, „**“, „#“) – Nachprüfung 0.13.1, B3
-const STEUER = /^((?:[ \t]|[-*+>•#]|\d{1,3}[.)]|\*{1,3}|_{1,3}|`)*)(ERGEBNIS-PR|RÜCKFRAGE|RUECKFRAGE|ANTWORT|FEATURE-NEU|FEATURE|AUFTRAEGE|AUFTRÄGE|AUFTRAG|FRAGEN|BEZUG|WISSEN|VORSCHLAG|KACHEL|UMDESIGN|PR(?:Ü|UE)FUNG)((?:[ \t]|\*|_|`)*:)/gimu;
+// Auch nach Listen-, Zitat-, Überschrift-, Fett-, Tabellen- und Durchstreich-Zeichen („- “, „* “, „> “, „1. “, „**“, „#“, „|“, „~~“) – Nachprüfung 0.13.1, B3
+const STEUER = /^((?:[ \t]|[-*+>•#|~]|\d{1,3}[.)]|\*{1,3}|_{1,3}|`)*)(ERGEBNIS-PR|RÜCKFRAGE|RUECKFRAGE|ANTWORT|FEATURE-NEU|FEATURE|AUFTRAEGE|AUFTRÄGE|AUFTRAG|FRAGEN|BEZUG|WISSEN|VORSCHLAG|KACHEL|UMDESIGN|PR(?:Ü|UE)FUNG)((?:[ \t]|[*_`~])*:)/gimu;
 /** Zeilenumbrüche vereinheitlichen (\r, \u0085, \u2028, \u2029 → \n), damit „^“ jede Zeile trifft, die ein Modell als Zeile sieht. */
 export const zeilenEinheitlich = (t) => String(t).replace(/\r\n?|[\u0085\u2028\u2029\u000b\u000c]/g, "\n");
 /** Steuerzeilen und Grenzen in fremdem Text entschärfen (für Projektregeln in Aufträgen, Chats und Prüfungen). */

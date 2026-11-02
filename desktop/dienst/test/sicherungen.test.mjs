@@ -6,7 +6,7 @@ import { Readable } from "node:stream";
 import os from "node:os";
 import path from "node:path";
 import { deflateRawSync } from "node:zlib";
-import { sicherungsName, freierName, uebersicht, sicherungenLampe, aufbauPruefen, aufbauArtefakt, zipEinzeln } from "../lib/sicherungen.mjs";
+import { sicherungsName, freierName, uebersicht, sicherungenLampe, aufbauPruefen, aufbauArtefakt, zipEinzeln, AUFBAU_MUSTER, aufbauFilter, crc32 } from "../lib/sicherungen.mjs";
 import { sicherNeu } from "../lib/projektordner.mjs";
 
 test("Name mit Datum, nie überschreiben, Übersicht", () => {
@@ -58,10 +58,10 @@ test("Aufbau der Datenbank: nur erwartete Form, Zugangsdaten gefiltert", () => {
 });
 
 /** Kleines ZIP mit einer Datei (wie GitHub-Artefakte: deflate). */
-function zip(name, inhalt, { methode = 8, groesse = null } = {}) {
+function zip(name, inhalt, { methode = 8, groesse = null, crc = null } = {}) {
   const roh = Buffer.from(inhalt); const daten = methode === 8 ? deflateRawSync(roh) : roh; const n = Buffer.from(name);
   const lokal = Buffer.alloc(30); lokal.writeUInt32LE(0x04034b50, 0); lokal.writeUInt16LE(methode, 8); lokal.writeUInt32LE(daten.length, 18); lokal.writeUInt32LE(groesse ?? roh.length, 22); lokal.writeUInt16LE(n.length, 26);
-  const cd = Buffer.alloc(46); cd.writeUInt32LE(0x02014b50, 0); cd.writeUInt16LE(methode, 10); cd.writeUInt32LE(daten.length, 20); cd.writeUInt32LE(groesse ?? roh.length, 24); cd.writeUInt16LE(n.length, 28); cd.writeUInt32LE(0, 42);
+  const cd = Buffer.alloc(46); cd.writeUInt32LE(0x02014b50, 0); cd.writeUInt32LE(crc ?? crc32(roh), 16); cd.writeUInt16LE(methode, 10); cd.writeUInt32LE(daten.length, 20); cd.writeUInt32LE(groesse ?? roh.length, 24); cd.writeUInt16LE(n.length, 28); cd.writeUInt32LE(0, 42);
   const vorne = Buffer.concat([lokal, n, daten]);
   const ende = Buffer.alloc(22); ende.writeUInt32LE(0x06054b50, 0); ende.writeUInt16LE(1, 8); ende.writeUInt16LE(1, 10); ende.writeUInt32LE(46 + n.length, 12); ende.writeUInt32LE(vorne.length, 16);
   return Buffer.concat([vorne, cd, n, ende]);
@@ -75,6 +75,8 @@ test("ZIP: genau eine Datei, Größe beim Entpacken begrenzt (keine ZIP-Bombe)",
   assert.throws(() => zipEinzeln(bombe, "datenbank-aufbau.json", 1024 * 1024), /zu groß|Unerwarteter/);
   assert.throws(() => zipEinzeln(zip("datenbank-aufbau.json", "0".repeat(5000)), "datenbank-aufbau.json", 1000), /zu groß/);
   assert.throws(() => zipEinzeln(Buffer.from("kein zip"), "datenbank-aufbau.json", 1000), /Unerwarteter/);
+  assert.throws(() => zipEinzeln(zip("datenbank-aufbau.json", "abc", { crc: 12345 }), "datenbank-aufbau.json", 1000), /Prüfsumme/);
+  assert.equal(crc32(Buffer.from("123456789")), 0xcbf43926);
 });
 
 test("Artefakt „datenbank-aufbau“: nur genau dieses, als ZIP über gh api, Größe begrenzt", async () => {
@@ -108,4 +110,28 @@ test("Ablauf „Datenbank“: Aufbau als Artefakt nur bei privaten Repositories,
   assert.match(y, /retention-days: 7/);
   assert.match(y, /name: datenbank-aufbau/);
   assert.ok(!/DB_URL[^\n]*sicherung\//.test(y));
+});
+
+// Gleiche Proben wie der Abgleich mit Postgres 16 (2026-11-02, pg_temp.cs_ohne aus datenbank.yml: alle Ergebnisse gleich)
+const PROBEN = [
+  ["'eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoic2VydmljZSJ9.abcdefghijklmnop'::text", "'[ENTFERNT]'::text"], ["whsec_abcdefghijklmnop", "[ENTFERNT]"],
+  ["sk-abcdefghijklmnopqrstuvwxyz", "[ENTFERNT]"], ["sk-kurz", "sk-kurz"], ["Bearer abcdefghijklmnopqrstuvwxyz", "Bearer [ENTFERNT]"],
+  ["pw=abcd1234", "pw=[ENTFERNT]"], ["pwd: 'geheim99'", "pwd: '[ENTFERNT]'"], ["password = \"x1y2z3w4\"", "password = \"[ENTFERNT]\""],
+  ["api_key=abcdefgh", "api_key=[ENTFERNT]"], ["apikey:qwertzuiop", "apikey:[ENTFERNT]"], ["secret='s3cr3tvalue'", "secret='[ENTFERNT]'"],
+  ["postgres://u:p@h:5432/db", "[ENTFERNT]"], ["authorization: Bearer abcdefghijklmnopqrst", "authorization: [ENTFERNT] [ENTFERNT]"],
+  ["(now())::text", "(now())::text"], ["nextval('t_id_seq'::regclass)", "nextval('t_id_seq'::regclass)"], ["(auth.uid() = owner)", "(auth.uid() = owner)"],
+  ["upw=abcd", "upw=abcd"], ["sb_secret_abcdefghijkl und ghp_abcdefghijklmnopqrstuvwx", "[ENTFERNT] und [ENTFERNT]"],
+];
+test("Filter des Datenbank-Aufbaus: Ablauf und Werkstatt gleich (whsec_, sk-, pw/pwd/passwort/secret/apikey …)", async () => {
+  for (const [ein, aus] of PROBEN) assert.equal(aufbauFilter(ein), aus, ein);
+  assert.equal(aufbauFilter(null), null);
+  const y = await readFile(new URL("../vorlagen/_datenbank/datenbank.yml", import.meta.url), "utf8");
+  const fn = y.slice(y.indexOf("create function pg_temp.cs_ohne"), y.indexOf("\\$\\$;", y.indexOf("create function pg_temp.cs_ohne")));
+  // gleiche Muster in gleicher Reihenfolge (innerstes regexp_replace = erstes Muster)
+  let pos = -1;
+  for (const m of AUFBAU_MUSTER) { const i = fn.indexOf(m.sql); assert.ok(i > pos, m.sql); pos = i; }
+  assert.equal((fn.match(/regexp_replace\(/g) || []).length, AUFBAU_MUSTER.length);
+  // auch in der abgelegten Datei: jeder Wert gefiltert, JSON gültig
+  const r = aufbauPruefen(JSON.stringify({ regeln: [{ using: "k <> 'pw=abcd1234'", check: null }], tabellen: [{ standard: "'whsec_abcdefghijklmnop'::text" }] }));
+  assert.ok(!r.text.includes("abcd1234") && !r.text.includes("whsec_abc")); assert.doesNotThrow(() => JSON.parse(r.text));
 });

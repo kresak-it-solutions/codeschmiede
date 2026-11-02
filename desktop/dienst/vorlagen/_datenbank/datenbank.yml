@@ -6,7 +6,8 @@ name: Datenbank
 # GitHub › Settings › Environments ein. Die Umgebungen lassen nur ihren Zweig zu (main bzw. live), andere Zweige kommen nicht an den Zugang.
 # Was eingespielt ist und die Sicherung des Aufbaus (vor jedem Einspielen in Live) liegen in der Datenbank selbst im Schema „codeschmiede“
 # (nicht über die App erreichbar). Seit Codeschmiede 0.13.1 entsteht dabei zusätzlich eine GEFILTERTE Fassung (Funktionen nur mit Signatur und
-# Prüfsumme, Standardwerte und Regel-Ausdrücke ohne bekannte Schlüssel-/Passwort-/Token-/Verbindungs-Muster, keine Daten). Sie wird nur bei
+# Prüfsumme, Standardwerte und Regel-Ausdrücke ohne bekannte Schlüssel-/Passwort-/Token-/Verbindungs-Muster, keine Daten – gleiche Muster wie
+# AUFBAU_MUSTER in desktop/dienst/lib/sicherungen.mjs der Codeschmiede). Sie wird nur bei
 # PRIVATEN Repositories 7 Tage als Artefakt „datenbank-aufbau“ abgelegt; die Werkstatt des Admins legt sie in den Projektordner (sicherungen).
 # Jede Datei läuft in einer eigenen Transaktion: Fehler → nichts von ihr bleibt, nichts Weiteres läuft.
 # Grenzen: Eine Datei mit eigenem begin/commit hebt diese Klammer auf; „create index concurrently“ und „vacuum“ gehen hier nicht
@@ -146,11 +147,12 @@ jobs:
             # und Verbindungs-Mustern befreit ([ENTFERNT]). Die Verbindungsadresse steht nie darin.
             mkdir -p "$RUNNER_TEMP/sicherung"
             if q -c "create function pg_temp.cs_ohne(t text) returns text language sql immutable as \$\$
-                  select regexp_replace(regexp_replace(regexp_replace(regexp_replace(regexp_replace(t,
+                  select regexp_replace(regexp_replace(regexp_replace(regexp_replace(regexp_replace(regexp_replace(t,
                     'eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}', '[ENTFERNT]', 'g'),
-                    '(sb_secret_|sb_publishable_|sbp_|ghp_|gho_|ghu_|ghs_|ghr_|github_pat_|sk-ant-|sk-proj-|sk_live_|sk_test_|rk_live_|AKIA)[A-Za-z0-9_-]{8,}', '[ENTFERNT]', 'g'),
+                    '(sb_secret_|sb_publishable_|sbp_|ghp_|gho_|ghu_|ghs_|ghr_|github_pat_|sk-ant-|sk-proj-|sk_live_|sk_test_|rk_live_|whsec_|AKIA)[A-Za-z0-9_-]{8,}', '[ENTFERNT]', 'g'),
+                    'sk-[A-Za-z0-9_-]{20,}', '[ENTFERNT]', 'g'),
                     'bearer\s+[A-Za-z0-9._~+/=-]{12,}', 'Bearer [ENTFERNT]', 'gi'),
-                    '(password|passwort|kennwort|secret|token|api[_-]?key|service_role|authorization)([\x22'' ]*\s*[:=]\s*[\x22'' ]*)[^\x22''\s,;)]{6,}', '\1\2[ENTFERNT]', 'gi'),
+                    '\y(pw|pwd|pass|passwd|passwort|password|kennwort|secret|token|api[_-]?key|apikey|service_role|authorization)([\x22'' ]*\s*[:=]\s*[\x22'' ]*)[^\x22''\s,;)]{4,}', '\1\2[ENTFERNT]', 'gi'),
                     'postgres(ql)?://[^\s''\x22]+', '[ENTFERNT]', 'gi') \$\$;
                 select json_build_object(
                 'tabellen', (select json_agg(json_build_object('schema', c.table_schema, 'tabelle', c.table_name, 'spalte', c.column_name, 'typ', c.data_type, 'null', c.is_nullable, 'standard', pg_temp.cs_ohne(c.column_default)) order by c.table_schema, c.table_name, c.ordinal_position)
