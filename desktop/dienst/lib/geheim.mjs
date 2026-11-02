@@ -103,7 +103,7 @@ export function uebersetzungsDatei(rel) {
 }
 // Übersetzung genau des Begriffs (nur in UI-Dateien): {"password": "Passwort"}, {"apiKey": "API key"}
 const BEGRIFF = /^(passwort|password|kennwort|mot de passe|contraseña|token|secret|geheimnis|schlüssel|key|api[ -]?key|api[ -]?schlüssel|zugangsdaten|credentials?)$/i;
-// Namen für Pfade, Adressen, Bezeichner und Speicher-Schlüssel (tokenUrl, passwordResetPath, TOKEN_STORAGE_KEY, passwordInputId, secretName, tokenType)
+// Namen für Pfade, Adressen, Bezeichner und Speicher-Schlüssel (tokenUrl, passwordResetPath, TOKEN_STORAGE_KEY, secretName, tokenType; ein Einzelwort unter …Id wie passwordInputId = "password" zählt seit V1 bewusst)
 const VERWEIS_NAME = /(url|uri|path|route|endpoint|id|name|type|storage[_-]?key|field|header|param|cookie|prefix|event|column|table)$/i;
 // Sieht ein Teil wie ein Schlüssel aus? (≥ 16 Hex-Zeichen am Stück, oder ≥ 12 Zeichen aus Ziffern UND Buchstaben gemischt) – 5. Nachprüfung V1
 const SCHLUESSEL_TEIL = (t) => /[0-9a-f]{16,}/i.test(t) || t.split(/[^A-Za-z0-9]+/).some((x) => x.length >= 12 && /\d/.test(x) && /[A-Za-z]/.test(x));
