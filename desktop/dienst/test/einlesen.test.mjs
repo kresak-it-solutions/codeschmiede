@@ -101,7 +101,7 @@ test("Geheimnisse: negativ (keine Fehlalarme)", () => {
   for (const t of ["task-list desk-top sk-kurz", "const ghp = 1; // ghp_kurz", `VITE_SUPABASE_ANON_KEY=${jwt}`, "AKIA kein Schlüssel", "https://example.com/pfad", "-----BEGIN PUBLIC KEY-----"]) {
     assert.equal(geheimnisseZaehlen(t), 0, t);
   }
-  for (const n of ["src/env.js", "keys.md", "README.md", "monkey.js", ".envrc.md"]) assert.ok(!geheimeDatei(n), n);
+  for (const n of ["src/env.js", "keys.md", "README.md", "monkey.js", "envrc.md"]) assert.ok(!geheimeDatei(n), n);
 });
 
 test("Personendaten-Hinweise", () => {
@@ -280,6 +280,7 @@ test("Ablauf ohne Netz: ZIP → Prüfung → Einsortieren → Geheimnis-Prüfung
     const sh = async (befehl, args, o = {}) => {
       aufrufe.push([befehl, ...args].join(" "));
       if (befehl === "gh" && args[0] === "repo" && args[1] === "view") { if (!angelegt) throw new Error("nicht gefunden"); return { stdout: "PRIVATE\n" }; }
+      if (befehl === "gh" && args[0] === "api" && args.join(" ").includes("actions/permissions")) return { stdout: args.includes("PUT") ? "" : "false\n" };
       if (befehl === "gh" && args[0] === "api") return { stdout: "tester\n" };
       if (befehl === "gh" && args[0] === "repo" && args[1] === "create") { assert.ok(args.includes("--private") && !args.includes("--push") && !args.includes("--source")); angelegt = true; return { stdout: "" }; }
       if (befehl === "git" && args.includes("push")) { assert.ok(angelegt, "erst anlegen, dann hochladen"); return run("git", args.map((a) => (a.startsWith("https://github.com/") ? bare : a)), o); }
@@ -294,7 +295,9 @@ test("Ablauf ohne Netz: ZIP → Prüfung → Einsortieren → Geheimnis-Prüfung
     assert.deepEqual(liste.trim().split("\n").sort(), ["package.json", "src/App.jsx"]);
     assert.ok(!aufrufe.some((a) => /npm|node |install|run build/.test(a)), "kein Projekt-Code ausgeführt");
     const iCreate = aufrufe.findIndex((a) => a.startsWith("gh repo create")); const iSicht = aufrufe.findIndex((a, i) => i > iCreate && a.includes("visibility")); const iPush = aufrufe.findIndex((a) => a.includes(" push "));
-    assert.ok(iCreate >= 0 && iSicht > iCreate && iPush > iSicht, "anlegen → Sichtbarkeit prüfen → hochladen");
+    const iAus = aufrufe.findIndex((a) => a.includes("-X PUT") && a.includes("actions/permissions") && a.includes("enabled=false"));
+    const iAusPruef = aufrufe.findIndex((a, i) => i > iAus && a.includes("actions/permissions") && a.includes(".enabled"));
+    assert.ok(iCreate >= 0 && iSicht > iCreate && iAus > iSicht && iAusPruef > iAus && iPush > iAusPruef, "anlegen → Sichtbarkeit → Actions aus + geprüft → hochladen");
     assert.ok(aufrufe[iPush].includes("core.hooksPath=") && !aufrufe.some((a) => /git .*config (user|credential)/.test(a)), "Push ohne Hooks, keine gespeicherten Zugänge");
     assert.equal(createHash("sha256").update(await readFile(zipDatei)).digest("hex"), vorher);   // Original unverändert
     assert.ok(!(await readFile(path.join(po, "konzept", "eingelesen", "KONZEPT.md"), "utf8")).includes("SERVICE_ROLE"));
@@ -403,5 +406,76 @@ test("Befund 8: Repository erst anlegen, Sichtbarkeit prüfen – nicht privat �
     };
     await assert.rejects(repoEinlesen({ sh, ordner: code, keineHooks: tmp, projekt: { id: "x-projekt", name: "X" } }), /nicht privat/);
     assert.ok(!aufrufe.some((a) => a.includes(" push ")), "kein Hochladen");
+  } finally { await rm(tmp, { recursive: true, force: true }); }
+});
+
+
+test("N1/N3/N4: Zuweisungen mit Typ, Go, Backticks, Ersatzwert, *_KEY, PHP define, $-Passwörter – positiv", () => {
+  for (const [t, rel] of [
+    ['const apiKey: string = "abcd1234efgh";', "a.ts"], ['val password: String = "hunter2xy"', "a.kt"], ['password := "geheim123"', "m.go"],
+    ["const token = `abc123defg`;", "a.js"], ['const pw = process.env.DB_PASSWORD || "geheim123";', "a.js"], ['const x = process.env.PW ?? "geheim123";', "a.js"],
+    ['$pw = getenv("X") ?: "geheim123";', "a.php"], ['key = cfg["api_key"] || "abc123defg"', "a.js"],
+    ["SUPABASE_SERVICE_KEY=abcdefgh1234567890xyz", "x.ini"], ['OPENAI_KEY = "abcdefgh1234567890xyz"', "a.py"], ["define('DB_PASSWORD', 'geheim123');", "w.php"],
+    ["define(\"AUTH_SALT\", 'x7#kLm9!pQ2');", "w.php"], ['password = "$Ecret123"', "c.yml"], ['headers: { Authorization: "Basic dXNlcjpwYXNzd29yZDEyMw==" }', "a.js"],
+    [`SG.${"a".repeat(22)}.${"b".repeat(43)}`, "x.txt"], ['fetch(u, { headers: { Authorization: "Bearer abcdef1234567890xyz" } })', "a.js"]]) {
+    assert.ok(geheimnisseZaehlen(t, rel) >= 1, t);
+  }
+});
+
+test("N1/N3/N4: keine Fehlalarme in normalem Code", () => {
+  for (const [t, rel] of [
+    ["const token = `${prefix}-abc`;", "a.js"], ['const cache_key = "user-list";', "a.js"], ['{ password: "Passwort eingeben" }', "a.js"], ['passwordLabel: "Passwort"', "a.js"],
+    ['password: "$DB_PASSWORD"', "c.yml"], ['password: "%DB_PASSWORD%"', "c.yml"], ['const sortKey = "name";', "a.js"], ["interface X { token: string; }", "a.ts"],
+    ['const primary_key = "id"', "a.py"], ['const label = t.password || "Passwort";', "a.js"], ['const pwa = "manifest";', "a.js"], ['VITE_SUPABASE_ANON_KEY="eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoiYW5vbiJ9.abcdefghijklmnopqrstu"', ".env.example.txt"],
+    ['const publishableKey = "pk_test_abcdefghijklmnop12";', "a.js"], ['const pw = process.env.PW || "";', "a.js"], ['headers: { Authorization: `Bearer ${token}` }', "a.js"],
+    ["curl -H 'Authorization: Bearer YOUR_ACCESS_TOKEN'", "README.md"], ["define('WP_DEBUG', true);", "w.php"], ["Basic authentication is supported", "README.md"],
+    ['const key: string = props.key;', "a.ts"], ["password := os.Getenv(\"DB_PW\")", "m.go"]]) {
+    assert.equal(geheimnisseZaehlen(t, rel), 0, t);
+  }
+});
+
+test("N2/N7: .env* immer, weitere Geheim-Dateien", () => {
+  for (const n of [".env~", ".env copy", ".env2", ".env.js", ".env.ts", ".env.example", ".htpasswd", "AuthKey_ABC.p8", "prod.tfvars", "terraform.tfstate", "terraform.tfstate.backup"]) assert.ok(geheimeDatei(n), n);
+  for (const n of ["src/vite-env.d.ts", "src/env.js", "main.tf", "src/htpasswd.md"]) assert.ok(!geheimeDatei(n), n);
+});
+
+test("N7: Office-Makros, .settingcontent-ms, .wsc, .cab sind gefährlich", () => {
+  for (const p of ["a.docm", "a.xlsm", "a.pptm", "x.settingcontent-ms", "x.wsc", "x.cab"]) assert.ok(gefaehrlich(p), p);
+  for (const p of ["a.docx", "a.xlsx", "a.pptx"]) assert.equal(gefaehrlich(p), null, p);
+});
+
+test("N6: Doppelnamen im Ordner (Groß/Klein, NFC) → Abbruch", async () => {
+  const tmp = await mkdtemp(path.join(os.tmpdir(), "cs-einlesen-doppel-"));
+  try {
+    await writeFile(path.join(tmp, "Readme.md"), "a"); await writeFile(path.join(tmp, "README.md"), "b");
+    await assert.rejects(ordnerLesen(tmp), /Doppelter Name/);
+    await rm(path.join(tmp, "README.md")); await writeFile(path.join(tmp, "café.txt"), "a"); await writeFile(path.join(tmp, "café.txt"), "b");
+    await assert.rejects(ordnerLesen(tmp), /Doppelter Name/);
+  } finally { await rm(tmp, { recursive: true, force: true }); }
+});
+
+test("N5: GitHub Actions wird vor dem Hochladen abgeschaltet – geht das nicht, wird nichts hochgeladen; Abläufe stehen im Bericht", async () => {
+  const { repoEinlesen } = await import("../lib/repo.mjs");
+  const tmp = await mkdtemp(path.join(os.tmpdir(), "cs-einlesen-actions-"));
+  try {
+    const code = path.join(tmp, "code"); await mkdir(code); await writeFile(path.join(code, "a.js"), "1");
+    const { execFile } = await import("node:child_process"); const { promisify } = await import("node:util"); const run = promisify(execFile);
+    for (const fall of ["put-fehler", "bleibt-an"]) {
+      await rm(path.join(code, ".git"), { recursive: true, force: true });
+      const aufrufe = []; let angelegt = false;
+      const sh = async (b, a, o) => {
+        const z = [b, ...a].join(" "); aufrufe.push(z);
+        if (b === "gh" && a[1] === "view") { if (!angelegt) throw new Error("fehlt"); return { stdout: "PRIVATE\n" }; }
+        if (b === "gh" && a[1] === "create") { angelegt = true; return { stdout: "" }; }
+        if (z.includes("actions/permissions") && a.includes("PUT")) { if (fall === "put-fehler") throw new Error("403"); return { stdout: "" }; }
+        if (z.includes("actions/permissions")) return { stdout: "true\n" };
+        if (b === "gh") return { stdout: "tester" };
+        return run(b, a, o);
+      };
+      await assert.rejects(repoEinlesen({ sh, ordner: code, keineHooks: tmp, projekt: { id: "x-projekt", name: "X" } }), /Actions/);
+      assert.ok(!aufrufe.some((x) => x.includes(" push ")), `${fall}: kein Hochladen`);
+    }
+    const r = await pruefen(zipQuelle(zip([["p/.github/workflows/build.yml", "on: push"], ["p/.github/dependabot.yml", "x: 1"], ["p/a.js", "1"]])));
+    assert.deepEqual(r.bericht.workflows, [".github/workflows/build.yml"]);
   } finally { await rm(tmp, { recursive: true, force: true }); }
 });

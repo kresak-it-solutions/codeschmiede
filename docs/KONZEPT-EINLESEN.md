@@ -92,6 +92,26 @@ Das Original (ZIP bzw. Ordner) bleibt unverändert. Bricht das Einlesen ab, steh
 | 9 | Reste | Beim Start des Dienstes wird `<Daten>/einlesen/` geleert. |
 | 10 | Netzwerkpfade | `ws_einlesen_quelle` lehnt `\\Server\Freigabe` (auch `//…`, `\\?\UNC\…`) sofort mit klarer Meldung ab. |
 
+## Nachprüfung (02.11.2026, Ergebnis GELB, N1–N7)
+| Nr. | Befund | Umsetzung |
+|---|---|---|
+| N1 | Zuweisungen zu eng | `geheim.mjs` › ZUWEISUNG/`zuweisungenZaehlen`: optionale Typangabe vor dem „=“ (`const apiKey: string = "…"`, Kotlin `val password: String = "…"`), Backtick-Werte ohne `${` als Text, fester Ersatzwert nach `||`, `??`, `?:` – egal ob der geheime Name links (`const pw = … || "…"`) oder rechts steht (`process.env.PW ?? "…"`, `cfg["api_key"] || "…"`). Diese Ersatzwerte werden auch in Logs maskiert. |
+| N2 | `.env`-Namen | Alles, was mit `.env` beginnt (`.env~`, `.env copy`, `.env2`, `.env.js`, `.env.example` …), gilt als geheim (wie `heikleDatei`). Die Quell-Ausnahme (`vite-env.d.ts`, `env.js`) gilt nur für Namen, die nicht mit `.env` beginnen. |
+| N3 | Weitere Muster | Namen mit `_key`/`-key` (SUPABASE_SERVICE_KEY, OPENAI_KEY), Go `:=`, PHP `define('…PASSWORD/SECRET/KEY/TOKEN/SALT…', '…')`, `Authorization: … Bearer …` (Muster aus `geheim.mjs` wiederverwendet) und `Basic …`, SendGrid `SG.….…`. |
+| N4 | Platzhalter | `$VAR` und `%VAR%` gelten nur in Großschreibung als Platzhalter – ein Passwort wie `"$Ecret…"` zählt. |
+| N5 | GitHub Actions | Nach dem Anlegen und der Prüfung „privat“ schaltet die Werkstatt **GitHub Actions ab** (`PUT repos/{repo}/actions/permissions enabled=false`) und prüft das (`enabled == false`) – erst dann wird hochgeladen; geht das nicht, wird nichts hochgeladen. Assistent (Schritt „Repository“) und „Noch zu tun“ zeigen: „GitHub Actions ist aus. Einschalten erst nach der Aufgabe ‚Prüfungen und Regelwerk ergänzen‘.“ und listen die Abläufe (`.github/workflows/*.yml`) aus dem eingelesenen Projekt; Einschalten bei GitHub › Settings › Actions (Link). Geprüft: „Test & Live einrichten“ braucht **keine** Actions (Zweig `live` und Schutzregel nur über die GitHub-Schnittstelle) – darum dort kein eigener Einschalt-Knopf. Die Datenbank-Station und die GitHub-Prüfläufe der Stationen brauchen Actions; die gibt es erst nach dem Einschalten. |
+| N6 | Doppelnamen im Ordner | Wie bei ZIP (NFC, Groß/Klein) → Abbruch. |
+| N7 | Weitere Endungen | Gefährlich: `.docm .dotm .xlsm .xltm .xlam .pptm .potm .ppam .settingcontent-ms .wsc .cab`; geheim: `.htpasswd`, `*.p8`, `*.tfvars`, `*.tfstate(.backup)`. |
+
+**Gegen Fehlalarme in normalem Code:** In Code-Dateien zählen nur Werte in Anführungszeichen/Backticks; Beschriftungen aus reinen Wörtern
+(`password: "Passwort eingeben"`) zählen nicht; Namen mit `_key` nur bei langen Zufallswerten (≥ 16 Zeichen mit Buchstaben und Ziffern, ohne Leerzeichen –
+`cache_key = "user-list"` zählt nicht); öffentliche Schlüssel (anon, publishable, public, pk) und JWTs (die Rolle entscheidet) zählen nicht;
+Platzhalter (`${…}`, `{{…}}`, `$VAR`, `%VAR%`, `process.env…`, `your-…`, `Bearer YOUR_TOKEN`) zählen nicht.
+
+**Verbleibende Grenzen:** Base64- oder anders kodierte bzw. zusammengesetzte Schlüssel (`"sk-" + teil2`) werden nicht erkannt; Schlüssel in Binärdateien
+(Bilder, PDF, Office) nur, wenn sie als Klartext darin stehen; Beschriftungs-Ausnahme: ein Passwort, das nur aus Buchstaben und Leerzeichen besteht, wird in
+Code-Dateien nicht erkannt; die Erkennung ist eine Mustersuche – sie ersetzt nicht das Prüfen der Schlüssel durch den Admin vor dem Einschalten von Actions.
+
 ## Offen / bewusst nicht gebaut
 - Zuordnung je Eintrag der **obersten Ebene** (Datei oder Ordner), nicht je einzelner Datei in Unterordnern.
 - Eingelesene `CLAUDE.md`/`AGENTS.md` liegen zusätzlich im Code (Teil des Projekts); ob Claude Code sie in Aufträgen von selbst liest, hängt von Claude Code ab – die Rangfolge der Regeln im Auftrag gilt trotzdem.

@@ -173,7 +173,8 @@ begin
   insert into public.ws_aufgaben (projekt_id, titel, beschreibung, prioritaet, zustaendig, erstellt_von, geaendert_von)
   values (e.projekt_id, 'Prüfungen und Regelwerk ergänzen',
     'Das Projekt wurde eingelesen, ohne dass Prüfungen (GitHub-Ablauf „Prüfung“: Tests und Bauen), Regelwerk (AGENTS.md, CHANGELOG, Handbuch) '
-    || 'und Fehler-Melder eingebaut wurden. Bitte prüfen, was passt, und dann mit „In den Chat schicken“ › „Als Auftrag“ an die Werkstatt geben.',
+    || 'und Fehler-Melder eingebaut wurden. Bitte prüfen, was passt, und dann mit „In den Chat schicken“ › „Als Auftrag“ an die Werkstatt geben. '
+    || 'GitHub Actions ist aus (beim Einlesen abgeschaltet, damit keine Abläufe aus dem Projekt laufen) – erst nach dieser Aufgabe bei GitHub › Settings › Actions einschalten.',
     'hoch', (select b.id from public.ws_benutzer b where b.id = e.von), e.von, e.von);
   begin
     insert into public.ws_live_auftraege (projekt_id, art, von) values (e.projekt_id, 'einrichten', e.von);

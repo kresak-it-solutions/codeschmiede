@@ -199,6 +199,15 @@ export async function repoIstPrivat({ sh: shRoh, repo }) {
  * (die ergänzt ein eigener Auftrag). Keine vorhandene Git-Geschichte (ordner hat kein .git). Kein Projekt-Code wird ausgeführt (Hooks aus).
  * Der Zugang kommt nur für diesen Aufruf aus gh (Credential-Helfer im Wegwerf-Ordner); die Codeschmiede speichert keine Zugangsdaten.
  */
+/** GitHub Actions für das Repository abschalten und prüfen (enabled = false). Fehler → Ausnahme (nie still weitermachen). */
+export async function actionsAus({ sh, repo }) {
+  if (!repoOk(repo)) throw new Error("Ungültiges Repository");
+  try { await sh("gh", ["api", "-X", "PUT", `repos/${repo}/actions/permissions`, "-F", "enabled=false"]); }
+  catch { throw new Error(`GitHub Actions ließ sich für ${repo} nicht abschalten – nichts hochgeladen. Bitte bei GitHub › Settings › Actions „Disable actions“ wählen und neu einlesen.`); }
+  const stand = await sh("gh", ["api", `repos/${repo}/actions/permissions`, "--jq", ".enabled"]).then((r) => String(r.stdout).trim(), () => "");
+  if (stand !== "false") throw new Error(`GitHub Actions ist für ${repo} nicht nachweislich aus – nichts hochgeladen.`);
+}
+
 export async function repoEinlesen({ sh: shRoh, ordner, keineHooks, projekt, heute = new Date(), melde = () => {} }) {
   const sh = mitGrenze(shRoh);
   const name = repoName(projekt.id);
@@ -223,6 +232,9 @@ export async function repoEinlesen({ sh: shRoh, ordner, keineHooks, projekt, heu
   // Genau PRIVATE (nicht „internal“: das sehen alle Mitglieder der Enterprise) – geprüft wie repoIstPrivat, nur strenger
   const sicht = await sh("gh", ["repo", "view", repo, "--json", "visibility", "--jq", ".visibility"]).then((r) => String(r.stdout).trim().toUpperCase(), () => "");
   if (sicht !== "PRIVATE" || (await repoIstPrivat({ sh: shRoh, repo })) !== true) throw new Error(`${repo} ist bei GitHub nicht privat (oder nicht prüfbar) – nichts hochgeladen. Bitte bei GitHub prüfen.`);
+  // GitHub Actions VOR dem ersten Hochladen abschalten (Nachprüfung N5): Abläufe im eingelesenen Code (.github/workflows) liefen sonst beim Push
+  // auf GitHub los – das wäre doch ausgeführter Projekt-Code. Scheitert das Abschalten oder lässt es sich nicht bestätigen: nichts hochladen.
+  await actionsAus({ sh, repo });
   melde("Lade den ersten Stand hoch …");
   await sh("git", [...SICHER, "-c", "credential.helper=", "-c", "credential.helper=!gh auth git-credential", "push", "-q", `https://github.com/${repo}.git`, "main:main"],
     { cwd: ordner, maxBuffer: 50 * 1024 * 1024, timeout: 600000 });

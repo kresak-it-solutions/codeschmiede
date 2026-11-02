@@ -15,6 +15,13 @@ const ZIEL_NAMEN = { code: "Code", "code+doku": "Code + Doku", konzept: "Konzept
 const MB = 1024 * 1024;
 const kennungAus = (t) => String(t || "").replace(/\.zip$/i, "").toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40);
 const nameAus = (t) => String(t || "").replace(/\.zip$/i, "").replace(/[-_]+/g, " ").replace(/\s+/g, " ").trim().replace(/(^|\s)\S/g, (x) => x.toUpperCase()).slice(0, 80);
+const ACTIONS_TEXT = "GitHub Actions ist aus. Einschalten erst nach der Aufgabe ‚Prüfungen und Regelwerk ergänzen‘.";
+/** Abläufe aus dem eingelesenen Projekt (laufen nicht, solange GitHub Actions aus ist). */
+function Ablaeufe({ liste }) {
+  if (!liste?.length) return <p className="text-xs text-slate-500">Im eingelesenen Code liegen keine GitHub-Abläufe (.github/workflows).</p>;
+  return (<div className="text-xs"><p className="text-slate-500">Diese Abläufe aus dem eingelesenen Projekt laufen erst, wenn du GitHub Actions einschaltest – vorher ansehen:</p>
+    <ul className="font-mono mt-1">{liste.map((w) => <li key={w}>{w}</li>)}</ul></div>);
+}
 const kennungOk = (id) => /^[a-z0-9][a-z0-9-]{1,39}$/.test(id) && id !== "regeln" && !/^(con|prn|aux|nul|com[0-9]|lpt[0-9])$/.test(id);
 
 function Zeile({ ok, was, children }) {
@@ -226,10 +233,13 @@ export default function ProjektEinlesen({ projekte = [], toast, onClose, onFerti
             <Zeile ok was="Neu anlegen"><span className="font-mono text-xs">{repoName} · privat</span></Zeile>
             <Zeile ok was="Erster Stand">„Projekt eingelesen am {datum}“ auf main, danach Zweig live</Zeile>
             <Zeile ok was="Prüfungen und Regelwerk">werden als eigene Aufgabe ergänzt, nicht ungefragt eingebaut</Zeile>
+            <Zeile ok was="GitHub Actions">aus – wird vor dem ersten Hochladen abgeschaltet, damit kein Ablauf aus dem Projekt läuft</Zeile>
             <Zeile ok was="Testseite">per Knopf wie bei neuen Projekten (Cloudflare, kostenlos)</Zeile>
             <Zeile ok was="Datenbank">erst einmal keine, per Knopf nachholbar</Zeile>
             <Zeile ok was="Projektordner"><span className="font-mono text-xs">{ziel}</span></Zeile>
           </div>
+          <Hinweis art="orange">{ACTIONS_TEXT}</Hinweis>
+          <Ablaeufe liste={b?.workflows} />
           <p className="text-xs text-slate-500 flex gap-1.5"><Info className="w-4 h-4 shrink-0" aria-hidden="true" />Deine Werkstatt legt das Repository mit deiner GitHub-Anmeldung an. Vor dem Hochladen prüft sie den Code noch einmal auf Geheimnisse – findet sie etwas, bricht sie ab.</p>
         </>)}
 
@@ -269,6 +279,9 @@ export default function ProjektEinlesen({ projekte = [], toast, onClose, onFerti
                 <button type="button" className="underline inline-flex items-center gap-1" onClick={() => oeffneExtern("https://dash.cloudflare.com/?to=/:account/pages")}>Cloudflare › Pages › Einstellungen › Variablen<ExternalLink className="w-3.5 h-3.5" aria-hidden="true" /></button></li>}
               {(art === "web" || art === "handy") && <li>Testseite einrichten: „Anbindungen“ › „Testseite einrichten“ (Cloudflare, kostenlos).</li>}
               <li>Aufgabe „Prüfungen und Regelwerk ergänzen“ ansehen (Menü „Aufgaben“) und bei Bedarf als Auftrag geben.</li>
+              <li>{ACTIONS_TEXT} Danach bei GitHub einschalten:{" "}
+                <button type="button" className="underline inline-flex items-center gap-1" onClick={() => oeffneExtern(`https://github.com/${repoName}/settings/actions`)}>Settings › Actions<ExternalLink className="w-3.5 h-3.5" aria-hidden="true" /></button>
+                <div className="mt-1"><Ablaeufe liste={b?.workflows} /></div></li>
             </ul>
           </div>
         </>)}

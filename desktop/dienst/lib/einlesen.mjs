@@ -12,7 +12,7 @@ import { lstat, readdir, readFile, realpath, open } from "node:fs/promises";
 import { constants as FS } from "node:fs";
 import path from "node:path";
 import { crc32 } from "./sicherungen.mjs";
-import { ohneGeheimnisse, zuweisungenZaehlen } from "./geheim.mjs";
+import { ohneGeheimnisse, zuweisungenZaehlen, BEARER } from "./geheim.mjs";
 import { linksNachAussen, gefaehrlicheAttribute } from "./rechte.mjs";
 
 export const GRENZEN = {
@@ -136,7 +136,7 @@ export function ausschluss(rel, { hatCargo = () => false } = {}) {
 /** Ganzer Ordner fällt weg (beim Durchlaufen nicht betreten). */
 export const ordnerAusgeschlossen = (name) => AUSSCHLUSS_ORDNER.has(name);
 
-const GEFAEHRLICH = /\.(exe|dll|bat|cmd|ps1|psm1|psd1|scr|msi|msp|com|pif|vbs|vbe|jse|wsf|wsh|hta|cpl|reg|jar|lnk|url|webloc|desktop|inf|sys|scf|appref-ms|gadget|application|msc|so|dylib|bin|run|app|pkg|dmg|deb|rpm|apk|ipa|command|iso|img|vhd|vhdx|chm|msix|msixbundle|appx|appxbundle|xll|library-ms|scpt|scptd|workflow|ws|vb)$/i;
+const GEFAEHRLICH = /\.(exe|dll|bat|cmd|ps1|psm1|psd1|scr|msi|msp|com|pif|vbs|vbe|jse|wsf|wsh|hta|cpl|reg|jar|lnk|url|webloc|desktop|inf|sys|scf|appref-ms|gadget|application|msc|so|dylib|bin|run|app|pkg|dmg|deb|rpm|apk|ipa|command|iso|img|vhd|vhdx|chm|msix|msixbundle|appx|appxbundle|xll|library-ms|scpt|scptd|workflow|ws|vb|docm|dotm|xlsm|xltm|xlam|pptm|potm|ppam|settingcontent-ms|wsc|cab)$/i;
 // Skripte, die Windows (Windows Script Host) in Autostart-/Startmenü-Ordnern selbst startet
 const AUTOSTART = /(^|\/)(start menu|startmenü|startmenu|startup|autostart|autorun)(\/|$)/i;
 /** Ausführbare Datei oder Verknüpfung (nach Name oder Inhalt: Windows-, Linux-, Mac-Programm). Gibt den Grund oder null. */
@@ -160,8 +160,11 @@ export function geheimeDatei(rel) {
   const n = rel.split("/").pop().toLowerCase();
   if (/(^|\/)\.docker\/config\.json$/i.test(rel)) return true;
   // env-Dateien (.env, .env.local, prod.env, app_env.txt …); Quell- und Typ-Dateien wie vite-env.d.ts oder env.js prüft der Inhalt
+  // Alles, was mit „.env“ beginnt (.env~, .env copy, .env2, .env.js …), wie heikleDatei – die Quell-Ausnahme gilt nur für andere Namen
+  if (n.startsWith(".env")) return true;
+  if (/^\.htpasswd$/.test(n) || /\.(p8|tfvars|tfstate)(\.backup|\.json)?$/.test(n)) return true;
   const quelle = /\.(m?[jt]sx?|cjs|d\.ts|vue|svelte|py|rs|go)$/.test(n);
-  return (/(^|[.\-_])env([.\-_]|$)/.test(n) && !quelle) || n === ".envrc" || /^\.(npmrc|pypirc|yarnrc\.yml)$/.test(n) || /\.(pem|key|p12|pfx|jks|keystore|ppk|kdbx|asc|gpg)$/.test(n) || /^id_(rsa|dsa|ecdsa|ed25519)(\.pub)?$/.test(n)
+  return (/(^|[.\-_])env([.\-_]|$)/.test(n) && !quelle) || /^\.(npmrc|pypirc|yarnrc\.yml)$/.test(n) || /\.(pem|key|p12|pfx|jks|keystore|ppk|kdbx|asc|gpg)$/.test(n) || /^id_(rsa|dsa|ecdsa|ed25519)(\.pub)?$/.test(n)
     || /^(\.netrc|\.git-credentials|\.pgpass|credentials(\.json)?|service-account.*\.json|secrets?\.(json|ya?ml|toml))$/.test(n);
 }
 // Schlüssel-Muster im Inhalt (Zählung, nie Ausgabe). Supabase: nur service_role-JWT (der anon-Schlüssel ist öffentlich).
@@ -175,6 +178,8 @@ const SCHLUESSEL = [
   /(?<![A-Za-z0-9])AIza[0-9A-Za-z_-]{35}/g,
   /(?<![A-Za-z0-9])glpat-[A-Za-z0-9_-]{20,}/g,
   /https:\/\/hooks\.slack\.com\/services\/[A-Za-z0-9/_-]{20,}/g,
+  /(?<![A-Za-z0-9])SG\.[\w-]{16,}\.[\w-]{16,}/g,                                   // SendGrid
+  /Authorization["']?\s*[:=]\s*["'`]?Basic\s+[A-Za-z0-9+/]{12,}={0,2}/gi,           // Basic-Zugang im Kopf
   /(?<![A-Za-z0-9])(?:sb_secret_|sbp_)[A-Za-z0-9_-]{16,}/g,
   /(?<![A-Za-z0-9])(?:sk|rk)_live_[A-Za-z0-9]{16,}/g,
   /(?<![A-Za-z0-9])whsec_[A-Za-z0-9]{16,}/g,
@@ -199,6 +204,8 @@ export function alsText(buf) {
 export function geheimnisseZaehlen(text, rel = "") {
   const t = Buffer.isBuffer(text) ? alsText(text) : String(text || "");
   let n = zuweisungenZaehlen(t, rel);
+  // Bearer-Token: Muster aus geheim.mjs (ohneGeheimnisse), Platzhalter in Großbuchstaben (YOUR_TOKEN_HERE) zählen nicht
+  for (const m of t.matchAll(new RegExp(BEARER.source, "g"))) if (!/^Bearer\s+[A-Z_<>{}$-]+=*$/.test(m[0])) n++;
   for (const m of SCHLUESSEL) n += (t.match(m) || []).length;
   for (const m of t.matchAll(JWT)) {
     try { const j = JSON.parse(Buffer.from(m[1], "base64url").toString("utf8")); if (j && typeof j === "object" && String(j.role || "").toLowerCase() === "service_role") n++; } catch { /* kein JWT */ }
@@ -370,11 +377,13 @@ export async function pruefen(eintraege, { links = [], git = false, ausgeschloss
   }
   const technik = technikErkennen(dateien.map((d) => d.rel), (rel) => technikDateien.get(rel) || null);
   const regeln = dateien.filter((d) => /^(CLAUDE|AGENTS)\.md$/i.test(d.rel)).map((d) => d.rel);
+  // GitHub-Abläufe im eingelesenen Code: laufen erst, wenn der Admin GitHub Actions nach der Prüfung selbst einschaltet (N5)
+  const workflows = dateien.filter((d) => /^\.github\/workflows\/[^/]+\.ya?ml$/i.test(d.rel)).map((d) => d.rel).slice(0, 50);
   const kurzListe = (l, n = 200) => l.slice(0, n);
   const bericht = {
     dateien: dateien.length, groesse: summe, technik: technik.technik, art: technik.art, git: gitDa,
     ausgeschlossen, gefaehrlich: kurzListe(gefaehrlicheDateien), geheim: kurzListe(geheim), personen: kurzListe(personen),
-    links: kurzListe(links.map((l) => String(l).slice(0, 200)), 50), regeln,
+    links: kurzListe(links.map((l) => String(l).slice(0, 200)), 50), regeln, workflows,
     einheiten: [...einheiten.values()].sort((a, b) => (a.ordner === b.ordner ? a.name.localeCompare(b.name) : a.ordner ? -1 : 1)).slice(0, 400),
     mehr: { gefaehrlich: Math.max(0, gefaehrlicheDateien.length - 200), geheim: Math.max(0, geheim.length - 200), personen: Math.max(0, personen.length - 200) },
   };
@@ -577,7 +586,7 @@ export async function ordnerLesen(wurzel, { grenzen = GRENZEN } = {}) {
   const st0 = await lstat(echt);
   if (!st0.isDirectory()) throw new Error("Die Quelle ist kein Ordner");
   const eintraege = []; const links = []; let n = 0; let git = false;
-  const ausgeschlossen = {};
+  const ausgeschlossen = {}; const namen = new Set();
   const gehe = async (o, rel) => {
     for (const e of (await readdir(o, { withFileTypes: true })).sort((a, b) => a.name.localeCompare(b.name))) {
       if (++n > grenzen.eintraegeMax) throw new Error(`Zu viele Dateien im Ordner (mehr als ${grenzen.eintraegeMax}) – nichts übernommen`);
@@ -592,6 +601,10 @@ export async function ordnerLesen(wurzel, { grenzen = GRENZEN } = {}) {
       if (!st.isFile()) { links.push(`${r} (Sondereintrag)`); continue; }
       if (st.nlink > 1) { links.push(`${r} (harter Link)`); continue; }
       if (pfadFehler(r)) { links.push(`${r.slice(0, 120)} (unzulässiger Name)`); continue; }
+      // Doppelnamen wie bei ZIP (NFC, Groß/Klein): unter Windows/macOS würde eine Datei die andere überschreiben
+      const schluessel = r.normalize("NFC").toLowerCase();
+      if (namen.has(schluessel)) throw new Error(`Doppelter Name im Ordner („${kurzName(r)}“, nur Groß/Klein oder Schreibweise verschieden) – nichts übernommen`);
+      namen.add(schluessel);
       const groesse = st.size;
       const kennung = { size: groesse, dev: st.dev, ino: st.ino };
       eintraege.push({ rel: r, groesse, lesen: async (max = grenzen.maxJe) => dateiLesen(p, max, kennung) });
