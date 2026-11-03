@@ -219,6 +219,38 @@ Jeder Bau-Auftrag bekommt `docs/stand.md` und `docs/entscheidungen.md` als Anhan
     - Werkstatt-PC nur beim Übernehmen auf einen eigenen PC
     - Wiedereröffnung als Entwurf
 
+## 7g. Sechste Prüfung (GELB, 03.11.2026) – behoben
+
+- **N13 (fremder Git-Zweig):**
+  - Jede Runde bekommt ihren eigenen Zweig `feature/cs-<id>-r<runde>-<titel>`. Bei jedem Zurück auf Entwurf zählt die Datenbank die Runde hoch und leert
+    `zweig`, `pr_nummer`, `letzter_commit`, `pruefung.lokal`, `zweig_pc` und den PC. Das gilt auch beim Rücksprung durch eine neue Nachricht in „nacharbeit“
+    und beim Neuaufnehmen.
+  - Beim Wechsel `laeuft` → `wartet` leert die Datenbank Zweig, PR, Commit und lokalen Befund. Der nächste Lauf beginnt dann frisch, egal auf welchem PC.
+  - **Dienst** (`lib/zweig.mjs`):
+    - Ist in der Datenbank kein Zweig eingetragen, legt der Dienst ihn immer frisch von `origin/main` an (`worktree add -B`). Einen gleichnamigen Zweig bei GitHub
+      löscht er vorher mit `--force-with-lease` gegen den gesehenen Stand. Alte lokale Ordner ersetzt er.
+    - Weitergebaut wird nur, wenn `zweig_pc` ein eigener PC ist und der Kopf bei GitHub genau `letzter_commit` ist. Ohne `letzter_commit` darf es bei GitHub keinen
+      Zweig geben, oder er steht genau auf dem lokalen Stand.
+    - Nach dem Lauf muss bei GitHub genau der lokale Stand liegen.
+    - Sonst gilt „Zweig bei GitHub verändert – Auftrag wird neu aufgesetzt“, und der Dienst ruft `ws_auftrag_neu_aufnehmen`.
+  - **Sicherheitsprüfung:** Sie nimmt Zweig und PR aus der Datenbank und prüft nur, wenn der Zweig genau auf `letzter_commit` steht. Die Feature-Prüfung prüft
+    weiter gegen den sicherheitsgeprüften Stand.
+- **N14:** Ein neuer Lauf (Übernehmen aus „wartet“) bekommt nichts, was nach der Freigabe geschrieben wurde. Nur das Fortsetzen durch denselben PC bekommt die
+  Rückfrage-Paare. `laeuft` → `wartet` mit Werkstatt-Rückfragen seit der Freigabe macht den Auftrag zum Entwurf.
+  - **Abweichung:** Es zählen nur Rückfragen (`art = frage`), keine Hinweistexte wie die Abo-Limit-Meldung. Sonst würde jedes zweite Limit den Auftrag zum
+    Entwurf machen. Hinweistexte gehen ohnehin nicht in den Bau.
+- **N15:**
+  - `ws_auftrag_neu_aufnehmen(auftrag, grund)` gilt für „frage“ und „nacharbeit“; der haltende PC darf auch in „laeuft“, dann mit Grund.
+  - Bau-Aufträge werden zum neuen Entwurf, Hand-Änderungen gehen wieder nach „wartet“, jeweils mit frischem Zweig.
+  - **Wer darf:**
+    - der haltende PC, mit Grund
+    - die Person, die den Auftrag gestellt hat, wenn der PC 24 Stunden aus ist
+    - der Admin auch früher, mit Begründung (mindestens 10 Zeichen)
+  - Antworten: `entwurf`, `wartet`, `zu_frueh` oder `stand_passt_nicht`.
+  - Der Eintrag steht im Protokoll und als Systemnachricht am Auftrag, damit ihn auch die Person sieht, die den Auftrag gestellt hat.
+  - In der Zentrale gibt es den Knopf **„Neu aufnehmen“** mit Erklärung.
+  - Der Dienst prüft eigene Aufträge höchstens alle 10 Minuten selbst.
+
 ## 8. Bewusst nicht in 0.19.0 (offen)
 
 - Live-Tor: Datenschutzerklärung, Impressum und aktiver Fehler-Melder als Vorbedingung für Live (§14).
@@ -247,8 +279,11 @@ bestätigte Abweichung auf oder globale Regeln nicht bestätigt, gelb = bestäti
 **„Bitte Codeschmiede aktualisieren“:** Eine Werkstatt mit einer Programmversion vor 0.19.0 übernimmt keine Aufträge mehr. Programm aktualisieren, die Werkstatt
 meldet die neue Version beim Start selbst. Aufträge, deren Freigabe nicht mehr passt (z. B. Anhang gelöscht), stehen danach wieder als Entwurf in der Zentrale.
 
-**Werkstatt-PC weg:** Ein Auftrag in Rückfrage oder Nacharbeit bleibt bei dem PC, der ihn gebaut hat. Ist dieser PC 24 Stunden aus, holt die Werkstatt der Person,
-die den Auftrag gestellt hat, ihn als neuen Entwurf zurück (frischer Zweig, neue Prüfung, neues „Bauen“). Den alten Pull Request bei GitHub bitte schließen.
+**Werkstatt-PC weg – „Neu aufnehmen“:** Ein Auftrag in Rückfrage oder Nacharbeit bleibt bei dem PC, der ihn gebaut hat. Ist dieser PC 24 Stunden aus, holt
+die Werkstatt der Person, die den Auftrag gestellt hat, ihn als neuen Entwurf zurück (frischer Zweig, neue Prüfung, neues „Bauen“). Von Hand geht das am Auftrag
+mit **„Neu aufnehmen“**: für die Person, die den Auftrag gestellt hat, nach 24 Stunden; für den Admin jederzeit, mit Begründung, wenn der PC noch angemeldet ist.
+Hand-Änderungen warten danach wieder auf eine Werkstatt. Den alten Pull Request bei GitHub bitte schließen. Meldet die Werkstatt „Zweig bei GitHub verändert –
+Auftrag wird neu aufgesetzt“, hat jemand am Zweig vorbei etwas hochgeladen. Der Auftrag kommt dann als neuer Entwurf zurück.
 
 **Einspielen:** Datenbank 0063 spielt Gerhard selbst ein (steht bewusst nicht in `supabase/einspielen.txt`). Bis dahin arbeitet der Dienst wie bisher
 (ohne Phasen, ohne Entwürfe); die Doku-Prüfung im Diff gilt schon.

@@ -22,6 +22,7 @@ import { createClient } from "@supabase/supabase-js";
 import { ohneGeheimnisse, kuerzen, heikleDatei } from "./lib/geheim.mjs";
 import { waehleModell } from "./lib/modell.mjs";
 import { werteAus, zweigName, bausteinBlock } from "./lib/ergebnis.mjs";
+import { zweigVorbereiten, zweigHochgeladenPruefen, ZweigVeraendert, ZWEIG_VERAENDERT } from "./lib/zweig.mjs";
 import { findeAboLimits, aboEntscheidung, limitAusText } from "./lib/abo.mjs";
 import { anhaengeLaden, anhaengeText } from "./lib/anhaenge.mjs";
 import { pruefErgebnis } from "./lib/pruefung.mjs";
@@ -461,16 +462,11 @@ async function arbeitsordner(projekt, auftrag) {
   // Ein Auftrag, der vor dem Umzug in der alten Kopie begonnen hat, arbeitet dort zu Ende
   const altAuftrag = path.join(altOrdner(cfg.daten_ordner, projekt.id), `auftrag-${auftrag.id}`);
   const { repo, arbeit, keineHooks } = await arbeitsordnerRepo(projekt, { altErlaubt: await existiert(altAuftrag) });
-  await git(repo, "fetch", "origin", "main");
   const ordner = path.join(arbeit, `auftrag-${auftrag.id}`);
-  const zweig = zweigName(auftrag.id, auftrag.titel);
-  if (!(await existiert(ordner))) {
-    // Gibt es den Zweig schon bei GitHub (z. B. Nacharbeit nach dem Umzug in den Projektordner)? Dann von dort weiter – nie neu von main
-    let basis = "origin/main";
-    try { await git(repo, "fetch", "origin", `+refs/heads/${zweig}:refs/remotes/origin/${zweig}`); basis = `origin/${zweig}`; } catch { /* Zweig gibt es noch nicht */ }
-    try { await git(repo, "worktree", "add", "-b", zweig, ordner, basis); }
-    catch { await git(repo, "worktree", "add", ordner, zweig); } // Zweig gibt es schon lokal (Fortsetzung)
-  }
+  // Sechste Prüfung (N13): neuer Lauf immer frisch von origin/main (Zweig je Runde); weiter nur auf eigenem Zweig mit Kopf = letzter_commit
+  const { data: meine } = await db.from("ws_werkstatt_pcs").select("id").eq("benutzer_id", cfg.user_id);
+  const { zweig } = await zweigVorbereiten({ git, repo, ordner, zweigNeu: zweigName(auftrag.id, auftrag.titel, auftrag.hand ? 0 : auftrag.kritik?.runde),
+    auftrag, eigenePcs: [...new Set([pcId, ...(meine || []).map((p) => p.id)])], existiert, rm });
   // Nach Anlegen bzw. vor jeder Fortsetzung: .git-Datei des Arbeitsordners und Verknüpfungen prüfen (R3/R5)
   await gitPruefen(repo, keineHooks, projekt, ordner);
   await linksPruefen(ordner);
@@ -684,7 +680,7 @@ async function fuehreAus(auftrag, { fortsetzen = false, nacharbeit = false } = {
       melde("status", FREIGABE_FEHLT, auftrag.id); return;
     }
     // nur Nachrichten bis zur Freigabe (danach nur Antworten auf Rückfragen der Werkstatt)
-    nachrichten = nachrichtenBisFreigabe(nachrichten || [], auftrag.kritik?.freigabe_nachricht);
+    nachrichten = nachrichtenBisFreigabe(nachrichten || [], auftrag.kritik?.freigabe_nachricht, { neuerLauf: !fortsetzen && !nacharbeit });
     // Phase-9-Sperre (0.19.0): die Datenbank lehnt „laeuft“ ohne freigegebene Phase 9 ab – dann wird hier auch nichts gebaut (kein stilles Weiterlaufen)
     const { data: lauf0, error: eLauf } = await db.from("ws_auftraege").update({ stand: "laeuft", werkstatt_pc: pcId, modell, zweig }).eq("id", auftrag.id).select("stand").maybeSingle();
     if (eLauf) {
@@ -832,6 +828,8 @@ async function fuehreAus(auftrag, { fortsetzen = false, nacharbeit = false } = {
       melde("status", "Rückfrage gestellt", auftrag.id);
     } else if (r.art === "pr") {
       let commit = null; try { commit = await git(ordner, "rev-parse", "HEAD"); } catch { /* egal */ }
+      // Sechste Prüfung (N13): bei GitHub muss genau dieser Stand liegen – sonst hat jemand den Zweig verändert
+      await zweigHochgeladenPruefen(git, ordner, zweig, commit);
       // Ehrliche Fertig-Meldung (0.19.0): steht nicht dabei, was nicht getestet wurde, ergänzt die Werkstatt das
       await nachricht(auftrag.id, "ergebnis", auftrag.hand ? (r.text || "Fertig.") : mitNichtGetestet(r.text || "Fertig."));
       // Doku-Pflicht im Diff (Kernpflicht): stand.md, Changelog/versionen, entscheidungen.md/ideen.md bei vorgemerkten Einträgen – sonst Nacharbeit
@@ -877,6 +875,13 @@ async function fuehreAus(auftrag, { fortsetzen = false, nacharbeit = false } = {
     }
   } catch (e) {
     const text = ohneGeheimnisse(e?.message || String(e));
+    if (e instanceof ZweigVeraendert) {
+      // N13: nicht auf fremdem Inhalt weiterbauen – Auftrag neu aufsetzen (Bau-Auftrag: neuer Entwurf mit frischem Zweig, Hand: wieder „wartet“)
+      await log(auftrag.id, "fehler", text).catch(() => {});
+      const { data: neu, error: en } = await db.rpc("ws_auftrag_neu_aufnehmen", { p_auftrag: auftrag.id, p_grund: ZWEIG_VERAENDERT });
+      melde(en ? "fehler" : "status", en ? `${ZWEIG_VERAENDERT}: ${kuerzen(ohneGeheimnisse(en.message), 160)}` : `${ZWEIG_VERAENDERT} (${neu})`, auftrag.id);
+      return;
+    }
     if (e instanceof OrdnerFehlt) {
       // Festplatte zwischendurch abgezogen o. Ä.: nichts ist passiert – neuer Auftrag zurück in die Warteschlange, Rückfrage/Nacharbeit bleibt liegen
       if (!fortsetzen && !nacharbeit) await db.from("ws_auftraege").update({ stand: "wartet", werkstatt_pc: null }).eq("id", auftrag.id).eq("stand", "laeuft").then(() => {}, () => {});
@@ -2038,6 +2043,8 @@ async function station(a) {
     const zweigStand = await git(ordner, "rev-parse", "HEAD");
     let mainVorher = null;
     if (art === "sicherheit") {
+      // N13: Zweig und Pull Request aus der Datenbank – der Stand muss genau letzter_commit sein (den die Werkstatt hochgeladen und gemeldet hat)
+      if (!a.letzter_commit || zweigStand !== a.letzter_commit) { await rot("Zweig bei GitHub verändert", `Sicherheitsprüfung: Der Zweig ${a.zweig} steht nicht auf dem gemeldeten Stand ${String(a.letzter_commit || "–").slice(0, 7)} – nichts wird geprüft.`); return; }
       const falsch = await prPasst(projekt, a, zweigStand);
       if (falsch) { await rot(falsch, `Sicherheitsprüfung: ${falsch}.`); return; }
     } else {
@@ -3508,6 +3515,23 @@ async function kritikArbeit() {
   return true;
 }
 
+// Sechste Prüfung (N15): eigene Aufträge in „frage“ oder „nacharbeit“, die ein PC hält, der weg ist, als neuen Entwurf zurückholen
+// (die Datenbank prüft die Zeitgrenze: aus und 24 Stunden ohne Lebenszeichen). Höchstens alle 10 Minuten.
+let neuAufnehmenZuletzt = 0;
+async function neuAufnehmenPruefen(pcIds) {
+  if (Date.now() - neuAufnehmenZuletzt < 10 * 60 * 1000) return;
+  neuAufnehmenZuletzt = Date.now();
+  const { data } = await db.from("ws_auftraege").select("id, werkstatt_pc").eq("erstellt_von", cfg.user_id).in("stand", ["frage", "nacharbeit"]).limit(20);
+  for (const a of data || []) {
+    if (pcIds.includes(a.werkstatt_pc)) continue;
+    const { data: neu } = await db.rpc("ws_auftrag_neu_aufnehmen", { p_auftrag: a.id }).then((x) => x, () => ({}));
+    if (neu === "entwurf" || neu === "wartet") {
+      await log(a.id, "info", `Werkstatt-PC nicht mehr da – Auftrag neu aufgenommen (${neu === "entwurf" ? "neuer Entwurf, frischer Zweig" : "Hand-Änderung wartet wieder"})`);
+      melde("status", "Auftrag neu aufgenommen", a.id);
+    }
+  }
+}
+
 async function naechsterAuftrag() {
   if (laeuft || stopp) return;
   if (await miniAnfrage()) return;   // Limits-Knopf: vorgemerkte Mini-Anfrage (0050)
@@ -3546,17 +3570,12 @@ async function naechsterAuftrag() {
   }
   // 1b. Nacharbeit aus einer Prüfung (bevorzugt eigener PC, sonst jede Werkstatt mit Recht in der Gruppe)
   // Nur der PC, der den Auftrag gebaut hat (bzw. die Person, die ihn gestellt hat) – nie fremden Code auf anderen PCs (Prüfung O1)
+  await neuAufnehmenPruefen(pcIds);
   const { data: nach } = await db.from("ws_auftraege").select("*").eq("stand", "nacharbeit").order("id").limit(10);
   for (const a of nach || []) {
     // fünfte Prüfung (N10a): Nacharbeit nur auf dem PC, der gebaut hat. Ist er weg, holt der Dienst der Person, die den Auftrag gestellt hat,
     // ihn als neuen Entwurf zurück (die Datenbank prüft die Zeitgrenze: 24 Stunden ohne Lebenszeichen)
-    if (!pcIds.includes(a.werkstatt_pc)) {
-      if (a.erstellt_von === cfg.user_id) {
-        const { data: neu } = await db.rpc("ws_auftrag_neu_aufnehmen", { p_auftrag: a.id }).then((x) => x, () => ({}));
-        if (neu === "entwurf") { await log(a.id, "info", "Werkstatt-PC nicht mehr da – Auftrag als neuer Entwurf aufgenommen (frischer Zweig)"); melde("status", "Auftrag als neuer Entwurf aufgenommen", a.id); }
-      }
-      continue;
-    }
+    if (!pcIds.includes(a.werkstatt_pc)) continue;   // neu aufnehmen: neuAufnehmenPruefen() unten
     const { data: darf } = await db.rpc("ws_ist_werkstatt_fuer", { p_gruppe: a.gruppe_id });
     if (!darf) continue;
     const wzN = !a.hand && werkzeugOk(a.werkzeug) ? a.werkzeug : "claude-code";

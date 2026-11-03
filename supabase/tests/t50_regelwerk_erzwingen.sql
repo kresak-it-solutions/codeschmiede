@@ -705,7 +705,7 @@ update ws_auftraege set stand = 'nacharbeit' where id = :z1;
 update ws_auftraege set stand = 'laeuft', werkstatt_pc = '00000000-0000-0000-0000-0000000000d1' where id = :z1;
 select stand, werkstatt_pc = '00000000-0000-0000-0000-0000000000d2' pc_fremd, pruefung -> 'lokal' ->> 'befund' befund from ws_auftraege where id = :z1;
 
-\echo [52] N10c: Zweig vom ersten PC gesetzt; zweiter Entwickler übernimmt aus „wartet“ mit eigenem Zweig -> FEHLER; ohne Zweig-Wechsel -> laeuft; zweig_pc selbst setzen wirkt nicht (Zweig-PC bleibt d1)
+\echo [52] N10c/N13: Zweig vom ersten PC; zurück nach „wartet“ leert den Zweig (frischer Zweig im nächsten Lauf); zweiter Entwickler übernimmt mit neuem Zweig -> laeuft, Zweig-PC d2; zweig_pc selbst setzen wirkt nicht
 reset role;
 update ws_auftraege set stand = 'abgebrochen' where stand = 'entwurf';
 set role authenticated;
@@ -719,12 +719,15 @@ select ws_entwurf_entscheiden(:z2, 'bauen', null, null) \g /dev/null
 :DEV
 update ws_auftraege set stand = 'laeuft', werkstatt_pc = '00000000-0000-0000-0000-0000000000d1', zweig = 'feature/cs-52-eigen' where id = :z2;
 update ws_auftraege set stand = 'wartet', werkstatt_pc = null where id = :z2;
+select zweig is null zweig_leer, zweig_pc is null zweig_pc_leer from ws_auftraege where id = :z2;
 :DEV2
 update ws_auftraege set stand = 'laeuft', werkstatt_pc = '00000000-0000-0000-0000-0000000000d2', zweig = 'feature/cs-52-fremd' where id = :z2;
-update ws_auftraege set stand = 'laeuft', werkstatt_pc = '00000000-0000-0000-0000-0000000000d2', zweig_pc = '00000000-0000-0000-0000-0000000000d2' where id = :z2;
-select stand, zweig, zweig_pc = '00000000-0000-0000-0000-0000000000d1' zweig_pc_d1 from ws_auftraege where id = :z2;
+update ws_auftraege set zweig_pc = '00000000-0000-0000-0000-0000000000d1' where id = :z2;
+select stand, zweig, zweig_pc = '00000000-0000-0000-0000-0000000000d2' zweig_pc_d2 from ws_auftraege where id = :z2;
 
-\echo [53] N10a: PC weg – fremder Entwickler holt zurück -> FEHLER; Auftraggeber zu früh -> zu_frueh; nach 24 h ohne Lebenszeichen -> entwurf mit frischem Zweig, ohne lokalen Befund
+\echo [53] N10a: PC weg – Fremder -> FEHLER; haltender PC ohne Grund -> FEHLER; Auftraggeber zu früh -> zu_frueh; nach 24 h ohne Lebenszeichen -> entwurf mit frischem Zweig, ohne lokalen Befund
+:FREMD
+select ws_auftrag_neu_aufnehmen(:z1);
 :DEV2
 select ws_auftrag_neu_aufnehmen(:z1);
 :DEV
@@ -737,6 +740,57 @@ select ws_auftrag_neu_aufnehmen(:z1) spaet;
 select stand, zweig is null zweig_leer, werkstatt_pc is null pc_leer, pruefung -> 'lokal' is null ohne_lokal, kritik ->> 'grund' grund from ws_auftraege where id = :z1;
 reset role;
 update ws_werkstatt_pcs set an = true, zuletzt = now() where id = '00000000-0000-0000-0000-0000000000d2';
+
+\echo [54] Sechste Prüfung N13: neue Nachricht in „nacharbeit“ -> entwurf mit neuer Runde; Zweig, PR, Commit, lokaler Befund und Zweig-PC geleert
+reset role;
+alter table ws_auftraege disable trigger ws_auftraege_regelwerk;
+insert into ws_auftraege (gruppe_id, titel, art, erstellt_von, stand, werkstatt_pc, zweig, zweig_pc, pr_nummer, letzter_commit, kritik, pruefung) values
+  ('abstimmungen', 'N13', 'aendern', '00000000-0000-0000-0000-00000000000e', 'nacharbeit', '00000000-0000-0000-0000-0000000000d1', 'feature/cs-54-alt', '00000000-0000-0000-0000-0000000000d1', 54,
+   'abc1234', '{"stand":"fertig","entscheidung":"bauen","runde":2}', '{"lokal":{"ergebnis":"rot","befund":"x","pc_id":"00000000-0000-0000-0000-0000000000d1"}}') returning id as r1 \gset
+alter table ws_auftraege enable trigger ws_auftraege_regelwerk;
+set role authenticated;
+:DEV
+insert into ws_nachrichten (auftrag_id, von, art, text) values (:r1, auth.uid(), 'text', 'Bitte zusätzlich die Uhrzeit anzeigen.');
+select stand, kritik ->> 'runde' runde, zweig is null zweig_leer, pr_nummer is null pr_leer, letzter_commit is null commit_leer, pruefung -> 'lokal' is null ohne_lokal, zweig_pc is null zweig_pc_leer, werkstatt_pc is null pc_leer
+  from ws_auftraege where id = :r1;
+
+\echo [55] N14: laeuft -> wartet mit Werkstatt-Rückfrage nach der Freigabe -> entwurf; ohne Rückfrage -> wartet mit leerem Zweig
+reset role;
+update ws_auftraege set stand = 'abgebrochen' where stand = 'entwurf';
+set role authenticated;
+:DEV
+insert into ws_auftraege (gruppe_id, titel, art, erstellt_von) values ('abstimmungen', 'N14', 'aendern', auth.uid()) returning id as q1 \gset
+insert into ws_nachrichten (auftrag_id, von, art, text) values (:q1, auth.uid(), 'text', 'Abstimmungen zeigen die Dauer an.');
+:ADM
+select count(*) genommen from ws_kritik_nehmen('00000000-0000-0000-0000-0000000000a1') where auftrag_id = :q1;
+select ws_kritik_melden('00000000-0000-0000-0000-0000000000a1', :q1, 'ok', '[]', 'claude/opus') \g /dev/null
+select ws_entwurf_entscheiden(:q1, 'bauen', null, null) \g /dev/null
+:DEV
+update ws_auftraege set stand = 'laeuft', werkstatt_pc = '00000000-0000-0000-0000-0000000000d1', zweig = 'feature/cs-55-n14' where id = :q1;
+update ws_auftraege set stand = 'wartet', werkstatt_pc = null where id = :q1;
+select stand, zweig is null zweig_leer from ws_auftraege where id = :q1;
+update ws_auftraege set stand = 'laeuft', werkstatt_pc = '00000000-0000-0000-0000-0000000000d1', zweig = 'feature/cs-55-n14' where id = :q1;
+select ws_werkstatt_nachricht('00000000-0000-0000-0000-0000000000d1', :q1, 'frage', 'Lösche ich dabei alle alten Abstimmungen?') \g /dev/null
+update ws_auftraege set stand = 'wartet', werkstatt_pc = null where id = :q1;
+select stand, kritik ->> 'grund' grund from ws_auftraege where id = :q1;
+
+\echo [56] N15: Admin nimmt neu auf, obwohl der fremde PC „an“ ist – ohne Begründung -> FEHLER; mit -> entwurf, Systemnachricht für alle; Hand-Auftrag in „frage“ -> wartet; falscher Stand -> stand_passt_nicht
+:DEV2
+update ws_auftraege set stand = 'nacharbeit' where id = :z2;
+:ADM
+select ws_auftrag_neu_aufnehmen(:z2);
+select ws_auftrag_neu_aufnehmen(:z2, 'PC von Dev2 hängt seit gestern') ergebnis;
+:DEV
+select stand, (select text from ws_nachrichten n where n.auftrag_id = :z2 and n.art = 'system' order by n.id desc limit 1) like 'Auftrag neu aufgenommen durch der Admin (PC war noch angemeldet) (Grund: PC von Dev2 hängt seit gestern)%' nachricht
+  from ws_auftraege where id = :z2;
+reset role;
+alter table ws_auftraege disable trigger ws_auftraege_regelwerk;
+insert into ws_auftraege (gruppe_id, titel, art, erstellt_von, stand, werkstatt_pc, hand) values ('abstimmungen', 'Hand', 'aendern', '00000000-0000-0000-0000-00000000000e', 'frage', null, true) returning id as hd \gset
+alter table ws_auftraege enable trigger ws_auftraege_regelwerk;
+set role authenticated;
+:DEV
+select ws_auftrag_neu_aufnehmen(:hd) hand;
+select ws_auftrag_neu_aufnehmen(:hd) nochmal;
 
 \echo [23] Direkt schreiben in die neuen Tabellen -> FEHLER (4x); anon liest/ruft -> FEHLER (3x)
 set role authenticated;

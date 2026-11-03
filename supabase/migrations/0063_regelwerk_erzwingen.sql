@@ -27,6 +27,9 @@
 --  10 Fünfte Prüfung (GELB, 03.11.2026): Werkstatt-PC bleibt bei frage/nacharbeit am Auftrag (nur derselbe PC setzt fort), ws_auftrag_neu_aufnehmen
 --     nach 24 h ohne Lebenszeichen; lokaler Befund nur mit pc_id des haltenden PCs; zweig_pc – gesetzter Zweig nur durch diesen PC oder den Auftraggeber.
 --     Der Admin ist vom Werkstatt-Trigger ausgenommen (N12); Entwurf, Phase-9-Sperre, Hauptsperre und Mindestversion gelten auch für ihn.
+--  11 Sechste Prüfung (GELB, 03.11.2026): jedes Zurück auf Entwurf = neue Runde mit leerem Zweig/PR/Commit/lokalem Befund/Zweig-PC, laeuft → wartet
+--     leert den Zweig, mit Rückfragen seit der Freigabe → Entwurf; ws_auftrag_neu_aufnehmen(auftrag, grund) mit haltendem PC, Auftraggeber (24 h)
+--     und Admin-Override (Begründung), Hand-Aufträge → wartet, eindeutige Antworten, Systemnachricht am Auftrag.
 -- Sicherheit: RLS auf allen neuen Tabellen, keine direkten Schreibrechte, alle Funktionen SECURITY DEFINER mit search_path, keine Rechte für
 -- public und anon. Interne Freigaben (Entwurf starten, Kritik schreiben, zurück zum Entwurf, Einrichtung) stehen in der Tabelle ws_intern_token, die
 -- nur diese Funktionen beschreiben (ws_intern_setzen ist für authenticated, anon und service_role nicht ausführbar) und die nur für die eigene
@@ -297,7 +300,7 @@ revoke execute on function public.ws_dienst_version_ok(uuid) from public, anon, 
 create or replace function public.ws_auftraege_regelwerk() returns trigger
 language plpgsql security definer set search_path = public as $$
 declare pj text := public.ws_projekt_von_gruppe(new.gruppe_id);
-        uebernahme boolean;
+        uebernahme boolean; fertig boolean := false;
 begin
   if tg_op = 'INSERT' then
     if new.zweck <> 'bau' and not public.ws_intern_hat('einrichtung') then
@@ -316,8 +319,6 @@ begin
     return new;
   end if;
   if new.zweck is distinct from old.zweck then raise exception 'Der Zweck eines Auftrags ändert sich nicht'; end if;
-  -- N10c: wer den Zweig gesetzt hat, merkt sich die Datenbank selbst
-  new.zweig_pc := case when new.zweig is null then null when new.zweig is not distinct from old.zweig then old.zweig_pc else coalesce(new.werkstatt_pc, old.werkstatt_pc) end;
   if new.kritik is distinct from old.kritik and not public.ws_intern_hat('kritik:' || new.id) and not public.ws_intern_hat('entscheidung:' || new.id)
      and not public.ws_intern_hat('zurueck:' || new.id) then
     raise exception 'Die kritische Prüfung schreibt nur die Codeschmiede'; end if;
@@ -341,12 +342,13 @@ begin
     if new.stand = 'laeuft' and not coalesce(new.hand, false) and new.kritik is not null and old.stand in ('frage','nacharbeit') and not public.ws_freigabe_gueltig(new.id) then
       new.stand := 'entwurf'; new.werkstatt_pc := null;
       new.kritik := jsonb_build_object('stand', 'wartet', 'runde', coalesce((old.kritik ->> 'runde')::int, 1) + 1, 'grund', 'Freigabe nicht mehr gültig');
-      return new;
+      fertig := true;
     end if;
-    if new.stand = 'laeuft' and not coalesce(new.hand, false) and not public.ws_freigabe_gueltig(new.id) then
+    if not fertig and new.stand = 'laeuft' and not coalesce(new.hand, false) and not public.ws_freigabe_gueltig(new.id) then
       raise exception 'Keine gültige Freigabe („Bauen“ mit Prüfsumme des Textes) – nichts wird gebaut'; end if;
     -- N2/N5: Kam während des Laufs neuer Text (bzw. Altbestand ohne Kritik), geht der Auftrag nach dem Lauf zurück auf Entwurf (neue Kritik)
-    if old.stand = 'laeuft' and new.stand not in ('laeuft','abgebrochen') and coalesce((old.kritik ->> 'neu_nach_lauf')::boolean, false) then
+    if fertig then null;
+    elsif old.stand = 'laeuft' and new.stand not in ('laeuft','abgebrochen') and coalesce((old.kritik ->> 'neu_nach_lauf')::boolean, false) then
       new.stand := 'entwurf'; new.werkstatt_pc := null;
       new.kritik := jsonb_build_object('stand', 'wartet', 'runde', coalesce((old.kritik ->> 'runde')::int, 1) + 1, 'grund', 'neuer Text während des Laufs');
     -- N5: Bau-Auftrag ohne Kritik (Altbestand) kommt in einen offenen Stand → Entwurf
@@ -365,8 +367,26 @@ begin
           and new.kritik = old.kritik and not public.ws_freigabe_gueltig(new.id) then
       new.stand := 'entwurf'; new.werkstatt_pc := null;
       new.kritik := jsonb_build_object('stand', 'wartet', 'runde', coalesce((old.kritik ->> 'runde')::int, 1) + 1, 'grund', 'Freigabe nicht mehr gültig');
+    -- N14 (sechste Prüfung): zurück nach „wartet“ mit Werkstatt-Rückfragen seit der Freigabe → Entwurf (ein neuer Lauf bekommt sie nicht mit)
+    elsif old.stand = 'laeuft' and new.stand = 'wartet' and new.zweck = 'bau' and not coalesce(new.hand, false) and new.kritik is not null
+          and exists (select 1 from public.ws_nachrichten n where n.auftrag_id = new.id and n.von is null and n.art = 'frage'
+                       and n.id > coalesce((new.kritik ->> 'freigabe_nachricht')::bigint, 0)) then
+      new.stand := 'entwurf'; new.werkstatt_pc := null;
+      new.kritik := jsonb_build_object('stand', 'wartet', 'runde', coalesce((old.kritik ->> 'runde')::int, 1) + 1, 'grund', 'Rückfragen seit der Freigabe – neue Prüfung');
     end if;
   end if;
+  -- N13 (sechste Prüfung): jedes Zurück auf Entwurf ist eine neue Runde mit frischem Zweig – Zweig, Pull Request, Commit, lokaler Befund und PC fallen weg
+  if new.stand = 'entwurf' and old.stand is distinct from 'entwurf' then
+    new.zweig := null; new.pr_nummer := null; new.letzter_commit := null; new.werkstatt_pc := null;
+    new.pruefung := coalesce(new.pruefung, '{}'::jsonb) - 'lokal';
+    if coalesce((new.kritik ->> 'runde')::int, 0) <= coalesce((old.kritik ->> 'runde')::int, 0) then
+      new.kritik := coalesce(new.kritik, '{}'::jsonb) || jsonb_build_object('runde', coalesce((old.kritik ->> 'runde')::int, 0) + 1); end if;
+  -- N13: „laeuft“ → „wartet“: der nächste Lauf (auf welchem PC auch immer) beginnt mit frischem Zweig von main
+  elsif old.stand = 'laeuft' and new.stand = 'wartet' and not coalesce(new.hand, false) then
+    new.zweig := null; new.pr_nummer := null; new.letzter_commit := null; new.pruefung := coalesce(new.pruefung, '{}'::jsonb) - 'lokal';
+  end if;
+  -- N10c: wer den Zweig gesetzt hat, merkt sich die Datenbank selbst
+  new.zweig_pc := case when new.zweig is null then null when new.zweig is not distinct from old.zweig then old.zweig_pc else coalesce(new.werkstatt_pc, old.werkstatt_pc) end;
   return new;
 end $$;
 revoke execute on function public.ws_auftraege_regelwerk() from public, anon, authenticated;
@@ -765,28 +785,50 @@ begin
 end $$;
 revoke execute on function public.ws_freigabe_pruefen(bigint) from public, anon;
 grant execute on function public.ws_freigabe_pruefen(bigint) to authenticated;
--- Fünfte Prüfung (N10a): ist der PC, der einen Auftrag in „frage“ oder „nacharbeit“ hält, weg (aus und 24 Stunden ohne Lebenszeichen, oder kein PC),
--- holt die Person, die den Auftrag gestellt hat, ihn zurück: neuer Entwurf mit frischem Zweig (alter Zweig, Pull Request und lokaler Befund fallen weg).
-create or replace function public.ws_auftrag_neu_aufnehmen(p_auftrag bigint) returns text
+-- Neu aufnehmen (fünfte/sechste Prüfung, N10a/N13/N15): Auftrag in „frage“ oder „nacharbeit“ (der haltende PC auch in „laeuft“) zurückholen –
+-- Bau-Aufträge als neuer Entwurf (neue Runde, frischer Zweig), Hand-Aufträge nach „wartet“ (frischer Zweig).
+--   der haltende PC selbst: immer (z. B. „Zweig bei GitHub verändert – Auftrag wird neu aufgesetzt“), Grund Pflicht
+--   die Person, die den Auftrag gestellt hat: wenn der haltende PC weg ist (aus und 24 Stunden ohne Lebenszeichen, oder kein PC)
+--   der Admin: auch wenn der fremde PC sich als „an“ meldet – mit Begründung (mindestens 10 Zeichen)
+-- Antwort eindeutig: 'entwurf' | 'wartet' | 'zu_frueh' | 'stand_passt_nicht'. Protokoll (Admin) und Systemnachricht am Auftrag (für alle, die ihn sehen).
+drop function if exists public.ws_auftrag_neu_aufnehmen(bigint);
+create or replace function public.ws_auftrag_neu_aufnehmen(p_auftrag bigint, p_grund text default null) returns text
 language plpgsql security definer set search_path = public as $$
-declare a public.ws_auftraege; w public.ws_werkstatt_pcs;
+declare a public.ws_auftraege; w public.ws_werkstatt_pcs; halter boolean; weg boolean; wer text; g text := left(btrim(regexp_replace(coalesce(p_grund, ''), '[\x01-\x1f\x7f]', ' ', 'g')), 300);
 begin
   select * into a from ws_auftraege where id = p_auftrag for update;
-  if a.id is null or not (a.erstellt_von = auth.uid() or public.ws_ist_admin()) or not public.ws_ist_werkstatt_fuer(a.gruppe_id) then
-    raise exception 'Nur die Person, die den Auftrag gestellt hat'; end if;
-  if a.stand not in ('frage','nacharbeit') or coalesce(a.hand, false) or a.zweck <> 'bau' then return a.stand; end if;
+  if a.id is null or not public.ws_ist_werkstatt_fuer(a.gruppe_id) then raise exception 'Keine Werkstatt für diesen Auftrag'; end if;
   select * into w from ws_werkstatt_pcs where id = a.werkstatt_pc;
-  if w.id is not null and (w.benutzer_id = auth.uid() or w.an or w.zuletzt > now() - interval '24 hours') then return 'zu_frueh'; end if;
+  halter := w.id is not null and w.benutzer_id = auth.uid();
+  if not (halter or a.erstellt_von = auth.uid() or public.ws_ist_admin()) then raise exception 'Nur die Person, die den Auftrag gestellt hat, der PC, der ihn hält, oder der Admin'; end if;
+  if not (a.stand in ('frage','nacharbeit') or (a.stand = 'laeuft' and halter)) or a.zweck <> 'bau' then return 'stand_passt_nicht'; end if;
+  weg := w.id is null or (not w.an and w.zuletzt < now() - interval '24 hours');
+  if halter then
+    if char_length(g) < 10 then raise exception 'Grund fehlt (mindestens 10 Zeichen)'; end if; wer := 'der Werkstatt-PC, der ihn hielt';
+  elsif weg then wer := case when public.ws_ist_admin() and a.erstellt_von is distinct from auth.uid() then 'der Admin' else 'die Person, die ihn gestellt hat' end;
+  elsif public.ws_ist_admin() then
+    if char_length(g) < 10 then raise exception 'Der fremde PC ist noch da – neu aufnehmen nur mit Begründung (mindestens 10 Zeichen)'; end if; wer := 'der Admin (PC war noch angemeldet)';
+  else return 'zu_frueh';
+  end if;
   perform public.ws_intern_setzen('zurueck:' || a.id);
-  update ws_auftraege set stand = 'entwurf', werkstatt_pc = null, zweig = null, pr_nummer = null, letzter_commit = null, pruefung = coalesce(pruefung, '{}'::jsonb) - 'lokal',
-    kritik = jsonb_build_object('stand', 'wartet', 'runde', coalesce((a.kritik ->> 'runde')::int, 1) + 1, 'grund', 'Werkstatt-PC nicht mehr da – neu aufgenommen')
-   where id = a.id;
+  if coalesce(a.hand, false) then
+    -- Hand-Änderung: wieder an die Werkstatt, frischer Zweig (der Trigger leert Zweig und Befund beim Wechsel; hier direkt, da nicht aus „laeuft“)
+    update ws_auftraege set stand = 'wartet', werkstatt_pc = null, zweig = null, pr_nummer = null, letzter_commit = null, pruefung = coalesce(pruefung, '{}'::jsonb) - 'lokal' where id = a.id;
+  else
+    update ws_auftraege set stand = 'entwurf', kritik = jsonb_build_object('stand', 'wartet', 'runde', coalesce((a.kritik ->> 'runde')::int, 1) + 1,
+      'grund', coalesce(nullif(g, ''), 'Werkstatt-PC nicht mehr da – neu aufgenommen')) where id = a.id;
+  end if;
   perform public.ws_intern_weg('zurueck:' || a.id);
-  insert into ws_protokoll (wer, was, details) values (auth.uid(), 'auftrag_neu_aufgenommen', jsonb_build_object('auftrag', a.id, 'stand_vorher', a.stand, 'pc', a.werkstatt_pc, 'zweig', a.zweig, 'pr', a.pr_nummer));
-  return 'entwurf';
+  insert into ws_nachrichten (auftrag_id, von, art, text) values (a.id, null, 'system',
+    format('Auftrag neu aufgenommen durch %s%s – %s. Alter Zweig %s%s wird nicht weiterverwendet.', wer, case when g <> '' then ' (Grund: ' || g || ')' else '' end,
+      case when coalesce(a.hand, false) then 'wartet wieder auf eine Werkstatt' else 'neuer Entwurf mit neuer Prüfung und frischem Zweig' end,
+      coalesce(a.zweig, '–'), case when a.pr_nummer is not null then ', Pull Request #' || a.pr_nummer || ' bitte bei GitHub schließen' else '' end));
+  insert into ws_protokoll (wer, was, details) values (auth.uid(), 'auftrag_neu_aufgenommen', jsonb_build_object('auftrag', a.id, 'stand_vorher', a.stand, 'pc', a.werkstatt_pc,
+    'zweig', a.zweig, 'pr', a.pr_nummer, 'grund', nullif(g, ''), 'durch', wer));
+  return case when coalesce(a.hand, false) then 'wartet' else 'entwurf' end;
 end $$;
-revoke execute on function public.ws_auftrag_neu_aufnehmen(bigint) from public, anon;
-grant execute on function public.ws_auftrag_neu_aufnehmen(bigint) to authenticated;
+revoke execute on function public.ws_auftrag_neu_aufnehmen(bigint, text) from public, anon;
+grant execute on function public.ws_auftrag_neu_aufnehmen(bigint, text) to authenticated;
 
 -- Werkstatt-Update (wie 0005): zusätzlich „entwurf“ – nur, damit der Rücksprung nach einem Lauf mit neuer Nachricht (N2) gelingt;
 -- selbst setzen kann die Werkstatt „entwurf“ nicht (Trigger ws_auftraege_regelwerk verlangt die interne Freigabe).

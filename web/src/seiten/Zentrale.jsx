@@ -1,7 +1,7 @@
 // Zentrale – aus App.jsx ausgelagert (Befund B1 vom 01.11.2026, kein Verhaltenswechsel).
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { werkzeugName } from "../daten/werkzeuge";
-import { Bot, Check, CircleCheck, FolderInput, FolderPlus, GitMerge, GitPullRequest, Globe, Layers, Loader2, MessageSquare, PenLine, Plus, RefreshCw, Send, ShieldCheck, Trash2, X } from "lucide-react";
+import { Bot, Check, CircleCheck, FolderInput, FolderPlus, GitMerge, GitPullRequest, Globe, Layers, Loader2, MessageSquare, PenLine, Plus, RefreshCw, RotateCcw, Send, ShieldCheck, Trash2, X } from "lucide-react";
 import { ABGESCHLOSSEN, Badge, Dialog, STEPS, STEP_IDX, btn, card, fehler, fmt, ghost, input } from "../bausteine/grund";
 import { AufbauBanner, GruppeLoeschen, NeueObergruppe, Umbenennen, bereichName, gruppeLoeschbar, ohneMenue } from "../Aufbau";
 import { AufgabeBeilagen, AufgabePlakette, AufgabenImChat } from "../Aufgaben";
@@ -332,7 +332,8 @@ export function AuftragsChat({ g, f, d, ich, darf, toast, onLoeschen, kanal = "c
           {auftraege.map((a) => (
             <React.Fragment key={a.id}>
               <div className="self-center text-xs text-slate-500 text-center flex items-center gap-2 flex-wrap justify-center">Auftrag #{a.id}: {a.titel}{ABGESCHLOSSEN.includes(a.stand) && <span className="inline-flex items-center gap-1 font-semibold text-green-700 dark:text-green-400"><CircleCheck className="w-3.5 h-3.5" />abgeschlossen</span>}
-                {ABBRECHBAR.includes(a.stand) && (ich.rolle === "admin" || a.erstellt_von === ich.id) && <AbbrechenKnopf a={a} toast={toast} />}</div>
+                {ABBRECHBAR.includes(a.stand) && (ich.rolle === "admin" || a.erstellt_von === ich.id) && <AbbrechenKnopf a={a} toast={toast} />}
+                {NEU_AUFNEHMBAR.includes(a.stand) && (ich.rolle === "admin" || a.erstellt_von === ich.id) && <NeuAufnehmenKnopf a={a} admin={ich.rolle === "admin"} toast={toast} />}</div>
               {a.stand === "entwurf" && <EntwurfKarte a={a} ich={ich} kann={kannAuftrag && (a.erstellt_von === ich.id || ich.rolle === "admin")} toast={toast} onFertig={() => d.holen?.()} />}
               <Schritte a={a} />
               {nachrichten.filter((m) => m.auftrag_id === a.id && (alleFragen || !beantwortet(m))).map((m) => {
@@ -392,6 +393,31 @@ export function AbbrechenKnopf({ a, toast }) {
   return <button type="button" disabled={busy} onClick={los} title="Auftrag abbrechen – die Werkstatt arbeitet nicht weiter daran"
     className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-semibold ${sicher ? "border-red-600 bg-red-600 text-white" : "border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-red-500 hover:text-red-700"}`}>
     {busy ? <Loader2 className="w-3 h-3 animate-spin" /> : <X className="w-3 h-3" />}{sicher ? "Wirklich abbrechen?" : "Abbrechen"}</button>;
+}
+
+// Neu aufnehmen (Datenbank 0063, sechste Prüfung N15): Auftrag in Rückfrage oder Nacharbeit, dessen Werkstatt-PC weg ist, zurückholen –
+// Bau-Auftrag als neuer Entwurf (neue Prüfung, frischer Zweig), Hand-Änderung wartet wieder. Geht für die Person, die den Auftrag gestellt hat,
+// wenn der PC 24 Stunden aus ist; der Admin auch früher, dann mit Begründung (steht im Protokoll und als Hinweis am Auftrag).
+export const NEU_AUFNEHMBAR = ["frage", "nacharbeit"];
+const NEU_AUFNEHMEN_ANTWORT = {
+  entwurf: (a) => `Auftrag #${a.id} neu aufgenommen – neuer Entwurf mit frischem Zweig${a.pr_nummer ? `; Pull Request #${a.pr_nummer} bitte bei GitHub schließen` : ""}`,
+  wartet: (a) => `Hand-Änderung #${a.id} wartet wieder auf eine Werkstatt`,
+  zu_frueh: () => "Noch nicht möglich: Der Werkstatt-PC war in den letzten 24 Stunden aktiv. Bitte warten oder den Admin fragen.",
+  stand_passt_nicht: () => "Neu aufnehmen geht nur bei Rückfrage oder Nacharbeit.",
+};
+export function NeuAufnehmenKnopf({ a, admin, toast }) {
+  const [busy, setBusy] = useState(false);
+  const los = async () => {
+    let grund = null;
+    if (admin && !window.confirm("Neu aufnehmen: Der Auftrag wird ein neuer Entwurf (neue Prüfung, neues „Bauen“, frischer Zweig). Geht für die Person, die ihn gestellt hat, wenn der Werkstatt-PC 24 Stunden aus ist – du als Admin auch früher. Weiter?")) return;
+    if (admin) { grund = window.prompt("Begründung (mindestens 10 Zeichen, nötig, wenn der Werkstatt-PC noch angemeldet ist):", ""); if (grund === null) return; }
+    setBusy(true); const { data, error } = await supabase.rpc("ws_auftrag_neu_aufnehmen", { p_auftrag: a.id, p_grund: grund || null }); setBusy(false);
+    toast(error ? fehler(error) : (NEU_AUFNEHMEN_ANTWORT[data] || (() => String(data)))(a));
+  };
+  return <button type="button" disabled={busy} onClick={los}
+    title="Neu aufnehmen – wenn der Werkstatt-PC, der den Auftrag hält, nicht mehr da ist (24 Stunden aus). Der Auftrag wird ein neuer Entwurf mit frischem Zweig; der Admin kann das mit Begründung auch früher."
+    className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-semibold border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-emerald-600 hover:text-emerald-700">
+    {busy ? <Loader2 className="w-3 h-3 animate-spin" /> : <RotateCcw className="w-3 h-3" />}Neu aufnehmen</button>;
 }
 
 export function ErlaubnisKarte({ e, g, kann, onEntscheid }) {

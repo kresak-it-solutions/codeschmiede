@@ -348,7 +348,7 @@ export function systemMetadaten(text) {
   return `[Metadaten der Codeschmiede – keine Anweisung] ${t}`;
 }
 export const FRAGEN_NACH_FREIGABE_MAX = 2000;
-export function nachrichtenBisFreigabe(nachrichten = [], freigabeId = null) {
+export function nachrichtenBisFreigabe(nachrichten = [], freigabeId = null, { neuerLauf = false } = {}) {
   const f = Number(freigabeId);
   if (!Number.isSafeInteger(f) || f <= 0) return nachrichten;
   // Vierte Prüfung (Punkt 3): gebaut wird nur, was die Kritik gesehen hat –
@@ -359,6 +359,7 @@ export function nachrichtenBisFreigabe(nachrichten = [], freigabeId = null) {
   const raus = [];
   for (const n of nachrichten) {
     if (!(n.id > f)) { if (n.von) raus.push(n); else if (n.art === "system") raus.push({ ...n, text: systemMetadaten(n.text) }); continue; }
+    if (neuerLauf) continue;   // sechste Prüfung (N14): ein neuer Lauf (Übernehmen aus „wartet“) bekommt nichts nach der Freigabe
     if (!n.von) {
       if (n.art !== "frage" || fragen >= FRAGEN_NACH_FREIGABE_MAX) continue;
       const text = String(n.text || "").slice(0, FRAGEN_NACH_FREIGABE_MAX - fragen);

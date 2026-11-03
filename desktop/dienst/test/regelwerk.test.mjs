@@ -257,7 +257,7 @@ test("N2: für den Lauf nur Nachrichten bis zur Freigabe, danach nur Antworten a
   const s = await quelle();
   assert.match(s, /if \(!auftrag\.hand && !\(await freigabeOk\(auftrag\.id\)\)\) \{/);   // auch Altbestand ohne kritik (N5)
   assert.doesNotMatch(s, /\.kritik && !\(await freigabeOk/);
-  assert.match(s, /nachrichten = nachrichtenBisFreigabe\(nachrichten \|\| \[\], auftrag\.kritik\?\.freigabe_nachricht\);/);
+  assert.match(s, /nachrichten = nachrichtenBisFreigabe\(nachrichten \|\| \[\], auftrag\.kritik\?\.freigabe_nachricht, \{ neuerLauf: !fortsetzen && !nacharbeit \}\);/);
   assert.match(s, /if \(!a\.hand && !\(await freigabeOk\(a\.id\)\)\) \{ await wartetAufMelden\(a, FREIGABE_FEHLT\); continue; \}/);
   assert.match(s, /db\.rpc\("ws_auftrag_freigabe_ok", \{ p_auftrag: auftragId \}\)/);
   assert.match(dokuAuftragBlock({}), /docs\/stand\.md/);
@@ -360,7 +360,8 @@ test("Fünfte Prüfung (N10b): lokaler Befund nur vom haltenden PC (lokal.pc_id)
   const s = await quelle();
   assert.match(s, /pc: cfg\.pc_name, pc_id: pcId, doku_versuche: dokuVersuche \}/);
   // N10a: Nacharbeit nur auf dem eigenen PC, sonst (nur Auftraggeber) neu aufnehmen
-  assert.match(s, /if \(!pcIds\.includes\(a\.werkstatt_pc\)\) \{\n\s+if \(a\.erstellt_von === cfg\.user_id\) \{\n\s+const \{ data: neu \} = await db\.rpc\("ws_auftrag_neu_aufnehmen"/);
+  assert.match(s, /if \(!pcIds\.includes\(a\.werkstatt_pc\)\) continue;/);
+  assert.match(s, /\.eq\("erstellt_von", cfg\.user_id\)\.in\("stand", \["frage", "nacharbeit"\]\)[\s\S]{0,200}db\.rpc\("ws_auftrag_neu_aufnehmen", \{ p_auftrag: a\.id \}\)/);
   assert.doesNotMatch(s, /pcIds\.includes\(a\.werkstatt_pc\) \|\| a\.erstellt_von === cfg\.user_id/);
 });
 
