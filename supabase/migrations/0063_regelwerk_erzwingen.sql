@@ -35,7 +35,7 @@
 -- public und anon. Interne Freigaben (Entwurf starten, Kritik schreiben, zurück zum Entwurf, Einrichtung) stehen in der Tabelle ws_intern_token, die
 -- nur diese Funktionen beschreiben (ws_intern_setzen ist für authenticated, anon und service_role nicht ausführbar) und die nur für die eigene
 -- Transaktion gilt – kein Sitzungs-Schalter, den jemand selbst setzen könnte (Nachprüfung N1: der frühere set_config-Schalter war frei setzbar).
--- Mehrfach ausführbar. Reihenfolge 0001 → … → 0063. Test: supabase/tests/t50_regelwerk_erzwingen.sql. NICHT in einspielen.txt (Gerhard spielt ein).
+-- Mehrfach ausführbar. Reihenfolge 0001 → … → 0063. Test: supabase/tests/t50_regelwerk_erzwingen.sql. In einspielen.txt seit der grünen Sicherheitsprüfung (03.11.2026).
 -- Weichen: 0010/0012/0014/0015/0018/0020/0026/0048 setzen ws_vorschlag_ok, ws_konzept_ok, ws_konzept_auftraege_anlegen und ws_ki_reihe_ok beim erneuten
 -- Einspielen nicht mehr auf die alte Fassung zurück (to_regclass('public.ws_phasen_protokoll')). Die Phase-9-Sperre und der Entwurf stehen im eigenen
 -- Trigger ws_auftraege_regelwerk, den keine ältere Datei anfasst. Hinweise (nach erneutem Einspielen 0063 noch einmal einspielen): 0001/0002

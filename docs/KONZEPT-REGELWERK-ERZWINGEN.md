@@ -308,5 +308,5 @@ Auftrag wird neu aufgesetzt“, hat jemand am Zweig vorbei etwas hochgeladen. De
 **Zweig main (GitHub):** Seit 0.19.0 führt nur der Admin bzw. die Codeschmiede Pull Requests zusammen. Für bestehende Projekte einmal unter
 Projekt › Einrichten „Datenbank-Station einrichten“ klicken, dann wird der Schutz erneuert.
 
-**Einspielen:** Datenbank 0063 spielt Gerhard selbst ein (steht bewusst nicht in `supabase/einspielen.txt`). Bis dahin arbeitet der Dienst wie bisher
+**Einspielen:** Datenbank 0063 steht seit der grünen Sicherheitsprüfung (03.11.2026) in `supabase/einspielen.txt` und wird beim nächsten Push nach main eingespielt. Bis dahin arbeitet der Dienst wie bisher
 (ohne Phasen, ohne Entwürfe); die Doku-Prüfung im Diff gilt schon.
