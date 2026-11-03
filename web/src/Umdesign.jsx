@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { icons as LUCIDE, X, Save, Send, Loader2, Bot, Check, Search, Trash2, PenLine, ArrowRight } from "lucide-react";
 import { supabase } from "./supabase";
+import { TEXT_MAX } from "./textGrenze";
 import { useKiName } from "./kiName";
-import { ChatRahmen, ChatKopf, ChatVerlauf, ChatNachricht, ChatWartet, ChatEingabe } from "./bausteine/chat";
+import { ChatRahmen, ChatKopf, ChatVerlauf, ChatNachricht, ChatWartet, ChatEingabe, LangesTextfeld } from "./bausteine/chat";
 
 // Symbole und Grundbausteine umdesignen (Entwurf 1.0, freigegeben von Gerhard 2026-10-23 22:38, Datenbank 0027).
 // Rechtsklick in der Galerie (Testseite) oder im Verzeichnis öffnet diesen Entwurf: Zuweisungen vorausgefüllt (alle Stellen angehakt),
@@ -24,7 +25,7 @@ const zahl = (v, lo, hi) => typeof v === "number" && Number.isFinite(v) && v >= 
 export function umdesignBereinigen(art, w) {
   const r = {};
   if (!w || typeof w !== "object") return r;
-  if (typeof w.beschreibung === "string") r.beschreibung = w.beschreibung.slice(0, 2000);
+  if (typeof w.beschreibung === "string") r.beschreibung = w.beschreibung.slice(0, TEXT_MAX);
   if (art === "symbol") {
     if (typeof w.neu === "string" && NAME.test(w.neu) && Object.hasOwn(LUCIDE, w.neu)) r.neu = w.neu;
     else if (w.eigen && typeof w.eigen === "object") {
@@ -106,7 +107,7 @@ export default function Umdesign({ projekt, d, ich, toast, ziel, verz, icons, on
   }, [suche, name]);
   const fragen = async () => {
     const t = text.trim(); if (!t) return;
-    const { error } = await supabase.from("ws_design_chat").insert({ projekt_id: projekt.id, entwurf_id: null, text: `${prefix} Stand des Entwurfs (Daten): ${JSON.stringify(werte).slice(0, 1500)}\nWunsch: ${t}`.slice(0, 8000), werte: null });
+    const { error } = await supabase.from("ws_design_chat").insert({ projekt_id: projekt.id, entwurf_id: null, text: `${prefix} Stand des Entwurfs (Daten): ${JSON.stringify(werte).slice(0, 1500)}\nWunsch: ${t}`.slice(0, TEXT_MAX), werte: null });
     if (error) toast(fehler(error)); else { setText(""); holeChat(); }
   };
   const speichern = async () => {
@@ -181,7 +182,7 @@ export default function Umdesign({ projekt, d, ich, toast, ziel, verz, icons, on
             </div>
           </>)}
           <label className="flex flex-col gap-1 text-sm text-slate-500">Beschreibung (optional)
-            <textarea className={`${input} min-h-[56px]`} maxLength={2000} value={werte.beschreibung || ""} onChange={(ev) => setWerte({ ...werte, beschreibung: ev.target.value })} placeholder="Was soll sich ändern und warum?" /></label>
+            <LangesTextfeld className={input} min={56} value={werte.beschreibung || ""} onChange={(ev) => setWerte({ ...werte, beschreibung: ev.target.value })} placeholder="Was soll sich ändern und warum?" /></label>
         </div>
 
         <ChatRahmen className="rounded-xl border border-slate-200 dark:border-slate-800 max-h-[460px]" label={`Chat mit ${ki.name}`}>
@@ -200,7 +201,7 @@ export default function Umdesign({ projekt, d, ich, toast, ziel, verz, icons, on
                 </ChatNachricht>); })}
             {chat.some((m) => !m.frage_id && ["offen", "laeuft"].includes(m.stand)) && <ChatWartet an ki={ki.name} text={`${ki.name} denkt nach … (über deine Werkstatt)`} />}
           </ChatVerlauf>
-          <ChatEingabe id="umdesign-chat" value={text} onChange={setText} aktionen={{ besprechen: fragen }} maxLength={2000} platzhalter="Was soll sich ändern?"
+          <ChatEingabe id="umdesign-chat" value={text} onChange={setText} aktionen={{ besprechen: fragen }} platzhalter="Was soll sich ändern?"
             hinweis="Als Auftrag geht der Entwurf unten mit „Als Auftrag senden …“." />
         </ChatRahmen>
       </div>
@@ -215,7 +216,7 @@ export default function Umdesign({ projekt, d, ich, toast, ziel, verz, icons, on
       </div>
 
       {senden != null ? (
-        <div className="flex flex-col gap-2"><label className="text-sm font-semibold">Auftragstext (änderbar)<textarea className={`${input} mt-1 font-mono text-xs min-h-[140px]`} value={senden} onChange={(ev) => setSenden(ev.target.value)} maxLength={7000} /></label>
+        <div className="flex flex-col gap-2"><label className="text-sm font-semibold">Auftragstext (änderbar)<LangesTextfeld className={`${input} mt-1 font-mono text-xs`} min={140} value={senden} onChange={(ev) => setSenden(ev.target.value)} /></label>
           <div className="flex gap-2 flex-wrap"><button type="button" className={btn} disabled={busy || !an.size} onClick={abschicken}>{busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}Ja, als Auftrag stellen</button>
             <button type="button" className={ghost} onClick={() => setSenden(null)}>Zurück</button></div></div>
       ) : (

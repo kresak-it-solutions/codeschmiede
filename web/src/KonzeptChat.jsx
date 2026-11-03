@@ -5,7 +5,8 @@ import { supabase } from "./supabase";
 import { useKiName } from "./kiName";
 import { Markdown } from "./Markdown";
 import { MitErwaehnung } from "./Bezuege";
-import { ChatRahmen, ChatKopf, ChatVerlauf, ChatNachricht, ChatWartet, ChatEingabe } from "./bausteine/chat";
+import { ChatRahmen, ChatKopf, ChatVerlauf, ChatNachricht, ChatWartet, ChatEingabe, LangesTextfeld } from "./bausteine/chat";
+import { TEXT_MAX } from "./textGrenze";
 
 // Chat mit Claude – seit 2026-10-23 18:06 (Entwurf „Konzept zuerst“) im Konzept-Arbeitsplatz statt als Spalte auf jeder Seite.
 // Persönliches Gespräch; die eingestellte KI antwortet über die eigene Werkstatt und liest das Projekt nur (nichts ändern, nichts ausführen).
@@ -43,7 +44,7 @@ export default function ClaudeChat({ d, ich, ort = "konzept", kontext, toast, le
   const fragen = Object.fromEntries(liste.filter((m) => !m.frage_id).map((m) => [m.id, m]));
   const schicke = async (vorgabe) => {
     const t = String(vorgabe ?? text).trim(); if (!t) return; setSenden(true);
-    const { error } = await supabase.from("ws_claude_chat").insert({ projekt_id: d.projektId, ort: String(ort || "konzept").toLowerCase().replace(/[^a-z0-9:_.-]/g, "-").slice(0, 80), text: t.slice(0, 8000), kontext: String(kontext || "").slice(0, 6000) });
+    const { error } = await supabase.from("ws_claude_chat").insert({ projekt_id: d.projektId, ort: String(ort || "konzept").toLowerCase().replace(/[^a-z0-9:_.-]/g, "-").slice(0, 80), text: t.slice(0, TEXT_MAX), kontext: String(kontext || "").slice(0, 6000) });
     setSenden(false);
     if (error) { toast(fehler(error)); return false; }
     if (vorgabe == null) setText("");
@@ -70,7 +71,7 @@ export default function ClaudeChat({ d, ich, ort = "konzept", kontext, toast, le
       </ChatVerlauf>
       <ChatEingabe value={text} onChange={setText} busy={senden} aktionen={{ besprechen: () => schicke() }} ideen={IDEEN} onIdee={(i) => schicke(i)}
         hinweis="Besprechen: die KI antwortet und legt Aufträge erst an, wenn alles geklärt ist."
-        feld={({ los }) => <MitErwaehnung value={text} onChange={setText} features={d.features.filter((x) => !x.ausgebaut)} rows={2} maxLength={8000} aria-label="Nachricht"
+        feld={({ los }) => <MitErwaehnung value={text} onChange={setText} features={d.features.filter((x) => !x.ausgebaut)} rows={2} maxLength={TEXT_MAX} aria-label="Nachricht"
           placeholder="Idee, Vorhaben, Frage oder Entscheidung … (@ für ein Feature)" className="w-full resize-none bg-transparent px-3 pt-2.5 pb-1 text-[15px] focus:outline-none"
           onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); los(); } }} />} />
     </ChatRahmen>);
@@ -165,8 +166,8 @@ function FragenVorschlag({ m, kann, toast, onAntwort, sperre }) {
               <button key={o} type="button" aria-pressed={an} onClick={() => { setWahl({ ...wahl, [i]: o }); setEigen({ ...eigen, [i]: "" }); }}
                 className={`text-left text-xs rounded-lg border px-2.5 py-1.5 ${an ? "border-sky-600 bg-sky-50 text-sky-900 dark:bg-sky-950 dark:text-sky-100 ring-1 ring-sky-600" : "border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800"} ${/\(Empfohlen\)\s*$/i.test(o) ? "font-semibold" : ""}`}>{o}</button>); })}
           </div>
-          {!erledigt && kann && <input value={eigen[i] || ""} onChange={(e) => setEigen({ ...eigen, [i]: e.target.value })} maxLength={300} placeholder="… oder eigene Antwort"
-            className="rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-2 py-1 text-xs" aria-label={`Eigene Antwort: ${q.frage}`} />}
+          {!erledigt && kann && <LangesTextfeld value={eigen[i] || ""} onChange={(e) => setEigen({ ...eigen, [i]: e.target.value })} min={30} rows={1} placeholder="… oder eigene Antwort (so lang du willst)"
+            className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-2 py-1 text-xs" aria-label={`Eigene Antwort: ${q.frage}`} />}
         </fieldset>))}
       {!erledigt && kann && <div className="flex gap-1.5"><button type="button" className={btn} disabled={!fertig || busy || sperre} onClick={senden}>{busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}Antworten senden</button>
         {!fertig && <span className="text-xs text-slate-500 self-center">Bitte jede Frage beantworten</span>}</div>}

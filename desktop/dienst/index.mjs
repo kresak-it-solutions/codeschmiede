@@ -32,7 +32,7 @@ import { liveAusfuehren, pruefPrompt, enthalten, cloudBauLaeufe, pruefLaeufe, pr
 import { stationNachFehler, stationFaellig, STATION_VERSUCHE } from "./lib/station.mjs";
 import { katalogFuer, einrichten, einrichtUmgebung, findeKatalogProgramm, angemeldet } from "./lib/einrichten.mjs";
 import { bildAusDataUrl, markePrompt, markeAntwort } from "./lib/marke.mjs";
-import { ANBIETER, reiheFuer, globaleReihe, GLOBAL_NICHT_LESBAR, wartetText, istLimit, kiKennung, codexFrage, geminiFrage, kopplungPruefen, anmeldungStarten, sandboxArt, freiFrage, freiPruefen, codexLimits } from "./lib/ki.mjs";
+import { ANBIETER, reiheFuer, globaleReihe, GLOBAL_NICHT_LESBAR, wartetText, istLimit, zuLang, zuLangMeldung, promptPruefen, kiKennung, codexFrage, geminiFrage, kopplungPruefen, anmeldungStarten, sandboxArt, freiFrage, freiPruefen, codexLimits } from "./lib/ki.mjs";
 import { prText } from "./lib/ersatz.mjs";
 import { WERKZEUGE, FREMDE, werkzeugOk, werkzeugWahl, werkzeugName, sperrbar, dateiGesperrt, statusPfade, projektKonfigFunde, werkzeugVorspann } from "./lib/werkzeuge.mjs";
 import { installieren as werkzeugInstallieren, installiertPruefen, installationUnveraendert, angemeldetPruefen, laufOrdner, werkzeugStarten, sperrenTest, sperrNachweis, nachweisGleich } from "./lib/werkzeugLauf.mjs";
@@ -2140,6 +2140,7 @@ async function dokuText(projekt, frage = "") {
 async function kiAntwort(projekt, aufgabe, prompt, { claudeLesenIn = null, dokuLesen = false, frage = "", wunsch = null } = {}) {
   const { reihe: r0, ab, fehlt } = await kiReihe(projekt.id, aufgabe);
   if (fehlt) throw new Error(fehlt);
+  promptPruefen(prompt);   // lange Fragen (0.18.0): voll übergeben, nur bei echter Übergröße klare Meldung statt Kürzen
   // KI-Wunsch der Person (Chat zur Kachel, 0041): nur ein Anbieter aus der Zuständigkeit kommt vor – sonst die normale Reihe
   const reihe = kiZuerst(r0, wunsch, kiKennung);
   const fehler = [];   // [{ anbieter, grund }] – für „wartet auf …“ (verpflichtende Anbieter, 0.13.1)
@@ -2172,7 +2173,7 @@ async function kiAntwort(projekt, aufgabe, prompt, { claudeLesenIn = null, dokuL
     } catch (err) {
       const t = ohneGeheimnisse(err?.ausgabe || err?.message || String(err));
       if (istLimit(t)) { kiLimitBis[e.anbieter] = Date.now() + 60 * 60 * 1000; kopplungMelden(e.anbieter, { limit_bis: new Date(kiLimitBis[e.anbieter]).toISOString() }).catch(() => {}); }
-      fehler.push({ anbieter: e.anbieter, grund: istLimit(t) ? "Limit voll" : `nicht erreichbar (${kuerzen(t, 120)})` });
+      fehler.push({ anbieter: e.anbieter, grund: istLimit(t) ? "Limit voll" : err?.zuLang || zuLang(t) ? "Frage zu lang für dieses Modell (nichts gekürzt – bitte kürzen oder aufteilen)" : `nicht erreichbar (${kuerzen(t, 120)})` });
     }
   }
   throw new Error(wartetText(fehler, (x) => ANBIETER[x]?.name || freieAnbieter[x]?.name || x));
@@ -2328,9 +2329,10 @@ async function claudeOhneWerkzeuge(prompt, { lesenIn = null, modell = "sonnet" }
       kind.on("close", (code) => { clearTimeout(uhr); Promise.all(offen).then(() => (ende ? fertig() : fehl(new Error(`Claude beendet (${code}): ${ohneGeheimnisse(fehlerText).slice(-300)}`)))); });
     });
   } finally { if (laeuft === meins) laeuft = null; if (leer) await rm(leer, { recursive: true, force: true }).catch(() => {}); }   // nur die eigene Belegung freigeben (Prüfung 0.10.0)
-  if (ende?.subtype !== "success") throw new Error("Claude hat keine Antwort geliefert");
+  if (ende?.subtype !== "success") throw zuLang(String(ende?.result || "")) ? Object.assign(new Error(zuLangMeldung("Claude")), { zuLang: true }) : new Error("Claude hat keine Antwort geliefert");
   const res = String(ende.result || "");
   if (res.length < 600 && istLimit(res)) { await claudeLimitVoll(res); throw new Error(`Claudes Abo-Limit ist voll – ${res.trim()}`); }
+  if (res.length < 600 && zuLang(res)) throw Object.assign(new Error(zuLangMeldung("Claude")), { zuLang: true });
   return res;
 }
 

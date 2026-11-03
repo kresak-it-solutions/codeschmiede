@@ -13,6 +13,7 @@ import { Loeschen, NeueGruppe, NeuesFeature } from "./Verwaltung";
 import { Markdown } from "../Markdown";
 import { WS_ICON } from "../config";
 import { supabase } from "../supabase";
+import { TEXT_MAX } from "../textGrenze";
 import { useAuftragDetails } from "../daten/werkstattDaten";
 import { ChatKopf, ChatNachricht, ChatEingabe } from "../bausteine/chat";
 import { Leerzustand } from "../bausteine/zustand";
@@ -252,7 +253,7 @@ export function AuftragsChat({ g, f, d, ich, darf, toast, onLoeschen, kanal = "c
     try {
       const herkunft = (f ? `Feature „${f.name}“ (${f.id}) in der Gruppe „${g.name}“` : `Gruppe „${g.name}“`)
         + (punkt ? `, zum offenen Punkt „${punkt.titel}“ (Aufgabe #${punkt.id})` : "");
-      const { error } = await supabase.from("ws_claude_chat").insert({ projekt_id: d.projektId, ort: "konzept", text: `Frage zu ${herkunft}: ${t}`.slice(0, 8000),
+      const { error } = await supabase.from("ws_claude_chat").insert({ projekt_id: d.projektId, ort: "konzept", text: `Frage zu ${herkunft}: ${t}`.slice(0, TEXT_MAX),
         kontext: `Gerhard fragt aus der ${herkunft}${g.app_key ? `, Menüpunkt der App: ${g.app_key}` : ""}. Nur beantworten – gebaut wird erst, wenn er es bestätigt.`.slice(0, 6000) });
       if (error) throw error;
       setText(""); toast("Im Konzept-Chat – dort wird besprochen, die Antwort kommt gleich");

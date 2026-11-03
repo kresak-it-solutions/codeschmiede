@@ -169,3 +169,47 @@ select count(*) fassungen from pg_proc p join pg_namespace n on n.oid = p.pronam
 \set QUIET 1
 select count(*) trigger from pg_trigger where tgname = 'ws_projekte_ki_standard';
 select count(*) zeilen from ws_ki_zustaendigkeit where projekt_id = 'neu-x';
+
+-- ========== Teil 2: Lange Fragen (Gerhard 03.11.2026 08:11) – gemeinsame Obergrenze 200.000 Zeichen ==========
+\echo [17] Eine Konstante: ws_text_max() = 200000; die Checks von claude_chat, design_chat, aufgaben, aufgabe_sendungen und nachrichten nutzen sie -> 200000 | 5
+reset role;
+select public.ws_text_max() grenze,
+  (select count(*) from pg_constraint where conname in ('ws_claude_chat_text_check','ws_design_chat_text_check','ws_aufgaben_beschreibung_check','ws_aufgabe_sendungen_text_check','ws_nachrichten_text_laenge')
+     and pg_get_constraintdef(oid) like '%ws_text_max()%') checks;
+
+\echo [18] Admin fragt im Chat und im Design-Chat mit 150.000 Zeichen -> OK, Länge 150000 | 150000 (vollständig gespeichert)
+set role authenticated;
+:ADM
+insert into ws_claude_chat(projekt_id,ort,text) values ('trainer-to-go','zentrale', repeat('Ä', 149990) || 'ENDE-FRAGE');
+insert into ws_design_chat(projekt_id,text,werte) values ('trainer-to-go', repeat('ß', 149990) || 'ENDE-FRAGE', '{}');
+select (select char_length(text) from ws_claude_chat where text like '%ENDE-FRAGE' order by id desc limit 1) chat,
+       (select char_length(text) from ws_design_chat where text like '%ENDE-FRAGE' order by id desc limit 1) design;
+
+\echo [19] Über der Grenze (200.001 Zeichen) -> FEHLER (2x, Chat und Design-Chat)
+insert into ws_claude_chat(projekt_id,ort,text) values ('trainer-to-go','zentrale', repeat('x', 200001));
+insert into ws_design_chat(projekt_id,text,werte) values ('trainer-to-go', repeat('x', 200001), '{}');
+
+\echo [20] Aufgabe mit 150.000 Zeichen Beschreibung -> OK (150000); 200.001 -> FEHLER
+reset role;
+insert into ws_aufgaben(projekt_id,titel,beschreibung,erstellt_von) values ('trainer-to-go','Lange Aufgabe', repeat('a', 150000), '00000000-0000-0000-0000-00000000000a');
+select char_length(beschreibung) aufgabe from ws_aufgaben where titel = 'Lange Aufgabe';
+insert into ws_aufgaben(projekt_id,titel,beschreibung,erstellt_von) values ('trainer-to-go','Zu lange Aufgabe', repeat('a', 200001), '00000000-0000-0000-0000-00000000000a');
+
+\echo [21] Design-Auftrag (Kachel/Baustein) mit 150.000 Zeichen -> Nachricht vollständig (150000); 200.001 -> FEHLER
+update ws_projekte set design_gruppe_id = 'neu-x-start' where id = 'neu-x';
+set role authenticated;
+:ADM
+select ws_design_auftrag('neu-x','baustein','Langer Wunsch', repeat('w', 150000)) \g /dev/null
+select char_length(n.text) design_auftrag from ws_nachrichten n join ws_auftraege a on a.id = n.auftrag_id where a.titel = 'Neuer Baustein: Langer Wunsch';
+select ws_design_auftrag('neu-x','baustein','Zu langer Wunsch', repeat('w', 200001));
+
+\echo [22] Grenzen auch in den Funktionen: Umdesign-Beschreibung, Umdesign-Auftragstext, Grunddesign senden, Punkt-Zusatz, Aufgabe als Auftrag ohne Kürzen -> 0 Funktionen mit alter Grenze
+reset role;
+select count(*) alt from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+ where n.nspname = 'public' and p.proname in ('ws_umdesign_werte_ok','ws_design_auftrag','ws_umdesign_senden','ws_design_senden','ws_punkt_weiterarbeiten','ws_aufgabe_als_auftrag')
+   and (p.prosrc ~ '\m(2000|4000|7000|8000|20000)\M' or p.prosrc not like '%ws_text_max()%' and p.proname <> 'ws_aufgabe_als_auftrag' or p.prosrc like '%8000)%');
+
+\echo [23] ws_text_max für anon nicht aufrufbar -> FEHLER
+set role anon;
+select public.ws_text_max();
+reset role;

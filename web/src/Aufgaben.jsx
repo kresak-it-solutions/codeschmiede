@@ -9,8 +9,10 @@ import {
   ClipboardList, Plus, Loader2, Save, Trash2, Send, X, Paperclip, Link2, FileText, CalendarDays, ImageIcon, Download, ExternalLink,
   MessageSquare, Undo2, Info, User, ShieldAlert, Hammer, ListTodo } from "lucide-react";
 import { supabase } from "./supabase";
+import { TEXT_MAX } from "./textGrenze";
 import { isDesktop, tauri } from "./desktop";
 import { Laden, Leerzustand, Fehlerzustand } from "./bausteine/zustand";
+import { LangesTextfeld } from "./bausteine/chat";
 
 const btn = "inline-flex items-center justify-center gap-1.5 h-9 px-3 rounded-lg bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 text-white text-sm font-semibold transition";
 const ghost = "inline-flex items-center justify-center gap-1.5 h-9 px-3 rounded-lg border border-slate-300 dark:border-slate-700 text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-50 transition";
@@ -312,7 +314,7 @@ function Detail({ a, d, ich, kann, toast, leute, gruppen, features, anhaenge, se
   const speichern = async () => {
     if (titelFehler) return toast(titelFehler);
     setBusy("speichern");
-    const zeile = { titel: w.titel.trim().slice(0, 120), beschreibung: w.beschreibung.slice(0, 8000), status: w.status, prioritaet: w.prioritaet, faellig: w.faellig || null,
+    const zeile = { titel: w.titel.trim().slice(0, 120), beschreibung: w.beschreibung.slice(0, TEXT_MAX), status: w.status, prioritaet: w.prioritaet, faellig: w.faellig || null,
       zustaendig: w.zustaendig || null, feature_id: w.bezug.startsWith("f:") ? w.bezug.slice(2) : null, gruppe_id: w.bezug.startsWith("g:") ? w.bezug.slice(2) : null, links: w.links };
     const r = a ? await supabase.from("ws_aufgaben").update(zeile).eq("id", a.id).select("id").single()
       : await supabase.from("ws_aufgaben").insert({ ...zeile, projekt_id: d.projektId }).select("id").single();
@@ -399,7 +401,7 @@ function Detail({ a, d, ich, kann, toast, leute, gruppen, features, anhaenge, se
       <label className={label} htmlFor="ws-aufgabe-titel">Titel
         <input id="ws-aufgabe-titel" className={input} value={w.titel} maxLength={120} disabled={nurLesen} onChange={(e) => set("titel", e.target.value)} placeholder="z. B. Schnellzugriffe am Handy zu klein" /></label>
       <label className={label} htmlFor="ws-aufgabe-text">Was soll geändert werden?
-        <textarea id="ws-aufgabe-text" className={`${input} min-h-[110px] resize-y`} value={w.beschreibung} maxLength={8000} disabled={nurLesen} onChange={(e) => set("beschreibung", e.target.value)}
+        <LangesTextfeld id="ws-aufgabe-text" className={input} min={110} value={w.beschreibung} disabled={nurLesen} onChange={(e) => set("beschreibung", e.target.value)}
           placeholder="Beschreibe möglichst genau, was du siehst und was anders werden soll. Keine Daten von Mitgliedern." /></label>
       <div className="grid gap-3 grid-cols-1 sm:grid-cols-2">
         <div className={label}>Status

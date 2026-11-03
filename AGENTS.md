@@ -40,6 +40,10 @@ Zusammengeführt wird nur auf Gerhards Wort (in der Codeschmiede: Knopf „Freig
 - Werkstatt arbeitet nur im Arbeitsordner des Auftrags (eigener Zweig), nie direkt auf `main`; heikle Befehle brauchen Erlaubnis im Programm.
 
 ## Neue Anweisungen
+- **2026-11-03 08:11 – Lange Fragen (0.18.0):** „Auf Fragen will ich so viel Text schreiben können, wie ich will.“ Alle Eingaben für Fragen und Aufträge haben
+  eine gemeinsame Grenze von 200.000 Zeichen (eine Konstante je Schicht: `web/src/textGrenze.js`, `desktop/dienst/lib/ki.mjs`, Datenbank `ws_text_max()`), wachsen mit
+  und zeigen ab 8.000 Zeichen einen Zähler. Fragen werden **nie still gekürzt**; ist eine Anbieter-/Modellgrenze erreicht, gibt es eine klare Meldung.
+  Fragen gehen über die Standardeingabe, nie über die Befehlszeile.
 - **2026-11-03 – KI-Anbindungen sind global (0.18.0, Meldung und Freigabe Gerhard 03.11.2026):** Die KI-Zuständigkeiten (Chat, Konzept, Design, Prüfungen,
   Doku, Texte, Bilder) gelten für **alle** Projekte gleich (`ws_ki_zustaendigkeit_global`, „Globale Einstellungen › KI-Anbieter“, nur Admin, alle eingebauten
   und angelegten Anbieter wählbar). Startwerte aus Trainer to go. Je Projekt nur das Programmier-Werkzeug (Aufgabe „bauen“), voreingestellt „wie global“.

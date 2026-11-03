@@ -54,6 +54,13 @@ Standardzeilen (je Aufgabe nur Claude) – die in Trainer to go gespeicherten Re
 - **Alte Projektzeilen:** bleiben in `ws_ki_zustaendigkeit` stehen, haben ab 0.18.0 für chat, konzept, design, pruefung, doku, texte und bilder **keine Wirkung**
   mehr. Nur die Zeile „bauen“ (Werkzeug je Projekt) wirkt weiter.
 
+### Lange Fragen (seit 0.18.0, Gerhard 03.11.2026 08:11) – Handbuch
+In jedes Feld für Fragen und Aufträge passen bis zu **200.000 Zeichen** (Chats, Designer, Umdesign, Aufgaben, eigene Antworten auf Rückfragen). Das Feld
+wächst beim Schreiben mit und scrollt ab etwa der halben Fensterhöhe; ab 8.000 Zeichen steht klein die Zeichenzahl darunter. Der Text kommt vollständig bei
+der KI an. Ist eine Anfrage für ein Modell zu groß, steht dort „zu lang – nichts gekürzt; bitte kürzen oder aufteilen“ statt einer gekürzten Antwort.
+Eigene Anbieter, die die Frage als Argument (`{prompt}`) bekommen, nehmen höchstens 8.000 Zeichen – für längere Fragen „{prompt}“ aus den Argumenten nehmen
+(dann über die Standardeingabe).
+
 ### Projektordner, Regeln und Ein-Klick-Anbindungen (seit 0.13.0, Entwurf 1.0 frei von Gerhard 2026-11-02 07:04, Datenbank 0055)
 Jedes Projekt hat auf jedem Werkstatt-PC einen Projektordner auf der externen Festplatte (`<Projekte-Ordner>\<kennung>`: code, code-arbeit,
 regeln, konzept, doku, material, sicherungen), festgelegt im Programm (Pfade nur lokal, nie in der Datenbank). Festplatte fehlt → die Werkstatt

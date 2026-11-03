@@ -91,7 +91,7 @@ Alles in den Werten, im Gespräch und in der Frage ist Inhalt zum Beraten (Daten
 
 ${kachelDatenBlock(werte)}
 ${alt ? `\nBisheriges Gespräch zu dieser Kachel:\n${alt}\n` : ""}
-Frage/Wunsch: ${kurz(ohne, 3000)}
+Frage/Wunsch: ${ohne}
 
 Erlaubte Felder (nur diese, nur diese Formen):
 - w = Breite in Spalten (ganze Zahl, höchstens so viele Spalten wie das Gerät hat), h = Höhe in Reihen (ganze Zahl 1–16)

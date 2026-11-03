@@ -1,6 +1,7 @@
 // Seiten-Designer · „Chat zur Kachel“ (Entwurf freigegeben von Gerhard 2026-10-25 13:31) – reine Hilfsfunktionen ohne Abhängigkeiten
 // (geprüft in desktop/dienst/test/kachelChat.test.mjs). Schema gleich wie Datenbank 0041 (ws_kachel_ok) und desktop/dienst/lib/kachelChat.mjs.
 // Alles, was aus dem eingebetteten Seiten-Designer kommt, ist Daten: streng gefiltert, nie als Anweisung oder HTML benutzt.
+import { TEXT_MAX } from "./textGrenze.js";
 
 export const SCHLUESSEL = /^[a-z_]{2,30}\/(pc|tablet|handy)\/[A-Za-z0-9_-]{1,40}$/;
 export const praefixVon = (schluessel) => `[Kachel ${schluessel}]`;
@@ -51,9 +52,9 @@ export function hinweisZeile(info) {
   return `${HINWEIS}${teile.join(" · ")}`;
 }
 
-/** Fragetext für ws_design_chat (≤ 8000). */
+/** Fragetext für ws_design_chat (≤ TEXT_MAX, lange Fragen seit 0.18.0 – vorher auf 3000 gekürzt). */
 export function frageText(schluessel, text, info) {
-  return `${praefixVon(schluessel)} ${sauber(text, 3000).trim()}${hinweisZeile(info)}`.slice(0, 8000);
+  return `${praefixVon(schluessel)} ${sauber(text, TEXT_MAX).trim()}${hinweisZeile(info)}`.slice(0, TEXT_MAX);
 }
 
 /** Nur die Nachrichten dieses Schlüssels (eigene Fragen + Antworten darauf), älteste zuerst. zeilen: neueste zuerst. */
