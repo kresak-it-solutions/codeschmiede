@@ -22,7 +22,7 @@ import { createClient } from "@supabase/supabase-js";
 import { ohneGeheimnisse, kuerzen, heikleDatei } from "./lib/geheim.mjs";
 import { waehleModell } from "./lib/modell.mjs";
 import { werteAus, zweigName, bausteinBlock } from "./lib/ergebnis.mjs";
-import { zweigVorbereiten, zweigHochgeladenPruefen, ZweigVeraendert, ZWEIG_VERAENDERT } from "./lib/zweig.mjs";
+import { zweigVorbereiten, zweigHochgeladenPruefen, zweigGehoertZu, ZweigVeraendert, ZWEIG_VERAENDERT } from "./lib/zweig.mjs";
 import { findeAboLimits, aboEntscheidung, limitAusText } from "./lib/abo.mjs";
 import { anhaengeLaden, anhaengeText } from "./lib/anhaenge.mjs";
 import { pruefErgebnis } from "./lib/pruefung.mjs";
@@ -103,7 +103,7 @@ const ERLAUBT = [
   "Read(./**)", "Edit(./**)", "Write(./**)", "NotebookEdit(./**)", "TodoWrite", "Task",
   // feste Lese-Befehle statt Freigabe nach Anfang (git log/diff --output= schreibt Dateien – Prüfung 2026-10-22)
   "Bash(git status)", "Bash(git status --short)", "Bash(git diff)", "Bash(git diff --stat)", "Bash(git diff --cached)",
-  "Bash(git log --oneline -20)", "Bash(git log -5)", "Bash(git add -A)", "Bash(git add .)", "Bash(git add -- *)", "Bash(git commit -m *)", "Bash(git fetch origin)",
+  "Bash(git log --oneline -20)", "Bash(git log -5)", "Bash(git add -A)", "Bash(git add .)", "Bash(git add -- *)", "Bash(git commit -m *)",
   "Bash(git checkout -b feature/cs-*)", "Bash(git switch -c feature/cs-*)", "Bash(git push -u origin HEAD)", "Bash(git push origin HEAD)",
   // Ohne Leerzeichen vor „*“ wäre z. B. „ls*“ auch „lsof …“ bzw. „gh pr view-…“ (Nachprüfung R4)
   "Bash(gh pr create *)", "Bash(gh pr view)", "Bash(gh pr view *)", "Bash(gh pr checks)", "Bash(gh pr checks *)", "Bash(ls)", "Bash(ls *)",
@@ -112,6 +112,10 @@ const ERLAUBT = [
 ];
 const VERBOTEN = [
   "Bash(git push origin main*)", "Bash(git push -f*)", "Bash(git push --force*)", "Bash(git reset --hard origin*)",
+  // N16 (siebte Prüfung): keine fremden Stände in den Arbeitszweig holen – den Zweig bereitet nur die Codeschmiede vor (lib/zweig.mjs);
+  // nach dem Lauf prüft zweigHochgeladenPruefen zusätzlich, dass jeder neue Commit lokal entstanden ist (gilt so auch für fremde Werkzeuge)
+  "Bash(git pull*)", "Bash(git merge*)", "Bash(git rebase*)", "Bash(git cherry-pick*)", "Bash(git reset*)", "Bash(git am*)", "Bash(git fetch*)",
+  "Bash(git checkout origin/*)", "Bash(git checkout * origin/*)", "Bash(git switch origin/*)", "Bash(git switch * origin/*)",
   "Bash(rm -rf /*)", "Bash(rm -rf ~*)", "Bash(gh repo delete*)", "Bash(gh secret*)", "Bash(curl * | sh*)",
   // Zusammenführen/Releases macht nur die Codeschmiede über die Stationen (gefunden 2026-10-23: Werkstatt fragte „gh pr merge 16“)
   "Bash(gh pr merge*)", "Bash(gh release*)", "Bash(gh workflow run*)",
@@ -829,7 +833,7 @@ async function fuehreAus(auftrag, { fortsetzen = false, nacharbeit = false } = {
     } else if (r.art === "pr") {
       let commit = null; try { commit = await git(ordner, "rev-parse", "HEAD"); } catch { /* egal */ }
       // Sechste Prüfung (N13): bei GitHub muss genau dieser Stand liegen – sonst hat jemand den Zweig verändert
-      await zweigHochgeladenPruefen(git, ordner, zweig, commit);
+      await zweigHochgeladenPruefen(git, ordner, zweig, commit, { ordner, basis: auftrag.letzter_commit || "origin/main" });
       // Ehrliche Fertig-Meldung (0.19.0): steht nicht dabei, was nicht getestet wurde, ergänzt die Werkstatt das
       await nachricht(auftrag.id, "ergebnis", auftrag.hand ? (r.text || "Fertig.") : mitNichtGetestet(r.text || "Fertig."));
       // Doku-Pflicht im Diff (Kernpflicht): stand.md, Changelog/versionen, entscheidungen.md/ideen.md bei vorgemerkten Einträgen – sonst Nacharbeit
@@ -1857,6 +1861,7 @@ async function werkzeugBau({ auftrag, projekt, ordner, zweig, prompt, signal, we
   if (!unv.ok) { delete werkzeugLokal[werkzeug]; return { art: "warten", text: `wartet auf ${name}: ${unv.grund}` }; }
   const lauf = await laufOrdner(cfg.daten_ordner, Number(auftrag.id) || 0, nurFuerMich);
   let erg;
+  const kopfVorher = await git(ordner, "rev-parse", "HEAD");   // N16: fremde Werkzeuge committen nie selbst – das macht die Werkstatt
   delete werkzeugLogZaehler[auftrag.id];
   try {
     await log(auftrag.id, "info", `Programmiert mit ${name}${modell ? ` (${modell})` : ""} – Sperre der Codeschmiede (${sandboxArt()}), Schreiben nur im Arbeitsordner`);
@@ -1874,6 +1879,7 @@ async function werkzeugBau({ auftrag, projekt, ordner, zweig, prompt, signal, we
   else await log(auftrag.id, "info", `Verbrauch: ${name} meldet keinen – keine Anzeige`);
   // Git-Ordner und Verknüpfungen prüfen, BEVOR die Werkstatt selbst git benutzt (wie nach jedem Claude-Lauf)
   await nachLaufPruefen(projekt, ordner);
+  if ((await git(ordner, "rev-parse", "HEAD")) !== kopfVorher) throw new ZweigVeraendert(`${name} hat selbst Git-Stände geändert (Commit, Merge oder Reset)`);
   const geaendert = statusPfade((await gitRoh(ordner, "status", "--porcelain=v1", "-z", "--untracked-files=all")).toString("utf8"));
   const verboten = geaendert.filter(dateiGesperrt);
   if (verboten.length) {
@@ -1943,7 +1949,9 @@ async function pruefOrdner(projekt, auftrag) {
   const { repo, arbeit } = await arbeitsordnerRepo(projekt);   // Projektordner (bzw. bis zum Umzug die alte Kopie)
   const ordner = path.join(arbeit, `pruef-${auftrag.id}`);
   if (await existiert(ordner)) { try { await git(repo, "worktree", "remove", "--force", ordner); } catch { await rm(ordner, { recursive: true, force: true }); await git(repo, "worktree", "prune"); } }
-  await git(repo, "fetch", "origin", "main", auftrag.zweig);
+  // N18/N20 (siebte Prüfung): voll ausgeschriebene Refspec; nur der Zweig dieses Auftrags (feature/cs-<id>-…)
+  if (!zweigGehoertZu(auftrag.zweig, auftrag.id)) throw new Error(`Zweig ${auftrag.zweig} gehört nicht zu Auftrag #${auftrag.id}`);
+  await git(repo, "fetch", "origin", "+refs/heads/main:refs/remotes/origin/main", `+refs/heads/${auftrag.zweig}:refs/remotes/origin/${auftrag.zweig}`);
   await git(repo, "worktree", "add", "--detach", ordner, `origin/${auftrag.zweig}`);
   await linksPruefen(ordner);   // auch die Prüfung liest nur im Ordner (R3)
   return { repo, ordner };
@@ -2039,6 +2047,7 @@ async function station(a) {
     const vorher = a.pruefung?.[art] || {};
     const behalten = { versuche: vorher.versuche || 0, ...(vorher.gepr_sha ? { gepr_sha: vorher.gepr_sha, gepr_main: vorher.gepr_main, gepr_ki: vorher.gepr_ki, gepr_befund: vorher.gepr_befund, gepr_regeln: vorher.gepr_regeln } : {}), ...(vorher.test_sha ? { test_sha: vorher.test_sha } : {}), ...(vorher.main_neu ? { main_neu: vorher.main_neu } : {}) };
     await stationMelden(a, null, art, { ergebnis: "laeuft", ...behalten });
+    if (!zweigGehoertZu(a.zweig, a.id)) { await rot("Zweig gehört nicht zum Auftrag", `${art === "sicherheit" ? "Sicherheitsprüfung" : "Feature-Prüfung"}: Der Zweig ${a.zweig || "–"} gehört nicht zu Auftrag #${a.id} (feature/cs-${a.id}-…).`); return; }   // N20
     const { repo, ordner } = await pruefOrdner(projekt, a);
     const zweigStand = await git(ordner, "rev-parse", "HEAD");
     let mainVorher = null;
@@ -2210,7 +2219,7 @@ async function station(a) {
     // Feature-Prüfung grün → genau diesen Stand in main übernehmen (= live), nur wenn main sich nicht geändert hat
     Object.assign(behalten, merk);
     await stationMelden(a, null, art, { ergebnis: "laeuft", ...behalten });
-    await git(repo, "fetch", "origin", "main", a.zweig);
+    await git(repo, "fetch", "origin", "+refs/heads/main:refs/remotes/origin/main", `+refs/heads/${a.zweig}:refs/remotes/origin/${a.zweig}`);   // N18
     if ((await git(repo, "rev-parse", "origin/main")) !== mainVorher) {
       // Befund L4: höchstens STATION_VERSUCHE Neustarts wegen eines bewegten main, dann anhalten (sonst verdrängen sich Aufträge endlos)
       const n = (vorher.main_neu || 0) + 1;
@@ -2545,7 +2554,7 @@ async function designChat() {
 async function leseOrdner(projekt) {
   const { repo, arbeit } = await arbeitsordnerRepo(projekt);
   const ordner = path.join(arbeit, "lesen");
-  await git(repo, "fetch", "-q", "origin", "main");
+  await git(repo, "fetch", "-q", "origin", "+refs/heads/main:refs/remotes/origin/main");
   if (await existiert(path.join(ordner, ".git"))) await git(ordner, "checkout", "-q", "--detach", "--force", "origin/main");
   else { try { await git(repo, "worktree", "prune"); } catch { /* egal */ } await git(repo, "worktree", "add", "--detach", ordner, "origin/main"); }
   return ordner;

@@ -11,6 +11,11 @@ export class ZweigVeraendert extends Error {
 }
 
 const SHA = /^[0-9a-f]{40}$/;
+/** N20 (siebte Prüfung): Zweig gehört zu genau diesem Auftrag – feature/cs-<id>-… (wie ws_auftraege_zweig_check und der Trigger). */
+export function zweigGehoertZu(zweig, id) {
+  return Number.isSafeInteger(Number(id)) && Number(id) > 0 && typeof zweig === "string" && zweig.startsWith(`feature/cs-${Number(id)}-`)
+    && /^feature\/cs-[0-9]+-[a-z0-9-]{1,40}$/.test(zweig);
+}
 /** Kopf des Zweigs bei origin („“ wenn es ihn nicht gibt). */
 export async function remoteKopf(git, repo, zweig) {
   const out = await git(repo, "ls-remote", "origin", `refs/heads/${zweig}`);
@@ -31,7 +36,7 @@ async function ordnerWeg(git, repo, ordner, existiert, rm) {
  * @returns {Promise<{ zweig: string, neu: boolean }>} – wirft ZweigVeraendert, wenn nicht weitergebaut werden darf
  */
 export async function zweigVorbereiten({ git, repo, ordner, zweigNeu, auftrag, eigenePcs = [], existiert, rm }) {
-  await git(repo, "fetch", "origin", "main");
+  await git(repo, "fetch", "origin", "+refs/heads/main:refs/remotes/origin/main");   // N18: voll ausgeschriebene Refspec
   if (!auftrag.zweig) {
     await ordnerWeg(git, repo, ordner, existiert, rm);
     const gesehen = await remoteKopf(git, repo, zweigNeu);
@@ -40,6 +45,7 @@ export async function zweigVorbereiten({ git, repo, ordner, zweigNeu, auftrag, e
     return { zweig: zweigNeu, neu: true };
   }
   const zweig = auftrag.zweig;
+  if (auftrag.id != null && !zweigGehoertZu(zweig, auftrag.id)) throw new ZweigVeraendert(`Zweig ${zweig} gehört nicht zu Auftrag #${auftrag.id}`);   // N20
   if (!auftrag.zweig_pc || !eigenePcs.includes(auftrag.zweig_pc)) throw new ZweigVeraendert("Zweig von einem anderen PC angelegt");
   const kopf = await remoteKopf(git, repo, zweig);
   const lokalDa = (await existiert(ordner)) && (await lokalerZweig(git, ordner)) === zweig;
@@ -56,8 +62,28 @@ export async function zweigVorbereiten({ git, repo, ordner, zweigNeu, auftrag, e
   return { zweig, neu: false };
 }
 
-/** Nach dem Lauf: liegt bei GitHub genau der lokale Stand? Sonst ZweigVeraendert. */
-export async function zweigHochgeladenPruefen(git, repo, zweig, commit) {
+// N16 (siebte Prüfung): nur diese Reflog-Einträge zeigen einen lokal entstandenen Commit (nicht pull, merge, cherry-pick, reset, rebase, checkout …)
+const LOKAL_COMMIT = /^commit( \((initial|amend)\))?: /;
+/** Jeder Commit in basis..HEAD muss im Reflog des Arbeitsordners als lokaler Commit stehen. Liefert die fremden Commits. */
+export async function fremdeCommits(git, ordner, basis = "origin/main") {
+  const neu = String(await git(ordner, "rev-list", `${basis}..HEAD`)).split(/\s+/).filter((x) => SHA.test(x));
+  if (!neu.length) return [];
+  const lokal = new Set();
+  for (const z of String(await git(ordner, "reflog", "show", "--format=%H%x09%gs", "HEAD")).split("\n")) {
+    const [sha, ...rest] = z.split("\t");
+    if (SHA.test(sha) && LOKAL_COMMIT.test(rest.join("\t"))) lokal.add(sha);
+  }
+  return neu.filter((c) => !lokal.has(c));
+}
+/**
+ * Nach dem Lauf: liegt bei GitHub genau der lokale Stand – und ist jeder neue Commit lokal entstanden (basis = letzter geprüfter Stand bzw.
+ * origin/main)? Sonst ZweigVeraendert (der Auftrag wird neu aufgesetzt).
+ */
+export async function zweigHochgeladenPruefen(git, repo, zweig, commit, { ordner = null, basis = "origin/main" } = {}) {
   const kopf = await remoteKopf(git, repo, zweig);
   if (!commit || kopf !== commit) throw new ZweigVeraendert(kopf ? `Kopf ${kopf.slice(0, 7)} statt ${String(commit || "").slice(0, 7)}` : "Zweig fehlt bei GitHub");
+  if (ordner) {
+    const fremd = await fremdeCommits(git, ordner, basis);
+    if (fremd.length) throw new ZweigVeraendert(`${fremd.length} Commit(s) nicht lokal entstanden, z. B. ${fremd[0].slice(0, 7)}`);
+  }
 }

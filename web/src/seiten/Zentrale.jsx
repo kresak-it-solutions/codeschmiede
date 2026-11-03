@@ -333,7 +333,7 @@ export function AuftragsChat({ g, f, d, ich, darf, toast, onLoeschen, kanal = "c
             <React.Fragment key={a.id}>
               <div className="self-center text-xs text-slate-500 text-center flex items-center gap-2 flex-wrap justify-center">Auftrag #{a.id}: {a.titel}{ABGESCHLOSSEN.includes(a.stand) && <span className="inline-flex items-center gap-1 font-semibold text-green-700 dark:text-green-400"><CircleCheck className="w-3.5 h-3.5" />abgeschlossen</span>}
                 {ABBRECHBAR.includes(a.stand) && (ich.rolle === "admin" || a.erstellt_von === ich.id) && <AbbrechenKnopf a={a} toast={toast} />}
-                {NEU_AUFNEHMBAR.includes(a.stand) && (ich.rolle === "admin" || a.erstellt_von === ich.id) && <NeuAufnehmenKnopf a={a} admin={ich.rolle === "admin"} toast={toast} />}</div>
+                {neuAufnehmenErlaubt(a, ich, d?.pcs) && <NeuAufnehmenKnopf a={a} admin={ich.rolle === "admin"} toast={toast} />}</div>
               {a.stand === "entwurf" && <EntwurfKarte a={a} ich={ich} kann={kannAuftrag && (a.erstellt_von === ich.id || ich.rolle === "admin")} toast={toast} onFertig={() => d.holen?.()} />}
               <Schritte a={a} />
               {nachrichten.filter((m) => m.auftrag_id === a.id && (alleFragen || !beantwortet(m))).map((m) => {
@@ -399,6 +399,18 @@ export function AbbrechenKnopf({ a, toast }) {
 // Bau-Auftrag als neuer Entwurf (neue Prüfung, frischer Zweig), Hand-Änderung wartet wieder. Geht für die Person, die den Auftrag gestellt hat,
 // wenn der PC 24 Stunden aus ist; der Admin auch früher, dann mit Begründung (steht im Protokoll und als Hinweis am Auftrag).
 export const NEU_AUFNEHMBAR = ["frage", "nacharbeit"];
+const TAG_MS = 24 * 60 * 60 * 1000;
+/** Knopf nur, wenn die Person es darf (wie ws_auftrag_neu_aufnehmen): Admin immer; die Person, die den Auftrag gestellt hat, wenn der haltende PC
+ *  fehlt oder 24 Stunden aus ist und nicht ihr eigener ist (eigene PCs nehmen ihre Aufträge selbst wieder auf). */
+export function neuAufnehmenErlaubt(a, ich, pcs = [], jetzt = Date.now()) {
+  if (!a || !ich || !NEU_AUFNEHMBAR.includes(a.stand) || (a.zweck || "bau") !== "bau") return false;
+  if (ich.rolle === "admin") return true;
+  if (a.erstellt_von !== ich.id) return false;
+  const pc = (pcs || []).find((p) => p.id === a.werkstatt_pc);
+  if (!a.werkstatt_pc || !pc) return true;   // kein PC eingetragen bzw. nicht mehr sichtbar – die Datenbank entscheidet
+  if (pc.benutzer_id === ich.id) return false;
+  return !pc.an && jetzt - Date.parse(pc.zuletzt || 0) > TAG_MS;
+}
 const NEU_AUFNEHMEN_ANTWORT = {
   entwurf: (a) => `Auftrag #${a.id} neu aufgenommen – neuer Entwurf mit frischem Zweig${a.pr_nummer ? `; Pull Request #${a.pr_nummer} bitte bei GitHub schließen` : ""}`,
   wartet: (a) => `Hand-Änderung #${a.id} wartet wieder auf eine Werkstatt`,

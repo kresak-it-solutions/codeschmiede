@@ -30,6 +30,7 @@
 --  11 Sechste Prüfung (GELB, 03.11.2026): jedes Zurück auf Entwurf = neue Runde mit leerem Zweig/PR/Commit/lokalem Befund/Zweig-PC, laeuft → wartet
 --     leert den Zweig, mit Rückfragen seit der Freigabe → Entwurf; ws_auftrag_neu_aufnehmen(auftrag, grund) mit haltendem PC, Auftraggeber (24 h)
 --     und Admin-Override (Begründung), Hand-Aufträge → wartet, eindeutige Antworten, Systemnachricht am Auftrag.
+--  12 Siebte Prüfung (03.11.2026): laeuft → wartet leert den Zweig auch bei Hand-Aufträgen (N19); neu gesetzte Zweige nur feature/cs-<id>-… (N20).
 -- Sicherheit: RLS auf allen neuen Tabellen, keine direkten Schreibrechte, alle Funktionen SECURITY DEFINER mit search_path, keine Rechte für
 -- public und anon. Interne Freigaben (Entwurf starten, Kritik schreiben, zurück zum Entwurf, Einrichtung) stehen in der Tabelle ws_intern_token, die
 -- nur diese Funktionen beschreiben (ws_intern_setzen ist für authenticated, anon und service_role nicht ausführbar) und die nur für die eigene
@@ -381,10 +382,13 @@ begin
     new.pruefung := coalesce(new.pruefung, '{}'::jsonb) - 'lokal';
     if coalesce((new.kritik ->> 'runde')::int, 0) <= coalesce((old.kritik ->> 'runde')::int, 0) then
       new.kritik := coalesce(new.kritik, '{}'::jsonb) || jsonb_build_object('runde', coalesce((old.kritik ->> 'runde')::int, 0) + 1); end if;
-  -- N13: „laeuft“ → „wartet“: der nächste Lauf (auf welchem PC auch immer) beginnt mit frischem Zweig von main
-  elsif old.stand = 'laeuft' and new.stand = 'wartet' and not coalesce(new.hand, false) then
+  -- N13: „laeuft“ → „wartet“: der nächste Lauf (auf welchem PC auch immer) beginnt mit frischem Zweig von main (N19: auch Hand-Aufträge)
+  elsif old.stand = 'laeuft' and new.stand = 'wartet' then
     new.zweig := null; new.pr_nummer := null; new.letzter_commit := null; new.pruefung := coalesce(new.pruefung, '{}'::jsonb) - 'lokal';
   end if;
+  -- N20 (siebte Prüfung): ein neu gesetzter Zweig gehört genau zu diesem Auftrag (feature/cs-<id>-…)
+  if new.zweig is not null and new.zweig is distinct from old.zweig and new.zweig not like 'feature/cs-' || new.id || '-%' then
+    raise exception 'Der Zweig gehört nicht zu diesem Auftrag (feature/cs-%-…)', new.id; end if;
   -- N10c: wer den Zweig gesetzt hat, merkt sich die Datenbank selbst
   new.zweig_pc := case when new.zweig is null then null when new.zweig is not distinct from old.zweig then old.zweig_pc else coalesce(new.werkstatt_pc, old.werkstatt_pc) end;
   return new;

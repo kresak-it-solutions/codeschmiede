@@ -5,7 +5,8 @@ import { promisify } from "node:util";
 import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
-import { dbEinrichten, dbAmpel, dbOffen, dbLiveEinspielen, ABLAUF_PFAD, CHANGELOG_PFAD, changelogZeile } from "../lib/datenbank.mjs";
+import { dbEinrichten, dbAmpel, dbOffen, dbLiveEinspielen, ABLAUF_PFAD, CHANGELOG_PFAD, changelogZeile, mainSchuetzen, MAIN_SCHUTZ } from "../lib/datenbank.mjs";
+import { readFile as lesenDatei } from "node:fs/promises";
 
 const run = promisify(execFile);
 const git = async (cwd, ...a) => (await run("git", a, { cwd })).stdout.trim();
@@ -153,4 +154,30 @@ test("Vorlage: melde() läuft in bash und gibt keine Werte aus", async () => {
   assert.match(c, /syntax error/); assert.doesNotMatch(c, /secret/);
   assert.equal(await probe("DETAIL: nur das\n"), "");
   assert.ok((await probe("ERROR: " + "x".repeat(5000) + "\n")).length <= 600);
+});
+
+test("N17: Zweig main – Regel „update“ (nur Admin bzw. Codeschmiede führt zusammen), Admin umgeht; alte Fassung wird ersetzt", async () => {
+  const lauf = (bestand, typen) => { const aufrufe = []; let regel = null;
+    const sh = async (b, a) => {
+      aufrufe.push(a.join(" "));
+      if (a[0] === "api" && a[1].endsWith("/rulesets") && a.length === 4) return { stdout: bestand };
+      if (a[0] === "api" && /\/rulesets\/\d+$/.test(a[1]) && a[2] === "--jq") return { stdout: typen };
+      if (a.includes("--input")) regel = JSON.parse(await lesenDatei(a[a.indexOf("--input") + 1], "utf8"));
+      return { stdout: "" };
+    };
+    return { sh, aufrufe, regel: () => regel };
+  };
+  let l = lauf("", "");
+  assert.equal(await mainSchuetzen(l.sh, "o/r"), "neu");
+  assert.deepEqual(l.regel().rules.map((r) => r.type), ["update", "deletion", "non_fast_forward", "pull_request"]);
+  assert.deepEqual(l.regel().bypass_actors, [{ actor_id: 5, actor_type: "RepositoryRole", bypass_mode: "always" }]);   // Admin: gh pr merge --match-head-commit geht weiter
+  assert.ok(l.aufrufe.some((x) => x.startsWith("api -X POST repos/o/r/rulesets")));
+  l = lauf(`17\t${MAIN_SCHUTZ}\n`, "deletion,non_fast_forward,pull_request");
+  assert.equal(await mainSchuetzen(l.sh, "o/r"), "aktualisiert");
+  assert.ok(l.aufrufe.some((x) => x.startsWith("api -X PUT repos/o/r/rulesets/17")));
+  assert.equal(l.regel().rules[0].type, "update");
+  l = lauf(`17\t${MAIN_SCHUTZ}\n`, "update,deletion,non_fast_forward,pull_request");
+  assert.equal(await mainSchuetzen(l.sh, "o/r"), "ok");
+  assert.ok(!l.aufrufe.some((x) => x.includes("-X")));
+  await assert.rejects(mainSchuetzen(lauf(`x;rm\t${MAIN_SCHUTZ}\n`, "").sh, "o/r"), /Ruleset-Kennung/);
 });

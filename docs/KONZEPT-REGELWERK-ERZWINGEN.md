@@ -251,6 +251,26 @@ Jeder Bau-Auftrag bekommt `docs/stand.md` und `docs/entscheidungen.md` als Anhan
   - In der Zentrale gibt es den Knopf **„Neu aufnehmen“** mit Erklärung.
   - Der Dienst prüft eigene Aufträge höchstens alle 10 Minuten selbst.
 
+## 7h. Siebte Prüfung (zusammenführen erlaubt, 03.11.2026) – Restpunkte
+
+- **N16:**
+  - Die Werkstatt-Rechte sperren `git pull`, `merge`, `rebase`, `cherry-pick`, `reset`, `am`, `fetch` sowie `checkout`/`switch` auf `origin/…`.
+    Das steht in VERBOTEN und in der automatischen Einstufung. `git fetch origin` ist nicht mehr frei, die Werkzeug-Regel „Stand von main übernehmen“ ist entfallen.
+  - Nach dem Lauf prüft `zweigHochgeladenPruefen`, dass jeder Commit seit dem letzten geprüften Stand (bzw. `origin/main`) im Reflog des Arbeitsordners als lokaler
+    Commit steht (`commit:`, `commit (initial):`, `commit (amend):`). Sonst wird der Auftrag neu aufgesetzt.
+  - Fremde Werkzeuge committen nie selbst: Bewegt sich HEAD während ihres Laufs, wird der Auftrag ebenfalls neu aufgesetzt. Ihre Befehle lassen sich nicht einzeln
+    sperren, die Prüfung danach gilt aber für alle Werkzeuge.
+- **N17:**
+  - Das Ruleset „Codeschmiede: Zweig main“ hat jetzt wie `live` die Regel `update`. Zusammenführen kann nur noch der Repository-Admin, also der Admin bzw. die
+    Codeschmiede mit `gh pr merge --match-head-commit` (Bypass „always“). Ein Entwickler kann seinen eigenen PR bei GitHub nicht mergen.
+  - Ein Pflicht-Prüflauf im Ruleset kommt bewusst nicht dazu. Mit `update` kann außer dem Admin ohnehin niemand mergen, und die Codeschmiede verlangt vor dem
+    Merge selbst alle Prüfläufe grün. Ein fester Prüflauf-Name würde dagegen Projekte ohne genau diesen Lauf sperren.
+  - Bestehende Projekte bekommen die neue Fassung über „Datenbank-Station einrichten“ (Hinweis „Schutz erneuert“).
+- **N18:** Fetch vor Prüfung und Merge mit voll ausgeschriebener Refspec `+refs/heads/<z>:refs/remotes/origin/<z>`.
+- **N19:** `laeuft` → `wartet` leert den Zweig auch bei Hand-Aufträgen (Trigger).
+- **N20:** Ein neu gesetzter Zweig muss `feature/cs-<id>-…` dieses Auftrags sein. Das prüfen der Trigger, die Station (vor Sicherheits- und Feature-Prüfung) und der Dienst.
+- Der Knopf „Neu aufnehmen“ erscheint nur, wenn die Person es darf: der Admin immer, die Person, die den Auftrag gestellt hat, nur, wenn der fremde PC 24 Stunden aus ist.
+
 ## 8. Bewusst nicht in 0.19.0 (offen)
 
 - Live-Tor: Datenschutzerklärung, Impressum und aktiver Fehler-Melder als Vorbedingung für Live (§14).
@@ -284,6 +304,9 @@ die Werkstatt der Person, die den Auftrag gestellt hat, ihn als neuen Entwurf zu
 mit **„Neu aufnehmen“**: für die Person, die den Auftrag gestellt hat, nach 24 Stunden; für den Admin jederzeit, mit Begründung, wenn der PC noch angemeldet ist.
 Hand-Änderungen warten danach wieder auf eine Werkstatt. Den alten Pull Request bei GitHub bitte schließen. Meldet die Werkstatt „Zweig bei GitHub verändert –
 Auftrag wird neu aufgesetzt“, hat jemand am Zweig vorbei etwas hochgeladen. Der Auftrag kommt dann als neuer Entwurf zurück.
+
+**Zweig main (GitHub):** Seit 0.19.0 führt nur der Admin bzw. die Codeschmiede Pull Requests zusammen. Für bestehende Projekte einmal unter
+Projekt › Einrichten „Datenbank-Station einrichten“ klicken, dann wird der Schutz erneuert.
 
 **Einspielen:** Datenbank 0063 spielt Gerhard selbst ein (steht bewusst nicht in `supabase/einspielen.txt`). Bis dahin arbeitet der Dienst wie bisher
 (ohne Phasen, ohne Entwürfe); die Doku-Prüfung im Diff gilt schon.

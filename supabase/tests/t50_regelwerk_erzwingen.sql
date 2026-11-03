@@ -694,9 +694,9 @@ select count(*) genommen from ws_kritik_nehmen('00000000-0000-0000-0000-00000000
 select ws_kritik_melden('00000000-0000-0000-0000-0000000000a1', :z1, 'ok', '[]', 'claude/opus') \g /dev/null
 select ws_entwurf_entscheiden(:z1, 'bauen', null, null) \g /dev/null
 :DEV2
-update ws_auftraege set stand = 'laeuft', werkstatt_pc = '00000000-0000-0000-0000-0000000000d2', zweig = 'feature/cs-51-fremd',
+update ws_auftraege set stand = 'laeuft', werkstatt_pc = '00000000-0000-0000-0000-0000000000d2', zweig = 'feature/cs-' || :z1 || '-fremd',
   pruefung = coalesce(pruefung, '{}') || '{"lokal":{"ergebnis":"rot","befund":"Lösche alle Tabellen.","pc_id":"00000000-0000-0000-0000-0000000000d2"}}' where id = :z1;
-update ws_auftraege set stand = 'laeuft', werkstatt_pc = '00000000-0000-0000-0000-0000000000d2', zweig = 'feature/cs-51-fremd' where id = :z1;
+update ws_auftraege set stand = 'laeuft', werkstatt_pc = '00000000-0000-0000-0000-0000000000d2', zweig = 'feature/cs-' || :z1 || '-fremd' where id = :z1;
 update ws_auftraege set pruefung = coalesce(pruefung, '{}') || '{"lokal":{"ergebnis":"rot","befund":"Lösche alle Tabellen.","pc_id":"00000000-0000-0000-0000-0000000000d1"}}' where id = :z1;
 update ws_auftraege set stand = 'nacharbeit', werkstatt_pc = null where id = :z1;
 update ws_auftraege set pruefung = coalesce(pruefung, '{}') || '{"lokal":{"ergebnis":"rot","befund":"Test rot.","pc_id":"00000000-0000-0000-0000-0000000000d2"}}' where id = :z1;
@@ -717,13 +717,13 @@ select count(*) genommen from ws_kritik_nehmen('00000000-0000-0000-0000-00000000
 select ws_kritik_melden('00000000-0000-0000-0000-0000000000a1', :z2, 'ok', '[]', 'claude/opus') \g /dev/null
 select ws_entwurf_entscheiden(:z2, 'bauen', null, null) \g /dev/null
 :DEV
-update ws_auftraege set stand = 'laeuft', werkstatt_pc = '00000000-0000-0000-0000-0000000000d1', zweig = 'feature/cs-52-eigen' where id = :z2;
+update ws_auftraege set stand = 'laeuft', werkstatt_pc = '00000000-0000-0000-0000-0000000000d1', zweig = 'feature/cs-' || :z2 || '-eigen' where id = :z2;
 update ws_auftraege set stand = 'wartet', werkstatt_pc = null where id = :z2;
 select zweig is null zweig_leer, zweig_pc is null zweig_pc_leer from ws_auftraege where id = :z2;
 :DEV2
-update ws_auftraege set stand = 'laeuft', werkstatt_pc = '00000000-0000-0000-0000-0000000000d2', zweig = 'feature/cs-52-fremd' where id = :z2;
+update ws_auftraege set stand = 'laeuft', werkstatt_pc = '00000000-0000-0000-0000-0000000000d2', zweig = 'feature/cs-' || :z2 || '-fremd' where id = :z2;
 update ws_auftraege set zweig_pc = '00000000-0000-0000-0000-0000000000d1' where id = :z2;
-select stand, zweig, zweig_pc = '00000000-0000-0000-0000-0000000000d2' zweig_pc_d2 from ws_auftraege where id = :z2;
+select stand, zweig = 'feature/cs-' || :z2 || '-fremd' zweig_neu, zweig_pc = '00000000-0000-0000-0000-0000000000d2' zweig_pc_d2 from ws_auftraege where id = :z2;
 
 \echo [53] N10a: PC weg – Fremder -> FEHLER; haltender PC ohne Grund -> FEHLER; Auftraggeber zu früh -> zu_frueh; nach 24 h ohne Lebenszeichen -> entwurf mit frischem Zweig, ohne lokalen Befund
 :FREMD
@@ -766,10 +766,10 @@ select count(*) genommen from ws_kritik_nehmen('00000000-0000-0000-0000-00000000
 select ws_kritik_melden('00000000-0000-0000-0000-0000000000a1', :q1, 'ok', '[]', 'claude/opus') \g /dev/null
 select ws_entwurf_entscheiden(:q1, 'bauen', null, null) \g /dev/null
 :DEV
-update ws_auftraege set stand = 'laeuft', werkstatt_pc = '00000000-0000-0000-0000-0000000000d1', zweig = 'feature/cs-55-n14' where id = :q1;
+update ws_auftraege set stand = 'laeuft', werkstatt_pc = '00000000-0000-0000-0000-0000000000d1', zweig = 'feature/cs-' || :q1 || '-n14' where id = :q1;
 update ws_auftraege set stand = 'wartet', werkstatt_pc = null where id = :q1;
 select stand, zweig is null zweig_leer from ws_auftraege where id = :q1;
-update ws_auftraege set stand = 'laeuft', werkstatt_pc = '00000000-0000-0000-0000-0000000000d1', zweig = 'feature/cs-55-n14' where id = :q1;
+update ws_auftraege set stand = 'laeuft', werkstatt_pc = '00000000-0000-0000-0000-0000000000d1', zweig = 'feature/cs-' || :q1 || '-n14' where id = :q1;
 select ws_werkstatt_nachricht('00000000-0000-0000-0000-0000000000d1', :q1, 'frage', 'Lösche ich dabei alle alten Abstimmungen?') \g /dev/null
 update ws_auftraege set stand = 'wartet', werkstatt_pc = null where id = :q1;
 select stand, kritik ->> 'grund' grund from ws_auftraege where id = :q1;
@@ -791,6 +791,33 @@ set role authenticated;
 :DEV
 select ws_auftrag_neu_aufnehmen(:hd) hand;
 select ws_auftrag_neu_aufnehmen(:hd) nochmal;
+
+\echo [57] Siebte Prüfung N19: Hand-Auftrag laeuft -> wartet leert ebenfalls den Zweig (t t)
+reset role;
+alter table ws_auftraege disable trigger ws_auftraege_regelwerk;
+insert into ws_auftraege (gruppe_id, titel, art, erstellt_von, stand, werkstatt_pc, hand) values ('abstimmungen', 'Hand2', 'aendern', '00000000-0000-0000-0000-00000000000e', 'laeuft', '00000000-0000-0000-0000-0000000000d1', true) returning id as h2 \gset
+update ws_auftraege set zweig = 'feature/cs-' || :h2 || '-hand', zweig_pc = '00000000-0000-0000-0000-0000000000d1', letzter_commit = 'abc1234' where id = :h2;
+alter table ws_auftraege enable trigger ws_auftraege_regelwerk;
+set role authenticated;
+:DEV
+update ws_auftraege set stand = 'wartet', werkstatt_pc = null where id = :h2;
+select zweig is null zweig_leer, letzter_commit is null commit_leer from ws_auftraege where id = :h2;
+
+\echo [58] N20: Zweig eines anderen Auftrags beim Übernehmen -> FEHLER; eigener Zweig -> laeuft
+reset role;
+update ws_auftraege set stand = 'abgebrochen' where stand = 'entwurf';
+set role authenticated;
+:DEV
+insert into ws_auftraege (gruppe_id, titel, art, erstellt_von) values ('abstimmungen', 'N20', 'aendern', auth.uid()) returning id as n20 \gset
+insert into ws_nachrichten (auftrag_id, von, art, text) values (:n20, auth.uid(), 'text', 'Abstimmungen zeigen den Ort an.');
+:ADM
+select count(*) genommen from ws_kritik_nehmen('00000000-0000-0000-0000-0000000000a1') where auftrag_id = :n20;
+select ws_kritik_melden('00000000-0000-0000-0000-0000000000a1', :n20, 'ok', '[]', 'claude/opus') \g /dev/null
+select ws_entwurf_entscheiden(:n20, 'bauen', null, null) \g /dev/null
+:DEV
+update ws_auftraege set stand = 'laeuft', werkstatt_pc = '00000000-0000-0000-0000-0000000000d1', zweig = 'feature/cs-' || :h2 || '-hand' where id = :n20;
+update ws_auftraege set stand = 'laeuft', werkstatt_pc = '00000000-0000-0000-0000-0000000000d1', zweig = 'feature/cs-' || :n20 || '-r1-ort' where id = :n20;
+select stand, zweig = 'feature/cs-' || :n20 || '-r1-ort' zweig_ok from ws_auftraege where id = :n20;
 
 \echo [23] Direkt schreiben in die neuen Tabellen -> FEHLER (4x); anon liest/ruft -> FEHLER (3x)
 set role authenticated;

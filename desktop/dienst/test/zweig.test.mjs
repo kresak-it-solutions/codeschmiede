@@ -6,7 +6,7 @@ import { promisify } from "node:util";
 import { mkdtemp, rm, writeFile, readFile, access } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { zweigVorbereiten, zweigHochgeladenPruefen, remoteKopf, ZweigVeraendert, ZWEIG_VERAENDERT } from "../lib/zweig.mjs";
+import { zweigVorbereiten, zweigHochgeladenPruefen, remoteKopf, fremdeCommits, ZweigVeraendert, ZWEIG_VERAENDERT } from "../lib/zweig.mjs";
 import { zweigName } from "../lib/ergebnis.mjs";
 import { nachrichtenBisFreigabe } from "../lib/regelwerk.mjs";
 
@@ -94,7 +94,73 @@ test("Dienst: arbeitsordner über zweigVorbereiten, Abbruch setzt neu auf, Stati
   const s = await readFile(new URL("../index.mjs", import.meta.url), "utf8");
   assert.match(s, /const \{ zweig \} = await zweigVorbereiten\(\{ git, repo, ordner, zweigNeu: zweigName\(auftrag\.id, auftrag\.titel, auftrag\.hand \? 0 : auftrag\.kritik\?\.runde\)/);
   assert.doesNotMatch(s, /basis = `origin\/\$\{zweig\}`/);
-  assert.match(s, /await zweigHochgeladenPruefen\(git, ordner, zweig, commit\);/);
+  assert.match(s, /await zweigHochgeladenPruefen\(git, ordner, zweig, commit, \{ ordner, basis: auftrag\.letzter_commit \|\| "origin\/main" \}\);/);
   assert.match(s, /if \(e instanceof ZweigVeraendert\) \{[\s\S]{0,300}db\.rpc\("ws_auftrag_neu_aufnehmen", \{ p_auftrag: auftrag\.id, p_grund: ZWEIG_VERAENDERT \}\)/);
   assert.match(s, /if \(!a\.letzter_commit \|\| zweigStand !== a\.letzter_commit\) \{ await rot\("Zweig bei GitHub verändert"/);
+});
+
+test("N16: nach dem Lauf muss jeder neue Commit lokal entstanden sein – merge, pull und cherry-pick fremder Stände führen zum Neuaufsetzen", async () => {
+  const { t, repo, fremd } = await aufbau();
+  try {
+    const zweig = "feature/cs-9-r1-liste"; const ordner = path.join(t, "auftrag-9");
+    await zweigVorbereiten({ git, repo, ordner, zweigNeu: zweig, auftrag: { zweig: null }, eigenePcs: ["pc1"], existiert, rm });
+    await writeFile(path.join(ordner, "a.txt"), "eigen"); await git(ordner, "add", "."); await git(ordner, "commit", "-m", "eigen");
+    await git(ordner, "commit", "--amend", "-m", "eigen, verbessert");
+    assert.deepEqual(await fremdeCommits(git, ordner), []);
+    await git(ordner, "push", "origin", `HEAD:refs/heads/${zweig}`);
+    await zweigHochgeladenPruefen(git, repo, zweig, await git(ordner, "rev-parse", "HEAD"), { ordner });
+    // fremder Stand (anderer Zweig) per merge geholt, dann hochgeladen: Kopf passt, aber ein Commit ist nicht lokal entstanden
+    const boese = await fremderZweig(fremd, "feature/cs-9-fremd");
+    await git(ordner, "fetch", "origin", "+refs/heads/feature/cs-9-fremd:refs/remotes/origin/feature/cs-9-fremd");
+    await git(ordner, "merge", "--no-edit", "origin/feature/cs-9-fremd");
+    await git(ordner, "push", "origin", `HEAD:refs/heads/${zweig}`);
+    const fremdeListe = await fremdeCommits(git, ordner);
+    assert.ok(fremdeListe.includes(boese));
+    await assert.rejects(zweigHochgeladenPruefen(git, repo, zweig, await git(ordner, "rev-parse", "HEAD"), { ordner }), (e) => e instanceof ZweigVeraendert && /nicht lokal entstanden/.test(e.message));
+    // cherry-pick erzeugt einen neuen Commit, aber nicht als „commit:“ im Reflog
+    const ordner2 = path.join(t, "auftrag-10");
+    await zweigVorbereiten({ git, repo, ordner: ordner2, zweigNeu: "feature/cs-10-r1-x", auftrag: { zweig: null }, eigenePcs: ["pc1"], existiert, rm });
+    await git(ordner2, "cherry-pick", boese);
+    assert.equal((await fremdeCommits(git, ordner2)).length, 1);
+    // mit Basis = letzter geprüfter Stand zählen nur die Commits danach
+    assert.deepEqual(await fremdeCommits(git, ordner2, "HEAD"), []);
+  } finally { await rm(t, { recursive: true, force: true }); }
+});
+
+test("N16: Werkstatt-Rechte sperren Git-Befehle, die fremde Stände holen; fremde Werkzeuge dürfen HEAD nicht bewegen", async () => {
+  const s = await readFile(new URL("../index.mjs", import.meta.url), "utf8");
+  const verboten = s.slice(s.indexOf("const VERBOTEN = ["), s.indexOf("];", s.indexOf("const VERBOTEN = [")));
+  for (const v of ["git pull*", "git merge*", "git rebase*", "git cherry-pick*", "git reset*", "git fetch*", "git checkout * origin/*", "git switch * origin/*", "git checkout origin/*", "git am*"])
+    assert.ok(verboten.includes(`"Bash(${v})"`), v);
+  const erlaubt = s.slice(s.indexOf("const ERLAUBT = ["), s.indexOf("];", s.indexOf("const ERLAUBT = [")));
+  assert.doesNotMatch(erlaubt, /git fetch/);
+  assert.match(s, /if \(\(await git\(ordner, "rev-parse", "HEAD"\)\) !== kopfVorher\) throw new ZweigVeraendert\(/);
+});
+
+test("N20/N18: Zweig gehört zum Auftrag; Fetch mit voll ausgeschriebener Refspec; Station prüft die Zugehörigkeit", async () => {
+  const { zweigGehoertZu } = await import("../lib/zweig.mjs");
+  assert.ok(zweigGehoertZu("feature/cs-12-r2-kader", 12));
+  for (const [z, id] of [["feature/cs-120-r1-x", 12], ["feature/cs-1-x", 12], ["feature/cs-12-../x", 12], [null, 12], ["feature/cs-12-x", 0], ["main", 12]]) assert.equal(zweigGehoertZu(z, id), false, `${z}/${id}`);
+  const s = await readFile(new URL("../index.mjs", import.meta.url), "utf8");
+  assert.doesNotMatch(s, /"fetch", "origin", "main"/); assert.doesNotMatch(s, /"fetch", "-q", "origin", "main"\)/);
+  assert.match(s, /"fetch", "origin", "\+refs\/heads\/main:refs\/remotes\/origin\/main", `\+refs\/heads\/\$\{a\.zweig\}:refs\/remotes\/origin\/\$\{a\.zweig\}`\);/);
+  assert.match(s, /if \(!zweigGehoertZu\(a\.zweig, a\.id\)\) \{ await rot\("Zweig gehört nicht zum Auftrag"/);
+  const z = await readFile(new URL("../lib/zweig.mjs", import.meta.url), "utf8");
+  assert.match(z, /"fetch", "origin", "\+refs\/heads\/main:refs\/remotes\/origin\/main"/);
+});
+
+test("Knopf „Neu aufnehmen“ nur, wenn die Person es darf", async () => {
+  const q = await readFile(new URL("../../../web/src/seiten/Zentrale.jsx", import.meta.url), "utf8");
+  const teil = q.slice(q.indexOf("export const NEU_AUFNEHMBAR"), q.indexOf("const NEU_AUFNEHMEN_ANTWORT"));
+  const erlaubt = Function(`${teil.replace(/export /g, "")}; return neuAufnehmenErlaubt;`)();
+  const jetzt = Date.parse("2026-11-03T12:00:00Z"); const alt = "2026-11-01T12:00:00Z"; const frisch = "2026-11-03T11:00:00Z";
+  const ich = { id: "u1", rolle: "entwickler" }; const a = { stand: "nacharbeit", erstellt_von: "u1", werkstatt_pc: "p2" };
+  assert.equal(erlaubt(a, { id: "x", rolle: "admin" }, [], jetzt), true);
+  assert.equal(erlaubt(a, ich, [{ id: "p2", benutzer_id: "u2", an: false, zuletzt: alt }], jetzt), true);
+  assert.equal(erlaubt(a, ich, [{ id: "p2", benutzer_id: "u2", an: true, zuletzt: frisch }], jetzt), false);
+  assert.equal(erlaubt(a, ich, [{ id: "p2", benutzer_id: "u2", an: false, zuletzt: frisch }], jetzt), false);
+  assert.equal(erlaubt(a, ich, [{ id: "p2", benutzer_id: "u1", an: false, zuletzt: alt }], jetzt), false);
+  assert.equal(erlaubt({ ...a, erstellt_von: "u3" }, ich, [], jetzt), false);
+  assert.equal(erlaubt({ ...a, stand: "wartet" }, { id: "x", rolle: "admin" }, [], jetzt), false);
+  assert.match(q, /\{neuAufnehmenErlaubt\(a, ich, d\?\.pcs\) && <NeuAufnehmenKnopf/);
 });

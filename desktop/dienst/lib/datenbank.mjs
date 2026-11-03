@@ -61,24 +61,42 @@ export async function zugangDa(sh, repo, umgebung) {
 }
 
 export const MAIN_SCHUTZ = "Codeschmiede: Zweig main";
-export async function mainSchuetzen(sh, repo) {
-  repoPruefen(repo);
-  const { stdout } = await sh("gh", ["api", `repos/${repo}/rulesets`, "--jq", ".[].name"]);
-  if (stdout.split("\n").map((x) => x.trim()).includes(MAIN_SCHUTZ)) return;
-  const regel = {
+// Siebte Prüfung (N17): wie beim Zweig live die Regel „update“ – main aktualisiert nur, wer die Regel umgehen darf (Repository-Admin = der Admin,
+// dessen Codeschmiede mit „gh pr merge --match-head-commit“ zusammenführt). Ein Entwickler kann seinen eigenen Pull Request bei GitHub nicht mergen.
+// Ein Pflicht-Prüflauf („required_status_checks“) kommt bewusst nicht dazu: Mit „update“ kann außer dem Admin ohnehin niemand mergen, der Admin
+// umgeht jede Regel, und die Codeschmiede verlangt vor ihrem Merge selbst alle Prüfläufe grün (pruefTore) – ein falscher Prüflauf-Name würde
+// dagegen jedes Projekt ohne genau diesen Lauf sperren.
+export const MAIN_REGELN = ["update", "deletion", "non_fast_forward", "pull_request"];
+export function mainRegel() {
+  return {
     name: MAIN_SCHUTZ, target: "branch", enforcement: "active",
     conditions: { ref_name: { include: ["refs/heads/main"], exclude: [] } },
-    rules: [{ type: "deletion" }, { type: "non_fast_forward" }, { type: "pull_request", parameters: {
+    rules: [{ type: "update" }, { type: "deletion" }, { type: "non_fast_forward" }, { type: "pull_request", parameters: {
       required_approving_review_count: 0, dismiss_stale_reviews_on_push: false, require_code_owner_review: false,
       require_last_push_approval: false, required_review_thread_resolution: false } }],
     bypass_actors: [{ actor_id: 5, actor_type: "RepositoryRole", bypass_mode: "always" }],
   };
+}
+/** Regel anlegen bzw. eine ältere Fassung (ohne „update“) ersetzen. Rückgabe: "neu" | "aktualisiert" | "ok". */
+export async function mainSchuetzen(sh, repo) {
+  repoPruefen(repo);
+  const { stdout } = await sh("gh", ["api", `repos/${repo}/rulesets`, "--jq", ".[] | [.id, .name] | @tsv"]);
+  const da = stdout.split("\n").map((z) => z.split("\t")).find(([, name]) => String(name || "").trim() === MAIN_SCHUTZ);
+  let id = null;
+  if (da) {
+    id = /^\d{1,12}$/.test(String(da[0]).trim()) ? String(da[0]).trim() : null;
+    if (!id) throw new Error("Ruleset-Kennung ungültig");
+    const { stdout: typen } = await sh("gh", ["api", `repos/${repo}/rulesets/${id}`, "--jq", "[.rules[].type] | join(\",\")"]);
+    const hat = new Set(typen.trim().split(",").filter(Boolean));
+    if (MAIN_REGELN.every((t) => hat.has(t))) return "ok";
+  }
   const ordner = await mkdtemp(path.join(os.tmpdir(), "cs-regel-"));
   try {
     const datei = path.join(ordner, "regel.json");
-    await writeFile(datei, JSON.stringify(regel));
-    await sh("gh", ["api", "-X", "POST", `repos/${repo}/rulesets`, "--input", datei]);
+    await writeFile(datei, JSON.stringify(mainRegel()));
+    await sh("gh", ["api", "-X", id ? "PUT" : "POST", id ? `repos/${repo}/rulesets/${id}` : `repos/${repo}/rulesets`, "--input", datei]);
   } finally { await rm(ordner, { recursive: true, force: true }).catch(() => {}); }
+  return id ? "aktualisiert" : "neu";
 }
 
 /** GitHub-Umgebung anlegen, die nur genau einen Zweig zulässt (main bzw. live). */
@@ -107,7 +125,10 @@ export async function dbEinrichten({ sh, projekt, auftragAnlegen, vorlage = null
   const teile = [];
   const fehlt = [];
   // Zweig main schützen (Prüfung N3): Änderungen nur über Pull Request, nicht löschen/überschreiben; der Admin darf umgehen
-  try { await mainSchuetzen(sh, repo); teile.push("Zweig main geschützt (nur über Pull Request)"); }
+  try {
+    const m = await mainSchuetzen(sh, repo);
+    teile.push(m === "aktualisiert" ? "Zweig main: Schutz erneuert – jetzt führt nur noch der Admin bzw. die Codeschmiede zusammen" : "Zweig main geschützt (nur über Pull Request, zusammenführen nur der Admin bzw. die Codeschmiede)");
+  }
   catch (e) { teile.push(`Achtung: Zweig main konnte nicht geschützt werden (${kurz(ohneGeheimnisse(String(e?.stderr || e?.message || "")), 120)})`); }
   for (const [umgebung, zweig, ref, bestehend] of [["test", "main", projekt.db_test_ref, projekt.db_test_bestehend], ["live", "live", projekt.db_live_ref, projekt.db_live_bestehend]]) {
     if (!ref) continue;
