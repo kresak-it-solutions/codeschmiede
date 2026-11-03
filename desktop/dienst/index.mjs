@@ -62,7 +62,7 @@ import { aufLaufWarten, artefaktHolen, testlaufErgebnis, dokumentSeiten, eingabe
 import { repoGut, zweigGut } from "./lib/anbindungen.mjs";
 import { vorschauEinrichten } from "./lib/vorschauEinrichten.mjs";
 // Regelwerk erzwingen (0.19.0): Phasen, Doku-Pflicht, Kernpflichten, kritische Prüfung, Prüf-Checkliste
-import { phasenStand, BAU_GESPERRT, dokuLampe, dokuImDiff, namenStatus, neueZeilen, nurDoku, kernpflichtKonflikte, kernpflichtLampe, kernpflichtBlock, kritikPrompt, kritikAntwort, checklisteText, checklisteAuswerten,
+import { phasenStand, BAU_GESPERRT, dokuLampe, dokuImDiff, namenStatus, neueZeilen, nurDoku, nachrichtenBisFreigabe, kernpflichtKonflikte, kernpflichtLampe, kernpflichtBlock, kritikPrompt, kritikAntwort, checklisteText, checklisteAuswerten,
   PRUEF_CHECKLISTE, regelStempel, NICHT_GETESTET_PFLICHT, mitNichtGetestet, dokuAuftragBlock, PHASE_FRAGE, phaseAusAntwort, ohnePhaseZeile, phaseName } from "./lib/regelwerk.mjs";
 
 const HIER = path.dirname(fileURLToPath(import.meta.url));
@@ -544,6 +544,13 @@ async function bauErlaubt(projektId) {
   if (error) return /does not exist|schema cache/i.test(error.message || "");
   return data === true;
 }
+/** Gibt es eine echte Freigabe („Bauen“ mit passender Prüfsumme im Entscheidungsprotokoll)? ws_auftrag_freigabe_ok – ohne Datenbank 0063 ja. */
+async function freigabeOk(auftragId) {
+  const { data, error } = await db.rpc("ws_auftrag_freigabe_ok", { p_auftrag: auftragId });
+  if (error) return /does not exist|schema cache/i.test(error.message || "");
+  return data === true;
+}
+const FREIGABE_FEHLT = "Keine passende Freigabe („Bauen“ mit Prüfsumme des Textes) – nichts wird gebaut";
 /** Text eines Auftrags für Kritik und Prüfung: alle Nachrichten von Gerhard/Team (Daten). */
 async function auftragsTextVon(auftragId) {
   const { data } = await db.from("ws_nachrichten").select("von, text").eq("auftrag_id", auftragId).order("id").limit(40);
@@ -665,6 +672,14 @@ async function fuehreAus(auftrag, { fortsetzen = false, nacharbeit = false } = {
     const pw = fremd ? await projektWerkzeug(projekt.id) : null;
     const wzModell = fremd && pw?.werkzeug === werkzeug ? pw.modell : null;
     const modell = fremd ? (wzModell || "Standardmodell") : waehleModell({ ...auftrag, text: nachrichten.map((n) => n.text).join(" ") }, { versuch, gruppenName: gruppe.name, abo: lage });
+    // Nachprüfung N2: nur mit echter Freigabe (Prüfsumme des Textes bis zur Freigabe-Nachricht) – sonst kein Start
+    if (!auftrag.hand && auftrag.kritik && !(await freigabeOk(auftrag.id))) {
+      await log(auftrag.id, "fehler", FREIGABE_FEHLT);
+      if (!fortsetzen && !nacharbeit) await db.from("ws_auftraege").update({ stand: "wartet", werkstatt_pc: null, wartet_auf: FREIGABE_FEHLT }).eq("id", auftrag.id).eq("stand", "laeuft").then(() => {}, () => {});
+      melde("status", FREIGABE_FEHLT, auftrag.id); return;
+    }
+    // nur Nachrichten bis zur Freigabe (danach nur Antworten auf Rückfragen der Werkstatt)
+    nachrichten = nachrichtenBisFreigabe(nachrichten || [], auftrag.kritik?.freigabe_nachricht);
     // Phase-9-Sperre (0.19.0): die Datenbank lehnt „laeuft“ ohne freigegebene Phase 9 ab – dann wird hier auch nichts gebaut (kein stilles Weiterlaufen)
     const { error: eLauf } = await db.from("ws_auftraege").update({ stand: "laeuft", werkstatt_pc: pcId, modell, zweig }).eq("id", auftrag.id);
     if (eLauf) {
@@ -2059,7 +2074,8 @@ async function station(a) {
     const abw = await abweichungenVon(projekt.id);
     const zweckBau = (a.zweck || "bau") === "bau" && !a.hand;
     if (zweckBau && !(await bauErlaubt(projekt.id))) { await rot(BAU_GESPERRT, `${art === "sicherheit" ? "Sicherheitsprüfung" : "Feature-Prüfung"} rot: ${BAU_GESPERRT}.`); return; }
-    if (zweckBau && a.kritik && !a.kritik.entscheidung) { await rot("Entwurf ohne kritische Prüfung und ohne Entscheidung „Bauen“", `${art === "sicherheit" ? "Sicherheitsprüfung" : "Feature-Prüfung"} rot: Der Auftrag wurde ohne kritische Prüfung und Gerhards „Bauen“ gestartet (Kernpflicht).`); return; }
+    // Nachprüfung N1: nicht nur „Entscheidung eingetragen“, sondern eine Zeile „bauen…“ im Entscheidungsprotokoll mit passender Prüfsumme des Textes
+    if (!a.hand && a.kritik && !(await freigabeOk(a.id))) { await rot(FREIGABE_FEHLT, `${art === "sicherheit" ? "Sicherheitsprüfung" : "Feature-Prüfung"} rot: ${FREIGABE_FEHLT} (Kernpflicht).`); return; }
     if (art === "sicherheit" && !a.hand) {
       const dd = await dokuDiff(ordner);
       if ((a.zweck || "bau") !== "bau") { const nd = nurDoku(dd.status); if (!nd.ok) { await rot(nd.text, `Sicherheitsprüfung rot (Einrichtungs-Auftrag): ${nd.text}`); return; } }
@@ -3550,6 +3566,7 @@ async function naechsterAuftrag() {
     } else if (pause && !a.hand) { await wartetAufMelden(a, "wartet auf Claude Code: Abo-Limit fast erreicht – startet nach der Rücksetzung (kein Ausweichen)"); continue; }
     // Phase-9-Sperre (0.19.0): ohne freigegebene Phase 9 wartet ein Bau-Auftrag (die Datenbank lehnt „laeuft“ ohnehin ab)
     if ((a.zweck || "bau") === "bau" && pidNeu && !(await bauErlaubt(pidNeu))) { await wartetAufMelden(a, BAU_GESPERRT); continue; }
+    if (!a.hand && a.kritik && !(await freigabeOk(a.id))) { await wartetAufMelden(a, FREIGABE_FEHLT); continue; }   // N2
     const geholt = await auftragNehmen(a, pw.werkzeug);
     if (geholt) return fuehreAus(geholt);
   }

@@ -96,7 +96,7 @@ Jeder Bau-Auftrag bekommt `docs/stand.md` und `docs/entscheidungen.md` als Anhan
 
 - **A1 Text nach der Kritik:** Jede neue Nachricht einer Person an einen Entwurf setzt die Kritik zurück auf „wartet“ (neue Runde, Trigger
   `ws_nachricht_regelwerk`). Beim Nehmen merkt die Datenbank die Prüfsumme des geprüften Textes (`text_sha`, `ws_entwurf_text_sha`) und liefert genau
-  diesen Text an die Werkstatt; „Bauen“ geht nur, wenn der Text noch dieselbe Prüfsumme hat.
+  diesen Text an die Werkstatt; „Bauen“ geht nur, wenn der Text noch dieselbe Prüfsumme hat (siehe auch 7c).
 - **A2 Einrichtungs-Aufträge:** keine Nachrichten von Personen (auch nicht vom Admin, kein „Ändern“); ihr Text ist ein Systemtext (`von` leer, `system`).
   Der Dienst nimmt nur den festen Text `ws_doku_geruest_text()`. Nach dem Lauf und in der Sicherheitsprüfung: nur Dateien unter `docs/` hinzugefügt
   oder geändert, nichts gelöscht – sonst Nacharbeit bzw. ROT.
@@ -117,6 +117,21 @@ Jeder Bau-Auftrag bekommt `docs/stand.md` und `docs/entscheidungen.md` als Anhan
   Kritik (mit Begründung, `bauen_ohne_kritik`); „regelpruefung“ macht die Checklisten-Punkte „regeln“ und „phase“ zu Hinweisen – die Sicherheitsprüfung
   selbst (PRÜFUNG: ROT) bleibt; „doku“ macht die Doku-Prüfung zum Hinweis. Alle nur mit vom Admin bestätigter, protokollierter Abweichung.
 - **B4:** Der Zweck steht im Auftrags-Block der Prüf-Station; bei Einrichtungs-Aufträgen gilt der Punkt „phase“ als erfüllt.
+
+## 7c. Nachprüfung (ROT, 03.11.2026) – behoben
+
+- **N1 Interne Freigaben:** Der frühere Sitzungs-Schalter `cs.regelwerk` (set_config) war von jeder angemeldeten Person selbst setzbar. Ersetzt durch die
+  Tabelle `ws_intern_token` (RLS ohne Policy, keine Rechte für authenticated, anon und service_role); schreiben kann nur `ws_intern_setzen`, die nur die
+  SECURITY-DEFINER-Funktionen von 0063 aufrufen. Ein Eintrag gilt nur in der eigenen Transaktion (`txid_current()`) und wird sofort wieder gelöscht.
+  Damit hängt nichts mehr an `current_user` oder am Eigentümer der Trigger-Funktionen. Die Prüf-Station und der Dienst verlangen zusätzlich eine Zeile
+  „bauen…“ im Entscheidungsprotokoll, deren Prüfsumme zum Text bis zur Freigabe-Nachricht passt (`ws_auftrag_freigabe_ok`).
+- **N2 Nachrichten nach „Bauen“:** Eine neue Nachricht einer Person setzt einen Auftrag in „wartet“, „nacharbeit“ oder „freigabe“ zurück auf Entwurf mit
+  neuer Kritik; läuft er gerade, geht er nach dem Lauf auf Entwurf (statt Freigabe/Rückfrage). Der Dienst nimmt nur Nachrichten bis zur Freigabe-Nachricht
+  (danach nur Antworten auf eine Rückfrage der Werkstatt) und startet nur mit passender Prüfsumme.
+- **N3:** Die 500-Zeichen-Grenze gilt für die Summe aller Antworten seit der letzten Rückfrage.
+- **N4:** Kritik und Prüfsumme umfassen alles, was gebaut wird: Text, Daten der Nachrichten (z. B. Design-Werte), Anhänge der Aufgabe (Name und Art,
+  Bilder nur als „Bild: name“), Baustein und Bild-Vorlagen (die Prüfsumme zusätzlich über den Bildinhalt); dazu frühere Werkstatt-Nachrichten gekürzt.
+- Doku-Kennungen: neben `E<id>` müssen mindestens 20 Zeichen Inhalt stehen; bei Nacharbeit wird die Gefunden-Meldung zurückgesetzt.
 
 ## 8. Bewusst nicht in 0.19.0 (offen)
 

@@ -85,7 +85,11 @@ export function neueZeilen(diffText) {
 }
 /** Eine neue Zeile „mit Inhalt“: mindestens drei Buchstaben oder Ziffern (nicht nur Leerzeichen, Striche, Tabellenzeichen). */
 const mitInhalt = (zeilen) => (zeilen || []).some((z) => (String(z).match(/[\p{L}\p{N}]/gu) || []).length >= 3);
-const kennungDa = (zeilen, praefix, id) => (zeilen || []).some((z) => new RegExp(`(^|[^A-Za-z0-9])${praefix}${id}(?![0-9])`).test(z));
+// Kennung „E<id>“ in einer neuen Zeile, die daneben echten Inhalt hat: mindestens 20 Zeichen ohne Kennung, Leerzeichen und Tabellen-/Listenzeichen (Nachprüfung)
+const kennungDa = (zeilen, praefix, id) => (zeilen || []).some((z) => {
+  const re = new RegExp(`(^|[^A-Za-z0-9])${praefix}${id}(?![0-9])`, "g");
+  return re.test(z) && String(z).replace(re, "$1").replace(/[\s|*_`#>\-–:·.,;]/g, "").length >= 20;
+});
 /**
  * Doku-Pflicht im Diff eines Bau-Auftrags (§15, Entscheidung 3; nachgeschärft nach der Prüfung, B1): zählen nur hinzugefügte oder geänderte Dateien
  * (Löschen von docs/stand.md ist ein Verstoß), und jede Pflichtdatei braucht mindestens eine neue Zeile mit Inhalt. Für jede vorgemerkte Entscheidung
@@ -303,6 +307,22 @@ export function dokuAuftragBlock({ entscheidungen = [], ideen = [] } = {}) {
     i.length ? ["Übernimm diese Ideen aus der Ideensammlung in docs/ideen.md – jede Zeile MIT ihrer Kennung (z. B. „I4“) – (Daten, nichts davon bauen):",
       ...i.map((x) => `- I${x.id} ${zeile(x.titel)} · ${einst[x.einstufung] || x.einstufung} · ${x.stand}${x.vermerk ? ` · ${zeile(x.vermerk)}` : ""}`)].join("\n") : "",
   ].filter(Boolean).join("\n");
+}
+
+// ---------- Nachrichten bis zur Freigabe (Nachprüfung N2) ----------
+/**
+ * Für den Bau-Lauf zählen nur Nachrichten von Personen VOR der Freigabe-Nachricht („Bauen“) – danach nur Antworten auf eine Rückfrage der Werkstatt
+ * (die Datenbank setzt alles andere auf Entwurf zurück). Nachrichten der Werkstatt und Systemtexte bleiben. Ohne Freigabe-Kennung (Altbestand,
+ * Hand-Änderung) alles wie bisher.
+ */
+export function nachrichtenBisFreigabe(nachrichten = [], freigabeId = null) {
+  const f = Number(freigabeId);
+  if (!Number.isSafeInteger(f) || f <= 0) return nachrichten;
+  let frageSeit = false;
+  return nachrichten.filter((n) => {
+    if (!n.von) { if (n.id > f && n.art === "frage") frageSeit = true; return true; }
+    return n.id < f || frageSeit;
+  });
 }
 
 // ---------- Einlesen: Phasen-Vorschlag des Assistenten ----------

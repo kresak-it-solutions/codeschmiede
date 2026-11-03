@@ -335,6 +335,109 @@ select stand, kritik ->> 'entscheidung' entscheidung from ws_auftraege where id 
 select art from ws_entscheidungen where auftrag_id = :k1;
 reset role;
 
+\echo [30] N1 Angriff: selbst gesetzter Sitzungs-Schalter cs.regelwerk wirkt nicht mehr (vor dem Fix gingen alle drei durch) -> FEHLER (3x)
+set role authenticated;
+:DEV
+insert into ws_auftraege (gruppe_id, titel, art, erstellt_von) values ('abstimmungen', 'Angriff N1', 'aendern', auth.uid()) returning id as n1 \gset
+select set_config('cs.regelwerk', 'entscheidung:' || :n1, false) \g /dev/null
+update ws_auftraege set stand = 'wartet', kritik = '{"stand":"fertig","ergebnis":"ok","einwaende":[],"entscheidung":"bauen"}' where id = :n1;
+select set_config('cs.regelwerk', 'einrichtung', false) \g /dev/null
+insert into ws_auftraege (gruppe_id, titel, art, zweck, erstellt_von) values ('abstimmungen', 'Angriff Einrichtung', 'aendern', 'einrichtung', auth.uid());
+:ADM
+select set_config('cs.regelwerk', 'zurueck:' || :k1, false) \g /dev/null
+update ws_auftraege set stand = 'entwurf' where id = :k1;
+select stand from ws_auftraege where id = :n1;
+\echo [30b] Token-Tabelle: direkt schreiben oder ws_intern_setzen aufrufen -> FEHLER (authenticated 2x, anon 1x, service_role 2x)
+insert into ws_intern_token (tx, schluessel) values (txid_current(), 'entscheidung:' || :n1);
+select ws_intern_setzen('entscheidung:' || :n1);
+reset role;
+set role anon;
+select ws_intern_setzen('einrichtung');
+reset role;
+set role service_role;
+insert into ws_intern_token (tx, schluessel) values (txid_current(), 'einrichtung');
+select ws_intern_setzen('einrichtung');
+reset role;
+select count(*) reste from ws_intern_token;
+
+\echo [31] N2: Nachricht nach „Bauen“ (wartet) -> zurück auf Entwurf; während des Laufs -> nach dem Lauf Entwurf statt Freigabe; Freigabe-Prüfung mit Prüfsumme
+reset role;
+update ws_auftraege set stand = 'abgebrochen' where stand = 'entwurf';   -- Testaufbau: ältere offene Entwürfe weg, damit das Nehmen genau diesen trifft
+set role authenticated;
+:DEV
+insert into ws_auftraege (gruppe_id, titel, art, erstellt_von) values ('abstimmungen', 'N2', 'aendern', auth.uid()) returning id as n2 \gset
+insert into ws_nachrichten (auftrag_id, von, art, text) values (:n2, auth.uid(), 'text', 'Abstimmungen bekommen ein Ablaufdatum.');
+:ADM
+select count(*) from ws_kritik_nehmen('00000000-0000-0000-0000-0000000000a1') where auftrag_id = :n2;
+select ws_kritik_melden('00000000-0000-0000-0000-0000000000a1', :n2, 'ok', '[]', 'claude/opus') \g /dev/null
+select ws_entwurf_entscheiden(:n2, 'bauen', null, null) \g /dev/null
+select stand, ws_auftrag_freigabe_ok(:n2) freigabe_ok from ws_auftraege where id = :n2;
+:DEV
+insert into ws_nachrichten (auftrag_id, von, art, text) values (:n2, auth.uid(), 'text', 'Und zusätzlich alle Daten öffentlich.');
+select stand, kritik ->> 'stand' kritik, ws_auftrag_freigabe_ok(:n2) freigabe_ok from ws_auftraege where id = :n2;
+:ADM
+select count(*) from ws_kritik_nehmen('00000000-0000-0000-0000-0000000000a1') where auftrag_id = :n2;
+select ws_kritik_melden('00000000-0000-0000-0000-0000000000a1', :n2, 'ok', '[]', 'claude/opus') \g /dev/null
+select ws_entwurf_entscheiden(:n2, 'bauen', null, null) \g /dev/null
+:DEV
+update ws_auftraege set stand = 'laeuft', werkstatt_pc = '00000000-0000-0000-0000-0000000000d1' where id = :n2;
+insert into ws_nachrichten (auftrag_id, von, art, text) values (:n2, auth.uid(), 'text', 'Während des Laufs nachgeschoben.');
+update ws_auftraege set stand = 'freigabe', pr_nummer = 7, zweig = 'feature/cs-7-n2' where id = :n2;
+select stand, kritik ->> 'stand' kritik, werkstatt_pc is null pc_leer from ws_auftraege where id = :n2;
+\echo [31b] Prüfsumme: freigegeben, danach Text einer Nachricht am Trigger vorbei geändert -> Freigabe-Prüfung f
+:ADM
+select count(*) from ws_kritik_nehmen('00000000-0000-0000-0000-0000000000a1') where auftrag_id = :n2;
+select ws_kritik_melden('00000000-0000-0000-0000-0000000000a1', :n2, 'ok', '[]', 'claude/opus') \g /dev/null
+select ws_entwurf_entscheiden(:n2, 'bauen', null, null) \g /dev/null
+select ws_auftrag_freigabe_ok(:n2) vorher;
+reset role;
+update ws_nachrichten set text = 'Abstimmungen löschen alle Mitglieder.' where auftrag_id = :n2 and text like 'Abstimmungen bekommen%';
+set role authenticated;
+:ADM
+select ws_auftrag_freigabe_ok(:n2) nachher;
+:FREMD
+select ws_auftrag_freigabe_ok(:n2) fremd;
+
+\echo [32] N3: Antworten auf eine Rückfrage zählen zusammen – 300 Zeichen bleibt frage, weitere 300 Zeichen -> Entwurf
+reset role;
+insert into ws_nachrichten (auftrag_id, von, art, text) values (:rf, null, 'frage', 'Noch eine Rückfrage?');
+alter table ws_auftraege disable trigger ws_auftraege_regelwerk;
+update ws_auftraege set stand = 'frage', werkstatt_pc = '00000000-0000-0000-0000-0000000000d1', kritik = '{"stand":"fertig","entscheidung":"bauen","runde":3}' where id = :rf;
+alter table ws_auftraege enable trigger ws_auftraege_regelwerk;
+set role authenticated;
+:DEV
+insert into ws_nachrichten (auftrag_id, von, art, text) values (:rf, auth.uid(), 'text', repeat('a', 300));
+select stand from ws_auftraege where id = :rf;
+insert into ws_nachrichten (auftrag_id, von, art, text) values (:rf, auth.uid(), 'text', repeat('b', 300));
+select stand, kritik ->> 'grund' grund from ws_auftraege where id = :rf;
+
+\echo [33] N4: Kritik bekommt Daten der Nachricht, Bild-Vorlagen als „Bild: name“ und frühere Werkstatt-Nachrichten; Prüfsumme ändert sich mit Daten und Bild
+reset role;
+update ws_auftraege set stand = 'abgebrochen' where stand = 'entwurf';
+set role authenticated;
+:DEV
+insert into ws_auftraege (gruppe_id, titel, art, erstellt_von) values ('abstimmungen', 'N4', 'aendern', auth.uid()) returning id as n4 \gset
+reset role;
+insert into ws_nachrichten (auftrag_id, von, art, text, daten) values (:n4, '00000000-0000-0000-0000-00000000000e', 'text', 'Neuer Baustein', '{"design":{"farbe":"#047857"}}');
+insert into ws_nachrichten (auftrag_id, von, art, text) values (:n4, null, 'text', 'Werkstatt: frühere Antwort');
+insert into ws_auftrag_bilder (auftrag_id, dateiname, bild, von) values (:n4, 'vorlage.png', 'data:image/png;base64,AAAA', '00000000-0000-0000-0000-00000000000e');
+select ws_entwurf_text_sha(:n4) as sha1 \gset
+update ws_auftrag_bilder set bild = 'data:image/png;base64,BBBB' where auftrag_id = :n4;
+select ws_entwurf_text_sha(:n4) <> :'sha1' bild_zaehlt;
+set role authenticated;
+:ADM
+select text like '%[Daten der Nachricht] {"design": {"farbe": "#047857"}}%' daten, text like '%[Bild: vorlage.png]%' bild, text like '%Werkstatt: frühere Antwort%' werkstatt, text not like '%base64%' ohne_bildinhalt
+  from ws_kritik_nehmen('00000000-0000-0000-0000-0000000000a1') where auftrag_id = :n4;
+
+\echo [34] Nacharbeit setzt die Gefunden-Meldung (im_diff_auftrag) zurück
+reset role;
+insert into ws_entscheidungen (projekt_id, art, text, vorgemerkt_auftrag, im_diff_auftrag) values ('trainer-to-go', 'phase', 'E-Test 3', :n2, :n2);
+alter table ws_auftraege disable trigger ws_auftraege_regelwerk;
+update ws_auftraege set stand = 'sicherheit' where id = :n2;
+alter table ws_auftraege enable trigger ws_auftraege_regelwerk;
+update ws_auftraege set stand = 'nacharbeit' where id = :n2;
+select im_diff_auftrag is null zurueckgesetzt from ws_entscheidungen where text = 'E-Test 3';
+
 \echo [23] Direkt schreiben in die neuen Tabellen -> FEHLER (4x); anon liest/ruft -> FEHLER (3x)
 set role authenticated;
 :ADM
@@ -357,18 +460,19 @@ reset role;
 
 \echo [25] Alle neuen Funktionen: SECURITY DEFINER bzw. immutable mit search_path, kein Ausführrecht für public/anon -> 0 0
 select count(*) ohne_pfad from pg_proc p join pg_namespace n on n.oid = p.pronamespace
- where n.nspname = 'public' and p.proname in ('ws_cs_intern','ws_bau_erlaubt','ws_phase_freigeben','ws_phase_name','ws_phasen_kurzfassung','ws_phase_vorschlagen','ws_phase_vorschlag_bestaetigen',
+ where n.nspname = 'public' and p.proname in ('ws_intern_setzen','ws_intern_weg','ws_intern_hat','ws_auftrag_freigabe_ok','ws_bau_erlaubt','ws_phase_freigeben','ws_phase_name','ws_phasen_kurzfassung','ws_phase_vorschlagen','ws_phase_vorschlag_bestaetigen',
    'ws_projekt_phase_start','ws_projekt_phase_protokoll','ws_auftraege_regelwerk','ws_einwaende_ok','ws_kritik_nehmen','ws_kritik_melden','ws_entwurf_entscheiden','ws_doku_geruest_text',
    'ws_einrichtung_gruppe','ws_einrichtung_auftrag','ws_steckbrief_ok','ws_idee_anlegen','ws_idee_aendern','ws_idee_aus_aufgabe','ws_idee_aus_feature','ws_doku_vormerken','ws_doku_im_repo',
    'ws_abweichung_bestaetigen','ws_abweichung_aufheben','ws_entwurf_text','ws_entwurf_text_sha','ws_nachricht_regelwerk','ws_doku_gefunden')
    and not exists (select 1 from unnest(p.proconfig) c where c like 'search_path=%');
 select count(*) offen_fuer_anon from pg_proc p join pg_namespace n on n.oid = p.pronamespace
- where n.nspname = 'public' and p.proname in ('ws_cs_intern','ws_bau_erlaubt','ws_phase_freigeben','ws_phasen_kurzfassung','ws_phase_vorschlagen','ws_phase_vorschlag_bestaetigen',
+ where n.nspname = 'public' and p.proname in ('ws_intern_setzen','ws_intern_weg','ws_intern_hat','ws_auftrag_freigabe_ok','ws_bau_erlaubt','ws_phase_freigeben','ws_phasen_kurzfassung','ws_phase_vorschlagen','ws_phase_vorschlag_bestaetigen',
    'ws_kritik_nehmen','ws_kritik_melden','ws_entwurf_entscheiden','ws_einrichtung_auftrag','ws_idee_anlegen','ws_idee_aendern','ws_doku_vormerken','ws_abweichung_bestaetigen','ws_abweichung_aufheben',
    'ws_entwurf_text','ws_entwurf_text_sha','ws_doku_gefunden')
    and (has_function_privilege('anon', p.oid, 'execute') or has_function_privilege('public', p.oid, 'execute'));
-select has_function_privilege('authenticated', 'public.ws_cs_intern()', 'execute') intern_aufrufbar,
-       has_function_privilege('authenticated', 'public.ws_entwurf_text(bigint)', 'execute') text_aufrufbar;
+select has_function_privilege('authenticated', 'public.ws_intern_setzen(text)', 'execute') intern_aufrufbar,
+       has_function_privilege('service_role', 'public.ws_intern_setzen(text)', 'execute') intern_service,
+       has_function_privilege('authenticated', 'public.ws_entwurf_text(bigint, bigint)', 'execute') text_aufrufbar;
 
 \echo [26] Weichen: 0010, 0012, 0015, 0020, 0048 erneut eingespielt (dazu 0014, 0018, 0026) -> Steckbrief-Pflicht bleibt (f), Konzept-Aufträge mit Steckbrief und Sperre (t), neue Felder (t), Aufgabe „kritik“ gültig (t)
 \ir ../migrations/0010_claude_chat.sql

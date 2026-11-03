@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import {
   PHASEN, phasenStand, BAU_GESPERRT, DOKU_GERUEST, dokuGeruest, dokuLampe, dokuImDiff, KERNPFLICHTEN, kernpflichtKonflikte, kernpflichtLampe, kernpflichtBlock,
-  namenStatus, neueZeilen, nurDoku, steckbriefOk, kritikPrompt, kritikAntwort, PRUEF_CHECKLISTE, checklisteText, checklisteAuswerten, regelStempel, mitNichtGetestet, dokuAuftragBlock,
+  namenStatus, neueZeilen, nurDoku, nachrichtenBisFreigabe, steckbriefOk, kritikPrompt, kritikAntwort, PRUEF_CHECKLISTE, checklisteText, checklisteAuswerten, regelStempel, mitNichtGetestet, dokuAuftragBlock,
   phaseAusAntwort, ohnePhaseZeile, PHASE_FRAGE,
 } from "../lib/regelwerk.mjs";
 import { regelBlock, regelBlockText } from "../lib/regeln.mjs";
@@ -40,7 +40,7 @@ test("Phasensperre im Dienst: nichts läuft, wenn die Datenbank „laeuft“ abl
   assert.match(s, /!\(await bauErlaubt\(pidNeu\)\)\) \{ await wartetAufMelden\(a, BAU_GESPERRT\); continue; \}/);
   // Stationen: ohne Phase 9 bzw. ohne kritische Prüfung und „Bauen“ rot
   assert.match(s, /zweckBau && !\(await bauErlaubt\(projekt\.id\)\)\) \{ await rot\(BAU_GESPERRT/);
-  assert.match(s, /zweckBau && a\.kritik && !a\.kritik\.entscheidung\) \{ await rot\(/);
+  assert.match(s, /if \(!a\.hand && a\.kritik && !\(await freigabeOk\(a\.id\)\)\) \{ await rot\(FREIGABE_FEHLT/);
 });
 
 test("Konzept-Chat: Prompt legt nur Entwürfe an, nicht mehr „sofort gebaut“; Steckbrief Pflicht", () => {
@@ -112,10 +112,13 @@ test("Doku-Prüfung im Diff (B1): nur hinzugefügt/geändert mit neuer Zeile mit
   // Kennungen: E7 und I3 müssen in den NEUEN Zeilen stehen; E70 zählt nicht als E7
   const basis = { "docs/stand.md": ["Stand neu"], "docs/CHANGELOG.md": ["| 0.2 | neu |"] };
   const st = "M\tdocs/stand.md\nM\tdocs/CHANGELOG.md\nM\tdocs/entscheidungen.md\nM\tdocs/ideen.md";
-  const e = dokuImDiff(dd(st, { ...basis, "docs/entscheidungen.md": ["| E70 | Bauen |"], "docs/ideen.md": ["- I3 Export"] }), { entscheidungen: [7], ideen: [3] });
+  const e = dokuImDiff(dd(st, { ...basis, "docs/entscheidungen.md": ["| E70 | Bauen trotz Einwand, Abnahme folgt |"], "docs/ideen.md": ["- I3 Kalender als ICS exportieren"] }), { entscheidungen: [7], ideen: [3] });
   assert.equal(e.ok, false); assert.deepEqual(e.gefundenE, []); assert.deepEqual(e.gefundenI, [3]); assert.match(e.text, /E7/);
-  const e2 = dokuImDiff(dd(st, { ...basis, "docs/entscheidungen.md": ["| E7 | Bauen trotz Einwand |", "- E9: Phase 3"], "docs/ideen.md": ["- I3 Export"] }), { entscheidungen: [7, 9], ideen: [3] });
+  const e2 = dokuImDiff(dd(st, { ...basis, "docs/entscheidungen.md": ["| E7 | Bauen trotz Einwand, Abnahme kommt mit 0.2 |", "- E9: Phase 3 Designrichtung freigegeben"], "docs/ideen.md": ["- I3 Kalender als ICS exportieren"] }), { entscheidungen: [7, 9], ideen: [3] });
   assert.equal(e2.ok, true); assert.deepEqual(e2.gefundenE, [7, 9]);
+  // Nachprüfung: nur die Kennung (oder fast leere Zeile) zählt nicht – mindestens 20 Zeichen Inhalt daneben
+  const leer = dokuImDiff(dd(st, { ...basis, "docs/entscheidungen.md": ["| E7 | | |", "- E9: ok"], "docs/ideen.md": ["I3"] }), { entscheidungen: [7, 9], ideen: [3] });
+  assert.equal(leer.ok, false); assert.deepEqual(leer.gefundenE, []); assert.deepEqual(leer.gefundenI, []);
   const ab = dokuImDiff(dd("M\tsrc/a.js"), { abweichung: true }); assert.equal(ab.ok, true); assert.equal(ab.hinweis, true); assert.match(ab.text, /Abweichung/);
 });
 
@@ -240,6 +243,18 @@ test("Entscheidungsprotokoll und Ideen gehen über den Auftrag ins Repository (D
   const b = dokuAuftragBlock({ entscheidungen: [{ id: 12, text: "Bauen trotz\nEinwand", begruendung: "weil | so", wann: "2026-11-03T10:00:00Z", einwaende: [{ text: "Abnahme fehlt" }] }], ideen: [{ id: 4, titel: "Export", einstufung: "gross", stand: "offen" }] });
   assert.match(b, /docs\/entscheidungen\.md/); assert.match(b, /MIT ihrer Kennung/); assert.match(b, /- E12 · 2026-11-03 · Bauen trotz Einwand · Begründung: weil so · Einwände: Abnahme fehlt/);
   assert.match(b, /- I4 Export · groß · offen/); assert.match(b, /nichts davon bauen/);
+});
+
+test("N2: für den Lauf nur Nachrichten bis zur Freigabe, danach nur Antworten auf eine Rückfrage; Start nur mit echter Freigabe", async () => {
+  const n = [{ id: 1, von: "g", text: "Auftrag" }, { id: 2, von: null, art: "system", text: "Entwurf freigegeben" }, { id: 3, von: "g", text: "heimlich nachgeschoben" },
+    { id: 4, von: null, art: "frage", text: "Rückfrage" }, { id: 5, von: "g", text: "Antwort" }];
+  assert.deepEqual(nachrichtenBisFreigabe(n, 2).map((x) => x.id), [1, 2, 4, 5]);
+  assert.deepEqual(nachrichtenBisFreigabe(n, null).map((x) => x.id), [1, 2, 3, 4, 5]);   // Altbestand / Hand-Änderung
+  const s = await quelle();
+  assert.match(s, /if \(!auftrag\.hand && auftrag\.kritik && !\(await freigabeOk\(auftrag\.id\)\)\) \{/);
+  assert.match(s, /nachrichten = nachrichtenBisFreigabe\(nachrichten \|\| \[\], auftrag\.kritik\?\.freigabe_nachricht\);/);
+  assert.match(s, /if \(!a\.hand && a\.kritik && !\(await freigabeOk\(a\.id\)\)\) \{ await wartetAufMelden\(a, FREIGABE_FEHLT\); continue; \}/);
+  assert.match(s, /db\.rpc\("ws_auftrag_freigabe_ok", \{ p_auftrag: auftragId \}\)/);
   assert.match(dokuAuftragBlock({}), /docs\/stand\.md/);
 });
 
