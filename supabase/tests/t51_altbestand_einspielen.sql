@@ -1,6 +1,7 @@
 -- t51: 0063 auf einer Datenbank MIT Altbestand einspielen (Fehler beim ersten Einspielen am 03.11.2026:
 -- „function public.ws_freigabe_gueltig(bigint) does not exist“ – der Altbestand-Block lief vor der Funktion).
 -- Ablauf: frische Datenbank bis 0062 (ohne 0063), dann diese Datei mit psql -v ON_ERROR_STOP=1 -f, dann 0063 zweimal, dann Teil 2 (unten, ab „-- TEIL 2“).
+-- Teil 2 wird von Hand ausgeführt: die Prüfabfrage am Dateiende (ohne „-- “) muss genau „t51 ok“ liefern.
 -- Nur erfundene Test-Konten.
 do $$ declare g text; u uuid; s text; begin
   select gr.id into g from ws_gruppen gr join ws_bereiche b on b.id = gr.bereich_id
