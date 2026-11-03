@@ -42,7 +42,7 @@ KONZEPT-GESPRÄCH: Das ist Gerhards allgemeiner Chat mit dir (wie mit einem Entw
 3. Geklärte Grundsatz-Entscheidungen bietest du zum Übernehmen ins Wissen an (Zeile WISSEN).
 ${wissen.length ? "Bau auf dem bestätigten Wissen auf und frag gezielt nach den Kapiteln, zu denen noch nichts feststeht." : "Für dieses Projekt steht noch nichts fest – fang bei Ziel und Zielgruppe an."}
 ` : ""}
-${alt ? `Bisheriges Gespräch:\n${alt}\n\n` : ""}Gerhards Nachricht: ${kurz(frage, 6000)}
+${alt ? `Bisheriges Gespräch:\n${alt}\n\n` : ""}Gerhards Nachricht: ${String(frage || "")}
 ${anhaenge ? `${anhaenge}
 ` : ""}
 So antwortest du:

@@ -3,6 +3,7 @@ import {
   Palette, Shapes, Stamp, Save, Send, Copy, Plus, Trash2, Undo2, Redo2, History, GitCompareArrows, Monitor, Tablet, Smartphone,
   Sun, Moon, LayoutGrid, CheckCheck, CircleCheck, CircleAlert, TriangleAlert, Loader2, Bot, ShieldCheck, Sparkles, Check, X, ExternalLink, LayoutTemplate, Home, Users, Calendar, Trophy, Settings, Bell, Search, Menu, Hammer } from "lucide-react";
 import { supabase } from "./supabase";
+import { TEXT_MAX } from "./textGrenze";
 import { useKiName } from "./kiName";
 import { BausteineModus, MarkeModus, BAUSTEIN_BASIS, bausteinWerteBereinigen } from "./DesignerBausteine";
 import { MARKE_BASIS, Logo as MarkeLogo, LogoZeichen } from "./Logo";
@@ -655,7 +656,7 @@ function DesignChat({ d, ich, projekt, entwurf, werte, befunde, darf, toast, onU
     // Bereich mitschicken: die Werkstatt wählt danach die KI-Zuständigkeit (Marke → „Bilder & Grafiken“)
     const frage = modus === "marke" ? `[Marke] ${basis}` : modus === "bausteine" ? `[Bausteine] ${basis}` : basis;
     setSenden(true);
-    const { error } = await supabase.from("ws_design_chat").insert({ projekt_id: projekt.id, entwurf_id: entwurf?.id || null, text: frage.slice(0, 8000), werte });
+    const { error } = await supabase.from("ws_design_chat").insert({ projekt_id: projekt.id, entwurf_id: entwurf?.id || null, text: frage.slice(0, TEXT_MAX), werte });
     setSenden(false);
     if (error) return toast(fehler(error));
     setText("");
@@ -688,7 +689,7 @@ function DesignChat({ d, ich, projekt, entwurf, werte, befunde, darf, toast, onU
           </ChatNachricht>))}
         {wartet.length > 0 && <ChatWartet an={werkstattAn} ki={ki.name} text={`${ki.name} denkt nach … (über deine Werkstatt, ca. 20–60 Sek.)`} aus="Deine Werkstatt ist aus – schalte sie oben ein, dann antwortet Claude." />}
       </ChatVerlauf>
-      <ChatEingabe value={text} onChange={setText} busy={senden} aktionen={{ besprechen: () => schicke() }} maxLength={4000} platzhalter="Was soll sich am Design ändern?"
+      <ChatEingabe value={text} onChange={setText} busy={senden} aktionen={{ besprechen: () => schicke() }} platzhalter="Was soll sich am Design ändern?"
         gesperrt={darf ? null : "Mitlesen möglich – fragen dürfen Entwickler mit Design-Recht."}
         ideen={start && !liste.length ? IDEEN_START : IDEEN} onIdee={(i) => schicke(i)}
         hinweis={!werkstattAn ? `${ki.name} antwortet über deine Werkstatt – sie ist gerade aus.` : "Besprechen: Vorschläge übernimmst du mit einem Klick; als Auftrag geht erst der Entwurf (oben „Als Auftrag senden“)."} />

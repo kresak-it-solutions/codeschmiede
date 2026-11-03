@@ -23,7 +23,10 @@ update ws_werkstatt_pcs set faehigkeiten = '{"plattform":"darwin"}' where id = '
 \echo [1] Bestehende und neue Projekte programmieren mit Claude Code -> 0 Zeilen mit anderem Werkzeug, vereinsheft/bauen = claude-code
 reset role;
 select count(*) andere from ws_ki_zustaendigkeit where werkzeug <> 'claude-code';
-select werkzeug, werkzeug_modell from ws_ki_zustaendigkeit where projekt_id = 'vereinsheft' and aufgabe = 'bauen';
+-- Seit 0062 (0.18.0) hat ein neues Projekt keine eigene Zeile „bauen“ mehr – dann gilt der globale Wert (Start wie Trainer to go: Claude Code,
+-- geprüft in t49). Darum hier: Projektzeile, sonst Claude Code (läuft so vor und nach 0062).
+select coalesce((select werkzeug from ws_ki_zustaendigkeit where projekt_id = 'vereinsheft' and aufgabe = 'bauen'), 'claude-code') werkzeug,
+       (select werkzeug_modell from ws_ki_zustaendigkeit where projekt_id = 'vereinsheft' and aufgabe = 'bauen') werkzeug_modell;
 set role authenticated;
 
 \echo [2] Entwickler stellt das Werkzeug ein -> FEHLER (nur Admin)

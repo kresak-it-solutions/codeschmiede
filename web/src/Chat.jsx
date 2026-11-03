@@ -8,6 +8,8 @@ import { MitErwaehnung, erwaehnte, erwaehnteGruppen } from "./Bezuege";
 import { Vorschlag, ORT_NAME } from "./KonzeptChat";
 import CodeschmiedeZeichen from "./Zeichen";
 import { BezugChip, ChatNachricht, ChatWartet, ChatEingabe } from "./bausteine/chat";
+import { TEXT_MAX } from "./textGrenze";
+import { verzoegert } from "./daten/werkstattDaten";
 import { Laden } from "./bausteine/zustand";
 
 // Chat wie bei Claude (Entwurf 1.1 „Oberfläche 2.0 & Chat“, freigegeben von Gerhard 2026-10-27 08:27):
@@ -174,8 +176,11 @@ function Gespraech({ d, ich, toast, unterhaltung, titel, onAngelegt, bezuegeAn, 
   }, [d.projektId, id, unterhaltung]);
   useEffect(() => {
     holen();
-    const ch = supabase.channel(`cs-chat-${d.projektId}-${unterhaltung}-${Math.random()}`).on("postgres_changes", { event: "*", schema: "public", table: "ws_claude_chat" }, holen).subscribe();
-    return () => { supabase.removeChannel(ch); };
+    // Nur Änderungen dieses Projekts, gebündelt mit 300 ms (lange Fragen bis 200.000 Zeichen, Sicherheitsprüfung 0.18.0 Punkt 3)
+    const spaeter = verzoegert(holen);
+    const ch = supabase.channel(`cs-chat-${d.projektId}-${unterhaltung}-${Math.random()}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "ws_claude_chat", filter: `projekt_id=eq.${d.projektId}` }, spaeter).subscribe();
+    return () => { spaeter.abbrechen(); supabase.removeChannel(ch); };
   }, [holen, d.projektId, unterhaltung]);
   useEffect(() => { requestAnimationFrame(() => ende.current?.scrollIntoView({ block: "nearest" })); }, [msgs.length]);
 
@@ -195,7 +200,7 @@ function Gespraech({ d, ich, toast, unterhaltung, titel, onAngelegt, bezuegeAn, 
       if (error) { toast(fehler(error)); return false; }
       uid = data.id;
     }
-    const { error } = await supabase.from("ws_claude_chat").insert({ projekt_id: d.projektId, ort: "konzept", text: text.slice(0, 8000), unterhaltung_id: uid, ...(anhaenge.length ? { anhaenge } : {}) });
+    const { error } = await supabase.from("ws_claude_chat").insert({ projekt_id: d.projektId, ort: "konzept", text: text.slice(0, TEXT_MAX), unterhaltung_id: uid, ...(anhaenge.length ? { anhaenge } : {}) });
     if (error) {
       if (unterhaltung === "neu") await supabase.from("ws_unterhaltungen").delete().eq("id", uid);   // keine leere Unterhaltung zurücklassen
       toast(fehler(error)); return false;
@@ -348,7 +353,7 @@ function Eingabe({ d, ich, toast, features, gruppen, ki, onSenden }) {
         <input ref={wahl} type="file" multiple hidden accept="image/png,image/jpeg,image/webp,image/gif,application/pdf,.txt,.md,.csv,.json" onChange={(e) => { hinzu([...e.target.files]); e.target.value = ""; }} />
         <ChatEingabe value={text} kannSenden={!!text.trim() || dateien.length > 0} onChange={setText} busy={busy} aktionen={{ besprechen: los }} oben={dateiListe}
           hinweis="Gebaut wird erst, wenn alles geklärt ist und du freigibst. Keine Fotos von Kindern oder Mitgliederdaten anhängen."
-          feld={({ los: enter }) => <MitErwaehnung ref={feld} value={text} onChange={setText} features={features} gruppen={gruppen} minHoehe={56} rows={2} maxLength={8000} id="cs-chat-eingabe"
+          feld={({ los: enter }) => <MitErwaehnung ref={feld} value={text} onChange={setText} features={features} gruppen={gruppen} minHoehe={56} rows={2} maxLength={TEXT_MAX} id="cs-chat-eingabe"
             placeholder="Nachricht … mit @ ein Feature, mit # eine Gruppe einbeziehen" aria-label="Nachricht"
             className="w-full bg-transparent px-4 pt-3 pb-1 text-[15px] focus:outline-none"
             onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); enter(); } }} />}

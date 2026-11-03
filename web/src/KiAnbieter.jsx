@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { kiFarbe } from "./kiFarbe";
-import { Cpu, Loader2, Save, ArrowUp, ArrowDown, Plus, X, RefreshCw, Lock, CircleCheck, CircleAlert, Copy, History, PlugZap, Globe, SquareTerminal, Check } from "lucide-react";
+import { Cpu, Loader2, Save, ArrowUp, ArrowDown, Plus, X, RefreshCw, Lock, CircleCheck, CircleAlert, Copy, History, PlugZap, Globe, SquareTerminal, Check, Menu, ArrowRight } from "lucide-react";
 import { supabase } from "./supabase";
 import { useFokusfalle } from "./bausteine/grund";
 import { Laden } from "./bausteine/zustand";
@@ -9,6 +9,10 @@ import ProgrammierWerkzeug from "./seiten/ProgrammierWerkzeug";
 // KI-Anbieter (Entwurf 1.2, freigegeben von Gerhard 2026-10-23 15:00): Wer übernimmt was – Anbieter und Modell je Aufgabe.
 // Zuständigkeiten stellt nur der Admin ein (14:59). Bauen ist fest Claude (14:27). Jede Person koppelt ihre Anbieter auf dem eigenen PC.
 // Im Chat sieht man nicht, wer antwortet – das steht nur im Protokoll unten.
+// Seit 0.18.0 (Meldung Gerhard 03.11.2026 „Das ist eine globale Einstellung“, Datenbank 0062): Die Zuständigkeiten gelten GLOBAL für alle Projekte
+// (ws_ki_zustaendigkeit_global, Speichern über ws_ki_global_setzen, nur Admin) – Ansicht „Globale Einstellungen › KI-Anbieter“. Im Projekt steht nur
+// der Hinweis mit Link dorthin und die Projekt-Wahl des Programmier-Werkzeugs (voreingestellt „wie global“). Die alten Zeilen je Projekt
+// (ws_ki_zustaendigkeit, außer „bauen“) haben keine Wirkung mehr.
 
 const card = "rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900";
 const btn = "inline-flex items-center justify-center gap-2 h-9 px-3.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 text-white font-display font-bold tracking-wide transition text-sm";
@@ -112,7 +116,7 @@ function Zeile({ id, titel, hinweis, eintrag, admin, onSpeichern, anbieter = ANB
   return (
     <div className="border-t border-slate-100 dark:border-slate-800 p-3 grid gap-2 lg:grid-cols-[240px_minmax(0,1fr)_auto] items-start">
       <div><div className="font-semibold text-sm flex items-center gap-1.5">{fest && <Lock className="w-3.5 h-3.5 text-slate-400" />}{titel}</div>{hinweis && <div className="text-xs text-slate-500">{hinweis}</div>}
-        {!eintrag && <div className="text-xs font-semibold text-amber-700 dark:text-amber-300">Noch nicht gespeichert – diese Aufgabe wartet, bis die Zuständigkeit gespeichert ist (kein Ausweichen).</div>}</div>
+        {!eintrag && <div className="text-xs font-semibold text-amber-700 dark:text-amber-300">Noch nicht gespeichert – diese Aufgabe wartet in allen Projekten, bis die Zuständigkeit gespeichert ist (kein Ausweichen).</div>}</div>
       <div className="flex flex-wrap items-center gap-1.5">
         {reihe.map((e, i) => {
           const a = anbieter[e.anbieter] || { name: e.anbieter, modelle: ["automatisch"] }; const eigenes = e.modell && !a.modelle.includes(e.modell);
@@ -150,19 +154,23 @@ function Zeile({ id, titel, hinweis, eintrag, admin, onSpeichern, anbieter = ANB
 }
 
 // Vorlage für einen eigenen Anbieter (GitHub Copilot CLI). Befehle bitte mit der Anleitung des Anbieters abgleichen.
-const VORLAGE_COPILOT = { id: "copilot", name: "GitHub Copilot", programm: "copilot", argumenteText: "-p\n{prompt}\n--model\n{modell}", modelleText: "",
+// Seit 0.18.0 (Sicherheitsprüfung Punkt 2): neue Anbieter bekommen die Frage über die Standardeingabe (eingabe „stdin“), nie in der Befehlszeile.
+const VORLAGE_COPILOT = { id: "copilot", name: "GitHub Copilot", programm: "copilot", argumenteText: "--model\n{modell}", modelleText: "", eingabe: "stdin",
   installieren: "npm install -g @github/copilot", anmelden: "copilot (dann /login)", hinweis: "GitHub Copilot CLI mit dem eigenen Copilot-Abo", neu: true };
+const MIT_PROMPT = (t) => /\{prompt\}/.test(String(t || ""));
 
 function AnbieterDialog({ wert, toast, onClose, onFertig }) {
   const fokusfalle = useFokusfalle();   // Fokus bleibt im Dialog (Befund B2)
-  const [w, setW] = useState(wert); const [busy, setBusy] = useState(false);
+  const [w, setW] = useState({ ...wert, eingabe: wert.eingabe || (MIT_PROMPT(wert.argumenteText) ? "argument" : "stdin") }); const [busy, setBusy] = useState(false);
+  const befehlszeile = w.eingabe === "argument";
+  const passt = befehlszeile === MIT_PROMPT(w.argumenteText);
   const feld = (k, t, ph, mono) => <label className="flex flex-col gap-1 text-xs text-slate-500">{t}<input className={`${sel} text-sm ${mono ? "font-mono" : ""}`} value={w[k] || ""} placeholder={ph} onChange={(e) => setW({ ...w, [k]: e.target.value })} /></label>;
   const speichern = async () => {
     setBusy(true);
     const p = { id: (w.id || "").trim().toLowerCase(), name: (w.name || "").trim(), programm: (w.programm || "").trim(),
       argumente: String(w.argumenteText || "").split("\n").map((x) => x.trim()).filter(Boolean),
       modelle: String(w.modelleText || "").split(/[,\s]+/).map((x) => x.trim()).filter(Boolean),
-      installieren: w.installieren || null, anmelden: w.anmelden || null, hinweis: w.hinweis || null };
+      installieren: w.installieren || null, anmelden: w.anmelden || null, hinweis: w.hinweis || null, eingabe: befehlszeile ? "argument" : "stdin" };
     const { error } = await supabase.rpc("ws_ki_anbieter_speichern", { p }); setBusy(false);
     if (error) toast(fehler(error)); else { toast(`${p.name} gespeichert – auf jedem PC einmal zulassen`); onFertig(); }
   };
@@ -173,15 +181,24 @@ function AnbieterDialog({ wert, toast, onClose, onFertig }) {
         {wert.neu && <p className="text-xs text-slate-500">Vorlage: GitHub Copilot. Für andere Anbieter Felder anpassen – wichtig ist ein Kommandozeilen-Programm, das eine Frage beantwortet und die Antwort ausgibt.</p>}
         <div className="grid grid-cols-2 gap-2">{feld("id", "Kennung (klein, z. B. copilot)", "copilot", true)}{feld("name", "Name", "GitHub Copilot")}</div>
         {feld("programm", "Programm (nur Name, kein Pfad)", "copilot", true)}
-        <label className="flex flex-col gap-1 text-xs text-slate-500">Argumente (eine Zeile je Argument; {"{prompt}"} = Frage, {"{modell}"} = Modell; ohne {"{prompt}"} kommt die Frage über die Eingabe)
+        <fieldset className="flex flex-col gap-1 text-xs text-slate-600 dark:text-slate-300"><legend className="text-slate-500 mb-1">Wie bekommt das Programm die Frage?</legend>
+          <label className="flex items-start gap-1.5"><input type="radio" name="ki-eingabe" className="mt-0.5 accent-emerald-700" checked={!befehlszeile} onChange={() => setW({ ...w, eingabe: "stdin" })} />
+            <span><b>Über die Standardeingabe</b> (empfohlen) – die Frage ist für andere Programme nicht sichtbar, beliebig lang.</span></label>
+          <label className="flex items-start gap-1.5"><input type="radio" name="ki-eingabe" className="mt-0.5 accent-emerald-700" checked={befehlszeile} onChange={() => setW({ ...w, eingabe: "argument" })} />
+            <span><b>In der Befehlszeile</b> ({"{prompt}"} in einem Argument) – nur, wenn das Programm keine Standardeingabe liest.</span></label>
+          {befehlszeile && <p role="alert" className="flex items-start gap-1.5 rounded-lg border border-amber-500 bg-amber-50 dark:bg-amber-950/40 p-2 text-amber-900 dark:text-amber-200"><CircleAlert className="w-4 h-4 shrink-0 mt-0.5" />
+            <span><b>Achtung: Der Text steht in der Befehlszeile und ist für andere Programme auf dem PC sichtbar</b> (z. B. in der Prozessliste). Außerdem gehen so höchstens 8.000 Zeichen – längere Fragen werden mit einer Meldung abgelehnt.</span></p>}
+        </fieldset>
+        <label className="flex flex-col gap-1 text-xs text-slate-500">Argumente (eine Zeile je Argument; {"{modell}"} = Modell{befehlszeile ? <>; {"{prompt}"} = Frage</> : <>; die Frage kommt über die Standardeingabe</>})
           <textarea className={`${sel} text-sm font-mono min-h-[84px]`} value={w.argumenteText || ""} onChange={(e) => setW({ ...w, argumenteText: e.target.value })} /></label>
+        {!passt && <p className="text-xs text-red-700 dark:text-red-400">{befehlszeile ? "Mit „In der Befehlszeile“ muss {prompt} in einem Argument stehen." : "Mit „Über die Standardeingabe“ darf {prompt} nicht in den Argumenten stehen."}</p>}
         {feld("modelleText", "Modelle zur Auswahl (Komma getrennt, optional)", "gpt-5, claude-sonnet-4.5", true)}
         {feld("installieren", "Installieren (Hinweis zum Kopieren)", "npm install -g …", true)}
         {feld("anmelden", "Anmelden (Hinweis)", "copilot (dann /login)", true)}
         {feld("hinweis", "Beschreibung", "")}
         <p className="text-xs text-slate-500">Sicherheit: Das Programm läuft mit den Rechten der Person – darum nur echte KI-Programme eintragen (gängige Shells und Skript-Sprachen sind gesperrt, das ersetzt aber kein Vertrauen in das Programm). Es startet erst, wenn die Person genau diese Fassung auf ihrem PC zulässt; nach jeder Änderung muss sie neu zulassen. Für Prüfungen und Bauen werden eigene Anbieter nie verwendet.</p>
         <div className="flex justify-end gap-2"><button type="button" className={ghost} onClick={onClose}>Abbrechen</button>
-          <button type="button" className="inline-flex items-center gap-2 h-9 px-3.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 text-white font-display font-bold text-sm" disabled={busy || !w.id || !w.name || !w.programm} onClick={speichern}>{busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}Speichern</button></div>
+          <button type="button" className="inline-flex items-center gap-2 h-9 px-3.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 text-white font-display font-bold text-sm" disabled={busy || !w.id || !w.name || !w.programm || !passt} onClick={speichern}>{busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}Speichern</button></div>
       </div>
     </div>);
 }
@@ -236,23 +253,29 @@ function Einrichten({ k, art, kopiere }) {
 
 export default function KiAnbieter({ d, ich, toast }) {
   const admin = ich.rolle === "admin";
-  const [zust, setZust] = useState(null); const [kopplung, setKopplung] = useState([]); const [tick, setTick] = useState(0);
+  const projekt = d.projekte.find((p) => p.id === d.projektId);
+  const [ansicht, setAnsicht] = useState("global");   // „global“ = Globale Einstellungen › KI-Anbieter, „projekt“ = dieses Projekt
+  const [zust, setZust] = useState(null); const [projektBauen, setProjektBauen] = useState(null); const [kopplung, setKopplung] = useState([]); const [tick, setTick] = useState(0);
   const [eigeneAnbieter, setEigeneAnbieter] = useState([]); const [bearbeite, setBearbeite] = useState(null);
   useEffect(() => {
     let aus = false;
     (async () => {
-      const [z, k, a] = await Promise.all([
-        supabase.from("ws_ki_zustaendigkeit").select("*").eq("projekt_id", d.projektId),
+      const [z, pb, k, a] = await Promise.all([
+        supabase.from("ws_ki_zustaendigkeit_global").select("*"),
+        // Nur noch „bauen“ gilt je Projekt (Programmier-Werkzeug); keine Zeile = wie global
+        supabase.from("ws_ki_zustaendigkeit").select("*").eq("projekt_id", d.projektId).eq("aufgabe", "bauen").maybeSingle(),
         supabase.from("ws_ki_kopplung").select("*").order("anbieter"),
         supabase.from("ws_ki_anbieter").select("*").order("name"),
       ]);
       if (aus) return;
       setEigeneAnbieter(a.data || []);
       setZust(z.error ? { fehlt: true } : Object.fromEntries((z.data || []).map((x) => [x.aufgabe, x])));
+      setProjektBauen(pb.error ? { fehlt: true } : { zeile: pb.data || null });
       setKopplung(k.data || []);
     })();
     const kanal = supabase.channel(`ki-${Math.random()}`).on("postgres_changes", { event: "*", schema: "public", table: "ws_ki_kopplung" }, () => setTick((t) => t + 1))
-      .on("postgres_changes", { event: "*", schema: "public", table: "ws_ki_anbieter" }, () => setTick((t) => t + 1)).subscribe();
+      .on("postgres_changes", { event: "*", schema: "public", table: "ws_ki_anbieter" }, () => setTick((t) => t + 1))
+      .on("postgres_changes", { event: "*", schema: "public", table: "ws_ki_zustaendigkeit_global" }, () => setTick((t) => t + 1)).subscribe();
     return () => { aus = true; supabase.removeChannel(kanal); };
   }, [d.projektId, tick]);
   // Jeder PC nur einmal (Gerhard 16:22): je Name der zuletzt aktive Eintrag – alte Einträge nach Neuinstallation fallen weg
@@ -268,8 +291,8 @@ export default function KiAnbieter({ d, ich, toast }) {
   const name = (id) => d.benutzer.find((u) => u.id === id)?.name || "Mitglied";
   const pcName = (id) => d.pcs.find((p) => p.id === id)?.name || "PC";
   const speichern = async (aufgabe, reihe, ab) => {
-    const { error } = await supabase.rpc("ws_ki_zustaendigkeit_setzen", { p_projekt: d.projektId, p_aufgabe: aufgabe, p_reihe: reihe, p_ab: ab });
-    if (error) toast(fehler(error)); else { toast("Zuständigkeit gespeichert"); setTick((t) => t + 1); }
+    const { error } = await supabase.rpc("ws_ki_global_setzen", { p_aufgabe: aufgabe, p_reihe: reihe, p_ab: ab });
+    if (error) toast(fehler(error)); else { toast("Zuständigkeit gespeichert – gilt für alle Projekte"); setTick((t) => t + 1); }
   };
   const aktion = async (pc, anbieter, a) => {
     const { error } = await supabase.from("ws_ki_kopplung").upsert({ pc_id: pc, benutzer_id: ich.id, anbieter, aktion: a }, { onConflict: "pc_id,anbieter" });
@@ -290,19 +313,37 @@ export default function KiAnbieter({ d, ich, toast }) {
   const andere = kopplung.filter((k) => k.benutzer_id !== ich.id);
   return (
     <section className="flex flex-col gap-4" aria-label="KI-Anbieter">
-      <div><h2 className="font-display font-bold text-xl leading-tight flex items-center gap-2"><Cpu className="w-5 h-5 text-emerald-700" />KI-Anbieter</h2>
-        <p className="text-sm text-slate-500">Wer übernimmt was: Anbieter und Modell je Aufgabe, in Reihenfolge. <b>Verpflichtend – kein Ausweichen:</b> Es werden nur die hier eingestellten Anbieter genommen (der nächste in der Liste übernimmt, wenn ein Limit voll ist oder ein Anbieter auf dem PC nicht gekoppelt ist). Ist keiner davon nutzbar, wartet die Aufgabe mit der Meldung „wartet auf …“. Programmieren: ein Werkzeug je Projekt (Zeile „Programmieren“). Jeder nutzt sein eigenes Abo.</p></div>
+      <div className="flex flex-wrap items-center gap-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 p-1 self-start" role="tablist" aria-label="Bereich">
+        {[["global", "Globale Einstellungen › KI-Anbieter", Globe], ["projekt", `Projekt ${projekt?.name || ""}`, Menu]].map(([id, t, Icon]) => (
+          <button key={id} type="button" role="tab" aria-selected={ansicht === id} onClick={() => setAnsicht(id)}
+            className={`inline-flex items-center gap-1.5 h-8 px-3 rounded-lg text-sm font-semibold ${ansicht === id ? "bg-white dark:bg-slate-900 text-emerald-800 dark:text-emerald-300 shadow-sm" : "text-slate-600 dark:text-slate-300 hover:bg-white/60 dark:hover:bg-slate-900/60"}`}>
+            <Icon className="w-4 h-4" />{t}</button>))}
+      </div>
+
+      {ansicht === "projekt" ? <>
+        <div className={`${card} p-4 flex flex-col gap-2`} role="note">
+          <div className="text-xs text-slate-500 flex flex-wrap items-center gap-1.5"><Menu className="w-3.5 h-3.5" />Projekt <b>{projekt?.name || d.projektId}</b> › KI-Anbieter</div>
+          <h3 className="font-display font-bold text-lg flex items-center gap-2"><Globe className="w-5 h-5 text-emerald-700" />KI-Anbindungen gelten global für alle Projekte</h3>
+          <p className="text-sm text-slate-500">Wer bei Chat, Konzept, Design, Prüfungen, Doku, Texten und Bildern antwortet, stellt {admin ? "du als Admin" : "der Admin"} einmal für alle Projekte ein – auch neue Projekte haben damit sofort alle Zuständigkeiten. Je Projekt wählbar ist nur das Programmier-Werkzeug (unten).</p>
+          <button type="button" className={`${ghost} self-start`} onClick={() => setAnsicht("global")}>Zu Globale Einstellungen › KI-Anbieter<ArrowRight className="w-3.5 h-3.5" /></button>
+        </div>
+        {!projektBauen || !zust ? <Laden zeilen={3} text="Programmier-Werkzeug wird geladen" />
+          : projektBauen.fehlt || zust.fehlt ? <p className={`${card} p-4 text-sm text-amber-700 dark:text-amber-300`}>Die Einstellungen sind nicht lesbar – ist die Datenbank-Erweiterung 0062 (KI-Anbindungen global) eingespielt? Aufträge warten, bis sie lesbar sind.</p>
+          : <ProgrammierWerkzeug d={d} ich={ich} toast={toast} modus="projekt" eintrag={projektBauen.zeile} global={zust.bauen || null} meinePcs={meinePcs} onGespeichert={() => setTick((t) => t + 1)} />}
+      </> : <>
+      <div><h2 className="font-display font-bold text-xl leading-tight flex items-center gap-2"><Globe className="w-5 h-5 text-emerald-700" />Globale Einstellungen › KI-Anbieter</h2>
+        <p className="text-sm text-slate-500"><b>Gilt für alle Projekte.</b> Wer übernimmt was: Anbieter und Modell je Aufgabe, in Reihenfolge. <b>Verpflichtend – kein Ausweichen:</b> Es werden nur die hier eingestellten Anbieter genommen (der nächste in der Liste übernimmt, wenn ein Limit voll ist oder ein Anbieter auf dem PC nicht gekoppelt ist). Ist keiner davon nutzbar, wartet die Aufgabe mit der Meldung „wartet auf …“. Programmieren: globales Werkzeug (Zeile „Programmieren“), je Projekt änderbar unter „Projekt“. Jeder nutzt sein eigenes Abo.</p></div>
 
       <Eignung liste={liste} />
 
       <div className={`${card} overflow-hidden`}>
-        <div className="px-3 py-2 bg-slate-50 dark:bg-slate-950 flex flex-wrap items-center gap-2"><h3 className="font-display font-bold">Zuständigkeiten</h3><span className="text-xs text-slate-500">{admin ? "Nur du als Admin stellst das ein." : "Stellt der Admin ein."}</span></div>
-        {zust?.fehlt ? <p className="p-4 text-sm text-amber-700 dark:text-amber-300">Die Datenbank-Erweiterung 0012 (KI-Anbieter) ist noch nicht eingespielt.</p>
+        <div className="px-3 py-2 bg-slate-50 dark:bg-slate-950 flex flex-wrap items-center gap-2"><h3 className="font-display font-bold">Zuständigkeiten für alle Projekte</h3><span className="text-xs text-slate-500">{admin ? "Nur du als Admin stellst das ein." : "Stellt der Admin ein."}</span></div>
+        {zust?.fehlt ? <p className="p-4 text-sm text-amber-700 dark:text-amber-300">Die globalen Zuständigkeiten sind nicht lesbar – ist die Datenbank-Erweiterung 0062 (KI-Anbindungen global) eingespielt? Bis dahin warten die Aufgaben (kein Ausweichen).</p>
           : !zust ? <Laden zeilen={4} text="Zuständigkeiten werden geladen" />
           : AUFGABEN.map(([id, titel, hinweis]) => id === "bauen"
-            ? <div key={id} className="border-t border-slate-100 dark:border-slate-800 p-3"><ProgrammierWerkzeug d={d} ich={ich} toast={toast} eintrag={zust.bauen} meinePcs={meinePcs} onGespeichert={() => setTick((t) => t + 1)} /></div>
+            ? <div key={id} className="border-t border-slate-100 dark:border-slate-800 p-3"><ProgrammierWerkzeug d={d} ich={ich} toast={toast} modus="global" eintrag={zust.bauen || null} meinePcs={meinePcs} onGespeichert={() => setTick((t) => t + 1)} /></div>
             : <Zeile key={id} id={id} titel={titel} hinweis={hinweis} eintrag={zust[id]} admin={admin} onSpeichern={speichern} anbieter={liste} />)}
-        <p className="px-3 py-2 text-xs text-slate-500 border-t border-slate-100 dark:border-slate-800">Solange hier nichts gespeichert ist, antwortet nur Claude. Andere Anbieter bekommen Dokumentation und Dateiliste als Text und starten in einem leeren Ordner mit minimaler Umgebung; sie ändern nichts. <b>Restrisiko:</b> Ihre eingebauten Werkzeuge könnten technisch Dateien des PCs lesen – Antworten mit verdächtigem Inhalt werden verworfen. Prüfen macht deshalb Claude bzw. ein Anbieter in der Sandbox; Programmieren mit fremden Werkzeugen nur in der Sperre der Codeschmiede (Zeile „Programmieren“). „Automatisch“ = Standardmodell des Anbieters.</p>
+        <p className="px-3 py-2 text-xs text-slate-500 border-t border-slate-100 dark:border-slate-800">Zur Auswahl stehen alle eingebauten und angelegten Anbieter (Claude, ChatGPT, Gemini und eigene); gekoppelt wird je PC unten. Startwerte waren die Einstellungen von Trainer to go. Andere Anbieter bekommen Dokumentation und Dateiliste als Text und starten in einem leeren Ordner mit minimaler Umgebung; sie ändern nichts. <b>Restrisiko:</b> Ihre eingebauten Werkzeuge könnten technisch Dateien des PCs lesen – Antworten mit verdächtigem Inhalt werden verworfen. Prüfen macht deshalb Claude bzw. ein Anbieter in der Sandbox; Programmieren mit fremden Werkzeugen nur in der Sperre der Codeschmiede (Zeile „Programmieren“). „Automatisch“ = Standardmodell des Anbieters.</p>
       </div>
 
       <div className={`${card} overflow-hidden`}>
@@ -313,8 +354,9 @@ export default function KiAnbieter({ d, ich, toast }) {
             <div key={key} className="px-3 py-2 flex flex-wrap items-center gap-2 text-sm">
               <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${kiFarbe(key).punkt}`} aria-hidden="true" /><b>{a.name}</b><span className="text-xs text-slate-500 font-mono">{a.eigen ? `${a.programm} ${(a.eigen.argumente || []).join(" ")}` : a.programm}</span>
               <span className={`text-xs rounded-full px-2 py-0.5 ${a.eigen ? "bg-slate-100 dark:bg-slate-800" : "bg-emerald-50 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"}`}>{a.eigen ? "eigener Anbieter" : "eingebaut"}</span>
+              {a.eigen?.eingabe === "argument" && <span className="text-xs rounded-full px-2 py-0.5 bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200" title="Der Text steht in der Befehlszeile und ist für andere Programme auf dem PC sichtbar">Frage in der Befehlszeile</span>}
               {admin && a.eigen && <span className="ml-auto flex gap-1.5"><button type="button" className={ghost} onClick={() => setBearbeite({ ...a.eigen, argumenteText: (a.eigen.argumente || []).join("\n"), modelleText: (a.eigen.modelle || []).join(", ") })}>Bearbeiten</button>
-                <button type="button" className={ghost} onClick={async () => { const { error } = await supabase.rpc("ws_ki_anbieter_loeschen", { p_id: key }); if (error) toast(fehler(error)); else { toast(`${a.name} entfernt`); setTick((t) => t + 1); } }}><X className="w-3.5 h-3.5" />Entfernen</button></span>}
+                <button type="button" className={ghost} onClick={async () => { const { error } = await supabase.rpc("ws_ki_anbieter_loeschen", { p_id: key }); if (error) toast(`${a.name} nicht entfernt: ${fehler(error)}`); else { toast(`${a.name} entfernt – aus allen Reihen genommen, in denen andere Anbieter stehen`); setTick((t) => t + 1); } }}><X className="w-3.5 h-3.5" />Entfernen</button></span>}
             </div>))}
         </div>
         <p className="px-3 py-2 text-xs text-slate-500 border-t border-slate-100 dark:border-slate-800">Eigene Anbieter (z. B. GitHub Copilot) nutzt die Werkstatt für Chat, Konzept, Design, Texte usw. – nie zum Bauen und nicht für Prüfungen. Jede Person lässt einen eigenen Anbieter auf ihrem PC selbst zu.</p>
@@ -380,6 +422,7 @@ export default function KiAnbieter({ d, ich, toast }) {
         <div className="px-3 py-2 bg-slate-50 dark:bg-slate-950 flex items-center gap-2"><History className="w-4 h-4 text-emerald-700" /><h3 className="font-display font-bold">Protokoll: wer hat geantwortet</h3><span className="text-xs text-slate-500">nur deine eigenen Gespräche</span></div>
         <div className="p-3"><KiProtokoll /></div>
       </div>
+      </>}
       {bearbeite && <AnbieterDialog wert={bearbeite} toast={toast} onClose={() => setBearbeite(null)} onFertig={() => { setBearbeite(null); setTick((t) => t + 1); }} />}
     </section>);
 }

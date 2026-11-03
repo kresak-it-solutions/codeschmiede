@@ -32,9 +32,9 @@ import { liveAusfuehren, pruefPrompt, enthalten, cloudBauLaeufe, pruefLaeufe, pr
 import { stationNachFehler, stationFaellig, STATION_VERSUCHE } from "./lib/station.mjs";
 import { katalogFuer, einrichten, einrichtUmgebung, findeKatalogProgramm, angemeldet } from "./lib/einrichten.mjs";
 import { bildAusDataUrl, markePrompt, markeAntwort } from "./lib/marke.mjs";
-import { ANBIETER, reiheFuer, wartetText, istLimit, kiKennung, codexFrage, geminiFrage, kopplungPruefen, anmeldungStarten, sandboxArt, freiFrage, freiPruefen, codexLimits } from "./lib/ki.mjs";
+import { ANBIETER, reiheFuer, globaleReihe, GLOBAL_NICHT_LESBAR, wartetText, istLimit, zuLang, zuLangMeldung, promptPruefen, kiKennung, codexFrage, geminiFrage, kopplungPruefen, anmeldungStarten, sandboxArt, freiFrage, freiPruefen, codexLimits } from "./lib/ki.mjs";
 import { prText } from "./lib/ersatz.mjs";
-import { WERKZEUGE, FREMDE, werkzeugOk, werkzeugName, sperrbar, dateiGesperrt, statusPfade, projektKonfigFunde, werkzeugVorspann } from "./lib/werkzeuge.mjs";
+import { WERKZEUGE, FREMDE, werkzeugOk, werkzeugWahl, werkzeugName, sperrbar, dateiGesperrt, statusPfade, projektKonfigFunde, werkzeugVorspann } from "./lib/werkzeuge.mjs";
 import { installieren as werkzeugInstallieren, installiertPruefen, installationUnveraendert, angemeldetPruefen, laufOrdner, werkzeugStarten, sperrenTest, sperrNachweis, nachweisGleich } from "./lib/werkzeugLauf.mjs";
 import { imFenster } from "./lib/einrichten.mjs";
 import { ampelPruefen, sandboxStarten, testlaufStarten, sandboxPfad } from "./lib/anbindungen.mjs";
@@ -665,7 +665,9 @@ async function fuehreAus(auftrag, { fortsetzen = false, nacharbeit = false } = {
     const mcp = { mcpServers: { werkstatt: { command: process.execPath, args: [path.join(HIER, "erlaubnis-mcp.mjs")], env: {
       CS_SUPABASE_URL: cfg.supabase_url, CS_ANON_KEY: cfg.anon_key, CS_TOKEN_DATEI: tokenDatei(), CS_AUFTRAG: String(auftrag.id), CS_GRUPPE: auftrag.gruppe_id, CS_ADMIN_PC: cfg.admin ? "1" : "0", CS_ORDNER: ordner,
     } } } };
-    const args = ["-p", prompt, "--output-format", "stream-json", "--verbose", "--model", modell,
+    // Auftragstext IMMER über die Standardeingabe (Sicherheitsprüfung 0.18.0, Punkt 2): in der Befehlszeile wäre er für andere Programme auf dem PC
+    // sichtbar (Prozessliste) und unter Windows auf 32.767 Zeichen begrenzt. „-p“ ohne Text liest die Frage von stdin (wie claudeOhneWerkzeuge).
+    const args = ["-p", "--output-format", "stream-json", "--verbose", "--model", modell,
       // Lese-Sperren gelten seit Befund S2 (01.11.2026) auch im Bau-Lauf, nicht nur im Chat und in der Prüfung
       "--permission-mode", "default", "--allowedTools", ERLAUBT.join(","), "--disallowedTools", [...VERBOTEN, ...LESE_SPERREN].join(","),
       "--mcp-config", JSON.stringify(mcp), "--strict-mcp-config", "--permission-prompt-tool", "mcp__werkstatt__erlaubnis",
@@ -677,12 +679,6 @@ async function fuehreAus(auftrag, { fortsetzen = false, nacharbeit = false } = {
       // Als DATEI (dritte Prüfung, G1): inline würde die Befehlszeile unter Windows (32.767 Zeichen) bei vielen Arbeitsordnern zu lang
       "--settings", (einstellDatei = await laufEinstellungen(auftrag.id, { disableAllHooks: true, permissions: { ask: [...FRAGEN, "WebSearch", "WebFetch"], deny: laufVerbote, blockReadsOutsideWorkingDirectories: true } }))];
     if ((fortsetzen || nacharbeit) && merk.sitzung) args.push("--resume", merk.sitzung);
-    // Ist die Befehlszeile trotzdem zu lang (großer Auftragstext), geht der Auftrag über die Standardeingabe (wie im Chat, Nachprüfung 0.10.0 N1)
-    // Gezählt wird wie unter Windows: Programm + vorne (cli.js) + alle Argumente, je mit Anführungszeichen und verdoppelten „\“/„"“; Schwelle mit Puffer (H-a)
-    const cl = findeClaude();
-    const zeichen = (a) => String(a).length + (String(a).match(/["\\]/g) || []).length + 3;
-    const ueberEingabe = [cl?.befehl || "claude", ...(cl?.vorne || []), ...args].reduce((n, a) => n + zeichen(a), 0) > 24000;
-    if (ueberEingabe) args.splice(1, 1);
     // Ohne API-Schlüssel in der Umgebung arbeitet Claude Code mit dem eigenen Abo-Login dieser Person
     const env = { ...process.env };
     // Abo-Login erzwingen: keine Schlüssel, fremden Server oder Cloud-Anbieter aus der Umgebung (auch Windows-Schreibweisen)
@@ -693,8 +689,8 @@ async function fuehreAus(auftrag, { fortsetzen = false, nacharbeit = false } = {
       const claude = findeClaude();
       if (!claude) throw new Error("Claude Code wurde auf diesem PC nicht gefunden (erwartet: %USERPROFILE%\\.local\\bin\\claude.exe). Bitte installieren und einmal „claude“ im Terminal starten.");
       nachLauf = { projekt, ordner };
-      const kind = spawn(claude.befehl, [...claude.vorne, ...args], { cwd: ordner, env, shell: false, windowsHide: true, stdio: [ueberEingabe ? "pipe" : "ignore", "pipe", "pipe"] });
-      if (ueberEingabe) { kind.stdin.on("error", () => {}); kind.stdin.end(prompt); }
+      const kind = spawn(claude.befehl, [...claude.vorne, ...args], { cwd: ordner, env, shell: false, windowsHide: true, stdio: ["pipe", "pipe", "pipe"] });
+      kind.stdin.on("error", () => {}); kind.stdin.end(prompt);
       laeuft.kind = kind;
       abort.signal.addEventListener("abort", () => kind.kill("SIGINT"));
       const rl = createInterface({ input: kind.stdout });
@@ -1593,7 +1589,7 @@ async function codeArbeit() {
 const gitSicher = (ordner, ...args) => git(ordner, "-c", "core.fsmonitor=false", "-c", `core.hooksPath=${path.join(path.dirname(ordner), "keine-hooks")}`, "-c", "commit.gpgsign=false", ...args);
 
 // ---------- Programmier-Werkzeug je Projekt (0.14.0, docs/KONZEPT-WERKZEUGE.md) ----------
-// Je Projekt genau ein Werkzeug (ws_ki_zustaendigkeit, Aufgabe „bauen“, Spalten werkzeug/werkzeug_modell, Datenbank 0057). Verpflichtend: Ist das
+// Je Projekt genau ein Werkzeug (ws_ki_zustaendigkeit, Aufgabe „bauen“, Spalten werkzeug/werkzeug_modell, Datenbank 0057; ohne Projektzeile der globale Wert, 0062). Verpflichtend: Ist das
 // Werkzeug auf diesem PC nicht bereit, wartet der Auftrag („wartet auf <Werkzeug>“) – kein anderes springt ein, auch nicht Claude. Ein Auftrag
 // macht mit dem Werkzeug fertig, mit dem er gestartet wurde (ws_auftraege.werkzeug). Fremde Werkzeuge nie auf dem Admin-PC.
 const werkzeugTestDatei = () => path.join(cfg.daten_ordner, "werkzeuge", "tests.json");
@@ -1632,16 +1628,14 @@ async function werkzeugBereit(id, o) {
   if (kiLimitBis[id] && kiLimitBis[id] > Date.now()) return { ok: false, grund: `Limit voll (bis ${bisText(kiLimitBis[id])})` };
   return { ok: true };
 }
-/** Werkzeug des Projekts. Ohne Datenbank 0057 (Spalte fehlt) gilt Claude Code wie bisher. */
+/** Werkzeug des Projekts: Projektzeile „bauen“, sonst global (0.18.0, Datenbank 0062, lib/werkzeuge.mjs › werkzeugWahl). Ohne 0057 gilt Claude Code. */
 async function projektWerkzeug(projektId) {
   try {
-    const { data, error } = await db.from("ws_ki_zustaendigkeit").select("werkzeug, werkzeug_modell").eq("projekt_id", projektId).eq("aufgabe", "bauen").maybeSingle();
-    if (error) return /werkzeug/.test(error.message) && /column|does not exist|schema cache/i.test(error.message) ? { werkzeug: "claude-code", modell: null } : { fehlt: "Programmier-Werkzeug nicht lesbar, wartet" };
-    // Keine Zeile „bauen“ (B9): nicht auf Claude ausweichen – der Auftrag wartet
-    if (!data) return { fehlt: "Programmier-Werkzeug für dieses Projekt nicht eingestellt, wartet – bitte unter KI-Anbieter › Programmieren speichern" };
-    const w = data.werkzeug && werkzeugOk(data.werkzeug) ? data.werkzeug : null;
-    if (!w) return { fehlt: "Programmier-Werkzeug unbekannt, wartet" };
-    return { werkzeug: w, modell: w === "claude-code" ? null : data.werkzeug_modell || null };
+    const projekt = await db.from("ws_ki_zustaendigkeit").select("werkzeug, werkzeug_modell").eq("projekt_id", projektId).eq("aufgabe", "bauen").maybeSingle();
+    // Keine Projektzeile: „wie global“ – nicht auf Claude ausweichen; ist auch die globale Zeile nicht lesbar oder fehlt sie, wartet der Auftrag (B9)
+    const global = !projekt.error && !projekt.data
+      ? await db.from("ws_ki_zustaendigkeit_global").select("werkzeug, werkzeug_modell").eq("aufgabe", "bauen").maybeSingle() : null;
+    return werkzeugWahl(projekt, global);
   } catch { return { fehlt: "Programmier-Werkzeug nicht lesbar, wartet" }; }
 }
 /** „wartet auf …“ beim Auftrag vermerken (nur wenn sich der Text ändert). */
@@ -2097,7 +2091,7 @@ async function station(a) {
 
 
 // ---------- KI-Anbieter: wer was übernimmt (Entwurf 1.2, freigegeben 2026-10-23 15:00) ----------
-// Reihenfolge je Aufgabe aus ws_ki_zustaendigkeit (Admin), sonst Standard. Der nächste übernimmt bei vollem Limit, ohne Kopplung
+// Reihenfolge je Aufgabe aus ws_ki_zustaendigkeit_global (Admin, für alle Projekte, 0.18.0). Der nächste übernimmt bei vollem Limit, ohne Kopplung
 // oder bei einem Fehler. Fremde Anbieter: leerer Ordner, minimale Umgebung, Doku als Text (Restrisiko siehe lib/ki.mjs); Prüfen und Bauen nur Claude.
 const kiLimitBis = {};                       // anbieter -> Zeitpunkt, bis zu dem das Limit voll ist
 let freieAnbieter = {}; let freieZeit = 0;     // vom Admin angelegte Anbieter (ws_ki_anbieter), 60 s zwischengespeichert
@@ -2109,15 +2103,14 @@ async function holeFreieAnbieter() {
 let kiKopplung = {};                         // anbieter -> { gekoppelt }
 // Verpflichtende Anbieter (Nachprüfung 0.13.1, Punkt 1): Ist die Zuständigkeit nicht lesbar oder für diese Aufgabe nicht eingestellt, wird NICHT auf
 // den Standard (Claude) ausgewichen – die Reihe ist leer, die Aufgabe wartet mit „wartet“-Text. Ausnahme: Programmieren ist fest Claude Code (keine Einstellung).
-// Die Standardwerte (Claude) stehen seit Datenbank 0056 als echte Zeilen für jedes Projekt in ws_ki_zustaendigkeit (Entscheidung „Claude fest eintragen“).
-async function kiReihe(projektId, aufgabe) {
+// KI-Anbindungen global (0.18.0, Datenbank 0062): gelesen wird nur noch ws_ki_zustaendigkeit_global – für alle Projekte gleich. Die alten Zeilen je Projekt
+// (ws_ki_zustaendigkeit) haben für diese Aufgaben keine Wirkung mehr; auch bei einem Lesefehler wird nicht auf sie ausgewichen (lib/ki.mjs › globaleReihe).
+async function kiReihe(projektId, aufgabe) {   // projektId bleibt für die Aufrufer gleich; die Zuständigkeit ist global
   if (aufgabe === "bauen") return { reihe: reiheFuer("bauen", null), ab: 90, fehlt: null };
   try {
-    const { data, error } = await db.from("ws_ki_zustaendigkeit").select("reihe, weitergeben_ab").eq("projekt_id", projektId).eq("aufgabe", aufgabe).maybeSingle();
-    if (error) return { reihe: [], ab: 90, fehlt: "KI-Zuständigkeit nicht lesbar, wartet" };
-    if (!data) return { reihe: [], ab: 90, fehlt: zustaendigkeitFehlt(aufgabe) };
-    return { reihe: reiheFuer(aufgabe, data), ab: data.weitergeben_ab ?? 90, fehlt: null };
-  } catch { return { reihe: [], ab: 90, fehlt: "KI-Zuständigkeit nicht lesbar, wartet" }; }
+    const antwort = await db.from("ws_ki_zustaendigkeit_global").select("reihe, weitergeben_ab").eq("aufgabe", aufgabe).maybeSingle();
+    return globaleReihe(aufgabe, antwort, zustaendigkeitFehlt(aufgabe));
+  } catch { return { reihe: [], ab: 90, fehlt: GLOBAL_NICHT_LESBAR }; }
 }
 // Projektwissen als TEXT für fremde Anbieter (Prüfung H1): AGENTS.md, Wissen, passende Dokumente und die Dateiliste – bereinigt, gekürzt.
 // Fremde Anbieter bekommen keinen Ordner, nur diesen Text.
@@ -2143,6 +2136,7 @@ async function dokuText(projekt, frage = "") {
 async function kiAntwort(projekt, aufgabe, prompt, { claudeLesenIn = null, dokuLesen = false, frage = "", wunsch = null } = {}) {
   const { reihe: r0, ab, fehlt } = await kiReihe(projekt.id, aufgabe);
   if (fehlt) throw new Error(fehlt);
+  promptPruefen(prompt);   // lange Fragen (0.18.0): voll übergeben, nur bei echter Übergröße klare Meldung statt Kürzen
   // KI-Wunsch der Person (Chat zur Kachel, 0041): nur ein Anbieter aus der Zuständigkeit kommt vor – sonst die normale Reihe
   const reihe = kiZuerst(r0, wunsch, kiKennung);
   const fehler = [];   // [{ anbieter, grund }] – für „wartet auf …“ (verpflichtende Anbieter, 0.13.1)
@@ -2175,14 +2169,14 @@ async function kiAntwort(projekt, aufgabe, prompt, { claudeLesenIn = null, dokuL
     } catch (err) {
       const t = ohneGeheimnisse(err?.ausgabe || err?.message || String(err));
       if (istLimit(t)) { kiLimitBis[e.anbieter] = Date.now() + 60 * 60 * 1000; kopplungMelden(e.anbieter, { limit_bis: new Date(kiLimitBis[e.anbieter]).toISOString() }).catch(() => {}); }
-      fehler.push({ anbieter: e.anbieter, grund: istLimit(t) ? "Limit voll" : `nicht erreichbar (${kuerzen(t, 120)})` });
+      fehler.push({ anbieter: e.anbieter, grund: istLimit(t) ? "Limit voll" : err?.zuLang || zuLang(t) ? "Frage zu lang für dieses Modell (nichts gekürzt – bitte kürzen oder aufteilen)" : `nicht erreichbar (${kuerzen(t, 120)})` });
     }
   }
   throw new Error(wartetText(fehler, (x) => ANBIETER[x]?.name || freieAnbieter[x]?.name || x));
 }
 /** „wartet“-Text, wenn für eine Aufgabe keine Zuständigkeit gespeichert ist (kein Ausweichen auf den Standard, Nachprüfung 0.13.1). */
 const AUFGABE_NAME = { chat: "Chat", konzept: "Konzept", design: "Design-Chat", pruefung: "Unabhängige Prüfungen", doku: "Dokumentation", texte: "Texte", bilder: "Bilder & Grafiken" };
-const zustaendigkeitFehlt = (aufgabe) => `KI-Zuständigkeit „${AUFGABE_NAME[aufgabe] || aufgabe}“ ist für dieses Projekt nicht eingestellt, wartet – bitte unter „KI-Anbieter“ speichern (kein Ausweichen)`;
+const zustaendigkeitFehlt = (aufgabe) => `KI-Zuständigkeit „${AUFGABE_NAME[aufgabe] || aufgabe}“ ist nicht eingestellt, wartet – bitte unter „Globale Einstellungen › KI-Anbieter“ speichern (gilt für alle Projekte, kein Ausweichen)`;
 // Anfragen heute je Anbieter (für Anbieter ohne eigene Limit-Anzeige, Gerhard 23:38)
 const anfragen = {};
 function anfrageZaehlen(anbieter) {
@@ -2331,9 +2325,10 @@ async function claudeOhneWerkzeuge(prompt, { lesenIn = null, modell = "sonnet" }
       kind.on("close", (code) => { clearTimeout(uhr); Promise.all(offen).then(() => (ende ? fertig() : fehl(new Error(`Claude beendet (${code}): ${ohneGeheimnisse(fehlerText).slice(-300)}`)))); });
     });
   } finally { if (laeuft === meins) laeuft = null; if (leer) await rm(leer, { recursive: true, force: true }).catch(() => {}); }   // nur die eigene Belegung freigeben (Prüfung 0.10.0)
-  if (ende?.subtype !== "success") throw new Error("Claude hat keine Antwort geliefert");
+  if (ende?.subtype !== "success") throw zuLang(String(ende?.result || "")) ? Object.assign(new Error(zuLangMeldung("Claude")), { zuLang: true }) : new Error("Claude hat keine Antwort geliefert");
   const res = String(ende.result || "");
   if (res.length < 600 && istLimit(res)) { await claudeLimitVoll(res); throw new Error(`Claudes Abo-Limit ist voll – ${res.trim()}`); }
+  if (res.length < 600 && zuLang(res)) throw Object.assign(new Error(zuLangMeldung("Claude")), { zuLang: true });
   return res;
 }
 

@@ -9,6 +9,7 @@
 import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Search, Shapes, Bot, PenLine, Loader2, CircleCheck, CircleAlert, TriangleAlert, RotateCcw, Send, Check, X, Sparkles, ShieldCheck, ExternalLink, Layers, Link2, MousePointerClick, Contrast } from "lucide-react";
 import { supabase } from "./supabase";
+import { TEXT_MAX } from "./textGrenze";
 import { useKiName } from "./kiName";
 import { Markdown } from "./Markdown";
 import { useVerzeichnis } from "./verzeichnis";
@@ -316,7 +317,7 @@ function BausteinChat({ b, bs, d, ich, projekt, darf, toast, ki }) {
     // Nur Gestaltung als Kontext: Kennung, Name, Werte (inkl. Standard), offene Kontrast-Befunde – keine Vereinsnamen, keine Personendaten
     const frage = `${praefix} ${inhalt}${befunde.length ? `\nKontrast offen: ${befunde.join("; ")}` : ""}`;
     setSende(true);
-    const { error } = await supabase.from("ws_design_chat").insert({ projekt_id: projekt.id, entwurf_id: null, text: frage.slice(0, 8000), werte: { bausteine: { [b.id]: voll } } });
+    const { error } = await supabase.from("ws_design_chat").insert({ projekt_id: projekt.id, entwurf_id: null, text: frage.slice(0, TEXT_MAX), werte: { bausteine: { [b.id]: voll } } });
     setSende(false);
     if (error) return toast(fehler(error));
     setText("");
@@ -349,7 +350,7 @@ function BausteinChat({ b, bs, d, ich, projekt, darf, toast, ki }) {
           </ChatNachricht>))}
         {wartet && <ChatWartet an={werkstattAn} ki={ki.name} text={`${ki.name} denkt nach … (über deine Werkstatt)`} aus="Deine Werkstatt ist aus – schalte sie oben ein." />}
       </ChatVerlauf>
-      <ChatEingabe value={text} onChange={setText} busy={sende} aktionen={{ besprechen: () => schicke() }} maxLength={3000} platzhalter={`Was soll sich an „${b.name}“ ändern?`}
+      <ChatEingabe value={text} onChange={setText} busy={sende} aktionen={{ besprechen: () => schicke() }} platzhalter={`Was soll sich an „${b.name}“ ändern?`}
         gesperrt={darf ? null : "Mitlesen möglich – fragen dürfen Entwickler mit Design-Recht."} ideen={IDEEN} onIdee={(i) => schicke(i)} />
     </ChatRahmen>);
 }

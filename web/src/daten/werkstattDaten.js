@@ -2,6 +2,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ABGESCHLOSSEN } from "../bausteine/grund";
 import { supabase } from "../supabase";
+import { verzoegert, gehoertZu } from "./nachladen.js";
+export { verzoegert };
 
 // ---------------- Daten ----------------
 export const usd = (n) => (n == null ? "–" : new Intl.NumberFormat("de-AT", { style: "currency", currency: "USD" }).format(Number(n)));
@@ -74,25 +76,36 @@ export function useWerkstattDaten(me, projektId) {
   return { ...d, laden, holen, live, ladeFehler, geladen };
 }
 
+// Lange Fragen (0.18.0, Sicherheitsprüfung Punkt 3): Bei großen Nachrichten (bis 200.000 Zeichen) nicht bei jeder Änderung irgendeines Auftrags alles neu
+// laden: nur Änderungen der angezeigten Aufträge (Filter auftrag_id), gebündelt mit 300 ms Verzögerung; neue Log-Zeilen laden nur das Log nach.
 export function useAuftragDetails(ids) {
   const [n, setN] = useState([]); const [log, setLog] = useState([]); const [erl, setErl] = useState([]);
   const key = ids.join(",");
   useEffect(() => {
     if (!ids.length) { setN([]); setLog([]); setErl([]); return undefined; }
     let aus = false;
-    const holen = async () => {
-      const [a, b, c] = await Promise.all([
+    const menge = new Set(ids.map(Number));
+    const holenNachrichten = async () => {
+      const [a, c] = await Promise.all([
         supabase.from("ws_nachrichten").select("*").in("auftrag_id", ids).order("id"),
-        supabase.from("ws_live_log").select("*").in("auftrag_id", ids).order("id"),
         supabase.from("ws_erlaubnisse").select("*").in("auftrag_id", ids).order("id"),
       ]);
-      if (!aus) { setN(a.data || []); setLog(b.data || []); setErl(c.data || []); }
+      if (!aus) { setN(a.data || []); setErl(c.data || []); }
     };
-    holen();
+    const holenLog = async () => {
+      const b = await supabase.from("ws_live_log").select("*").in("auftrag_id", ids).order("id");
+      if (!aus) setLog(b.data || []);
+    };
+    holenNachrichten(); holenLog();
+    const spaeterN = verzoegert(holenNachrichten); const spaeterLog = verzoegert(holenLog);
+    // Filter auf dem Server (bis 100 Kennungen), dazu immer die Prüfung im Browser
+    const filter = ids.length <= 100 && ids.every((x) => /^\d+$/.test(String(x))) ? { filter: `auftrag_id=in.(${ids.join(",")})` } : {};
     const ch = supabase.channel("cs-details-" + key);
-    ["ws_nachrichten", "ws_live_log", "ws_erlaubnisse"].forEach((t) => ch.on("postgres_changes", { event: "*", schema: "public", table: t }, holen));
+    ch.on("postgres_changes", { event: "*", schema: "public", table: "ws_nachrichten", ...filter }, (p) => { if (gehoertZu(menge, p)) spaeterN(); });
+    ch.on("postgres_changes", { event: "*", schema: "public", table: "ws_erlaubnisse", ...filter }, (p) => { if (gehoertZu(menge, p)) spaeterN(); });
+    ch.on("postgres_changes", { event: "*", schema: "public", table: "ws_live_log", ...filter }, (p) => { if (gehoertZu(menge, p)) spaeterLog(); });
     ch.subscribe();
-    return () => { aus = true; supabase.removeChannel(ch); };
+    return () => { aus = true; spaeterN.abbrechen(); spaeterLog.abbrechen(); supabase.removeChannel(ch); };
   }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
   return { nachrichten: n, log, erlaubnisse: erl };
 }

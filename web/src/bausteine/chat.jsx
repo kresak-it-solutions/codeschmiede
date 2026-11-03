@@ -11,6 +11,7 @@
 import React, { forwardRef, useEffect, useRef } from "react";
 import { MessageSquare, Hammer, Reply, Loader2, FolderKanban, Lightbulb, Hash, Layers, Component, LayoutGrid, Palette, Shapes, Bot, ListChecks, MessageCircleQuestion } from "lucide-react";
 import { useAutoHoehe } from "../autoHoehe";
+import { TEXT_MAX, zaehlerText } from "../textGrenze";
 import CodeschmiedeZeichen from "../Zeichen";
 
 export const BEGRIFFE = { besprechen: "Besprechen", auftrag: "Als Auftrag", antworten: "Antworten", fragen: "Fragen", weiterarbeiten: "Weiterarbeiten" };
@@ -109,6 +110,22 @@ export function ChatIdeen({ ideen = [], onWahl, gesperrt = false }) {
       className="text-xs rounded-full border border-slate-300 dark:border-slate-700 px-2.5 py-1 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-50">{i}</button>))}</div>;
 }
 
+/** Dezenter Zeichenzähler ab 8.000 Zeichen (lange Fragen, 0.18.0). */
+export function Zeichenzaehler({ text, max = TEXT_MAX, className = "" }) {
+  const t = zaehlerText(text, max);
+  if (!t) return null;
+  const voll = String(text || "").length >= max;
+  return <span className={`text-xs tabular-nums ${voll ? "text-amber-700 dark:text-amber-300 font-semibold" : "text-slate-500"} ${className}`} aria-live="polite">{t}{voll ? " – Grenze erreicht" : ""}</span>;
+}
+/** Langes Textfeld außerhalb der Chats (Aufgaben, Umdesign, Auftragstexte): wächst mit bis ca. zur halben Fensterhöhe, darüber scrollt es; ab 8.000 Zeichen Zähler. */
+export const LangesTextfeld = forwardRef(function LangesTextfeld({ value, onChange, min = 64, className = "", maxLength = TEXT_MAX, ...rest }, aussen) {
+  const ref = useRef(null); useAutoHoehe(ref, value, { min });
+  return <span className="flex flex-col gap-0.5">
+    <textarea ref={(el) => { ref.current = el; if (typeof aussen === "function") aussen(el); else if (aussen) aussen.current = el; }} value={value} onChange={onChange} maxLength={maxLength}
+      className={`${className} resize-none`} {...rest} />
+    <Zeichenzaehler text={value} max={maxLength} className="self-end" /></span>;
+});
+
 /** Einfaches Textfeld des Chats (wächst mit). Für @Feature/#Gruppe nimmt der Ort stattdessen `MitErwaehnung` als `feld`. */
 export const ChatTextfeld = forwardRef(function ChatTextfeld({ value, onChange, onEnter, min = 72, ...rest }, aussen) {
   const ref = useRef(null); useAutoHoehe(ref, value, { min });
@@ -127,7 +144,7 @@ const NEBEN = `${KNOPF} border border-emerald-700/40 dark:border-emerald-600/50 
  * ist der Hauptknopf und kommt mit Enter. `kannSenden` übersteuert „Text nötig“ (z. B. nur Anhänge). `gesperrt` (Text) ersetzt die Eingabe durch einen Hinweis (fehlendes Recht).
  */
 // ohneText: Aktionen, die auch ohne Text gehen (z. B. „weiterarbeiten“ – der Punkt selbst ist der Auftrag)
-export function ChatEingabe({ value, onChange, aktionen = {}, busy = false, platzhalter = "Nachricht …", hinweis, werkzeuge, ideen, onIdee, gesperrt, feld, maxLength = 8000, id, label = "Nachricht", oben, titel = {}, kannSenden, ohneText = [] }) {
+export function ChatEingabe({ value, onChange, aktionen = {}, busy = false, platzhalter = "Nachricht …", hinweis, werkzeuge, ideen, onIdee, gesperrt, feld, maxLength = TEXT_MAX, id, label = "Nachricht", oben, titel = {}, kannSenden, ohneText = [] }) {
   if (gesperrt) return <p className="border-t border-slate-200 dark:border-slate-800 px-3 py-3 text-xs text-slate-500">{gesperrt}</p>;
   const reihe = [["antworten", Reply], ["fragen", MessageCircleQuestion], ["besprechen", MessageSquare], ["weiterarbeiten", Hammer], ["auftrag", Hammer]].filter(([k]) => typeof aktionen[k] === "function");
   const haupt = reihe[0]?.[0];
@@ -143,6 +160,7 @@ export function ChatEingabe({ value, onChange, aktionen = {}, busy = false, plat
         <div className="flex flex-wrap items-center gap-1 px-2 pb-2">
           {werkzeuge}
           <span className="ml-auto" />
+          <Zeichenzaehler text={value} max={maxLength} className="mr-1" />
           {reihe.map(([k, S]) => (
             <button key={k} type="button" className={k === haupt ? HAUPT : NEBEN} disabled={busy || leerFuer(k)} onClick={() => aktionen[k]()}
               title={titel[k] || (k === haupt ? `${BEGRIFFE[k]} (Enter)` : BEGRIFFE[k])}>

@@ -158,7 +158,7 @@ export default function App() {
             : ansicht === "zentrale" ? <><Kennzahlen d={daten} onChat={() => geh("chat")} onErledigen={() => geh("erledigen")} /><Zentrale key={daten.projektId} d={daten} ich={ich} toast={setToast} onDesigner={() => geh("designer")} start={oeffne} onCode={() => geh("code")} /></>
             : ansicht === "erledigen" ? <ZuErledigen key={daten.projektId} d={daten} ich={ich} toast={setToast} onOeffne={(a) => { setOeffne({ f: a.feature_id, g: a.gruppe_id, n: Date.now() }); geh("zentrale"); }} />
             : ansicht === "aufgaben" ? <Aufgaben key={daten.projektId} d={daten} ich={ich} toast={setToast} onOeffneChat={(z) => { setOeffne({ f: z.f, g: z.g, n: Date.now() }); geh("zentrale"); }} />
-            : ansicht === "global" ? <Zentrale key={daten.projektId + "-global"} d={daten} ich={ich} toast={setToast} nurGlobal />
+            : ansicht === "global" ? <Zentrale key={daten.projektId + "-global"} d={daten} ich={ich} toast={setToast} nurGlobal onKi={() => geh("ki")} />
             : ansicht === "regelwerk" ? <Regelwerk key={daten.projektId} d={daten} ich={ich} toast={setToast} />
             : ansicht === "ki" ? <KiAnbieter key={daten.projektId} d={daten} ich={ich} toast={setToast} />
             : ansicht === "zweige" ? <ZweigeVersionen key={daten.projektId} d={daten} />

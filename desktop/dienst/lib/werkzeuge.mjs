@@ -34,6 +34,28 @@ export const FREMDE = WERKZEUG_IDS.filter((w) => w !== "claude-code");
 export const werkzeugOk = (w) => typeof w === "string" && Object.hasOwn(WERKZEUGE, w);
 export const werkzeugName = (w) => WERKZEUGE[w]?.name || "Claude Code";
 
+/** Fehlt die Spalte werkzeug (Datenbank vor 0057)? Dann gilt wie bisher Claude Code. */
+const ohneSpalte = (e) => /werkzeug/.test(e?.message || "") && /column|does not exist|schema cache/i.test(e?.message || "");
+/**
+ * Programmier-Werkzeug eines Projekts (0.18.0, Datenbank 0062): die Projektzeile „bauen“ (ws_ki_zustaendigkeit), sonst der globale Wert
+ * (ws_ki_zustaendigkeit_global, „wie global“). Verpflichtend – nie ein Ausweichen: nicht lesbar, nicht eingestellt oder unbekannt → { fehlt }, der
+ * Auftrag wartet. projekt/global = Antworten der Datenbank ({ data, error }); global wird nur gebraucht, wenn das Projekt keine Zeile hat.
+ * Ergebnis: { werkzeug, modell, quelle: "projekt" | "global" } oder { fehlt }.
+ */
+export function werkzeugWahl(projekt, global) {
+  if (!projekt || projekt.error) return ohneSpalte(projekt?.error) ? { werkzeug: "claude-code", modell: null, quelle: "projekt" } : { fehlt: "Programmier-Werkzeug nicht lesbar, wartet" };
+  let quelle = "projekt"; let z = projekt.data;
+  if (!z) {
+    quelle = "global";
+    if (!global || global.error) return { fehlt: "Globales Programmier-Werkzeug nicht lesbar (Datenbank 0062 eingespielt?), wartet" };
+    z = global.data;
+    if (!z) return { fehlt: "Programmier-Werkzeug nicht eingestellt, wartet – bitte unter Globale Einstellungen › KI-Anbieter › Programmieren speichern" };
+  }
+  const w = z.werkzeug && werkzeugOk(z.werkzeug) ? z.werkzeug : null;
+  if (!w) return { fehlt: "Programmier-Werkzeug unbekannt, wartet" };
+  return { werkzeug: w, modell: w === "claude-code" ? null : z.werkzeug_modell || null, quelle };
+}
+
 /** Modell zu einem Werkzeug prüfen. null/"" = Standardmodell des Werkzeugs (Claude: nach Aufwand wie bisher). */
 export function modellOk(werkzeug, modell) {
   if (modell == null || modell === "") return true;

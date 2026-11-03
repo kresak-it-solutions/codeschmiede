@@ -95,7 +95,9 @@ test("Länge (G1): 60 andere Arbeitsordner – Einstellungen als Datei, Befehlsz
   assert.ok(JSON.stringify({ deny }).length > 10000, "so lang wäre es inline");
   const q = await readFile(new URL("../index.mjs", import.meta.url), "utf8");
   assert.ok(/"--settings", \(einstellDatei = await laufEinstellungen\(/.test(q), "Bau-Lauf übergibt die Einstellungen als Datei");
-  assert.ok(/ueberEingabe = \[cl\?\.befehl[^;]+> 24000/.test(q), "zu langer Auftragstext geht über die Standardeingabe (mit Programm, vorne und Maskierung gezählt)");
+  // Seit 0.18.0 (Sicherheitsprüfung, Punkt 2): der Auftragstext geht IMMER über die Standardeingabe, nie in die Befehlszeile
+  assert.ok(q.includes('const args = ["-p", "--output-format", "stream-json"') && !q.includes('const args = ["-p", prompt,') && !q.includes("ueberEingabe"), "Auftragstext nie als Argument");
+  assert.ok(q.includes('stdio: ["pipe", "pipe", "pipe"] });\n      kind.stdin.on("error", () => {}); kind.stdin.end(prompt);'), "Auftragstext immer über die Standardeingabe");
   assert.ok(q.indexOf('mkdir(path.join(cfg.daten_ordner, "laeufe")') < q.indexOf("const laufVerbote"), "laeufe-Ordner vor der Sperrliste");
   // Feste Teile der Befehlszeile (ohne Auftragstext): ERLAUBT, VERBOTEN, LESE_SPERREN aus index.mjs auswerten
   const block = (name) => new Function(`return ${new RegExp(`const ${name} = (\\[[\\s\\S]*?\\]);\\n`).exec(q)[1]};`)();
