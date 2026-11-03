@@ -23,8 +23,20 @@ Werkstatt (Programmier-Werkzeug des Projekts, Standard das offizielle Claude Cod
 - **Nutzungslimits** (Verbrauch der Claude-Schnittstelle) immer sichtbar und live; die Werkstatt achtet auf die Limits und wählt das Modell
   nach Aufwand und Komplexität (einfach → klein, normal → mittel, komplex/HOCH → groß; bei Fehlschlag eine Stufe höher).
 
+## Kernpflichten (global fest, Gerhard 03.11.2026, 0.19.0)
+Gelten für jedes Projekt und jeden Auftrag, auch für die Codeschmiede selbst; Projektregeln (`regeln/REGELN.md`) dürfen sie nur mit einer begründeten,
+vom Admin bestätigten Abweichung lockern (Rang 1b, direkt nach der Sicherheit). Konzept: `docs/KONZEPT-REGELWERK-ERZWINGEN.md`.
+- **Phasen:** Phase 1–12 nach Gerhards Regeldatei; gebaut wird erst nach Freigabe von Phase 9 (Bauplan). Phasen gibt nur der Admin frei; Kurzfassung (§16) nur begründet.
+- **Doku-Pflicht:** jeder Bau-Auftrag ergänzt `docs/stand.md`, die Changelog- bzw. `docs/versionen.md`-Zeile und bei Entscheidungen `docs/entscheidungen.md`
+  (Gerüst `docs/01–09`, `docs/08-design/`, `ideen.md`, `fehler.md`, `versionen.md`, `stand.md`).
+- **Kritische Prüfung:** jeder Auftrag aus einem Text von Gerhard beginnt als Entwurf; eine zweite KI prüft ihn gegen die Regeln, Gerhard entscheidet „Bauen“ oder „Ändern“.
+- **Regel-Prüfung:** vor jedem Zusammenführen wird auch die Einhaltung des Regelwerks geprüft (feste Checkliste der Prüf-Station; Verstoß gegen eine Kernpflicht = rot).
+- Steckbrief je Auftrag mit Ziel, Umfang, ausdrücklich nicht, Abhängigkeiten, Abnahme-Kriterien; neue Ideen in die Ideensammlung, nie nebenbei bauen;
+  in der Fertig-Meldung ehrlich, was nicht getestet wurde.
+
 ## Weg in `main`
 Nur über Pull Request mit grüner Prüfung („Prüfung“). Bei HOCH/KRITISCH zusätzlich unabhängiges Review durch einen eigenen Agenten.
+**Vor jedem Zusammenführen auch auf Regelwerk-Einhaltung prüfen** (Kernpflichten oben, Projektregeln, globale Regeln) – nicht nur auf Sicherheit und Tests.
 Zusammengeführt wird nur auf Gerhards Wort (in der Codeschmiede: Knopf „Freigeben & zusammenführen“ durch Admin oder mit Recht).
 
 ## Datenschutz und Sicherheit
@@ -40,6 +52,15 @@ Zusammengeführt wird nur auf Gerhards Wort (in der Codeschmiede: Knopf „Freig
 - Werkstatt arbeitet nur im Arbeitsordner des Auftrags (eigener Zweig), nie direkt auf `main`; heikle Befehle brauchen Erlaubnis im Programm.
 
 ## Neue Anweisungen
+- **2026-11-03 – Regelwerk erzwingen (0.19.0, Entscheidungen und Freigabe Gerhard 03.11.2026, Grundlage `docs/ABGLEICH-REGELWERK-2026-11-03.md`):**
+  (1) Phasen erzwingen: Phase 1–12 je Projekt, Freigabe nur Admin per Knopf mit Protokoll und optionaler Begründung; Bau-Aufträge aller Wege werden ohne
+  freigegebene Phase 9 in der Datenbank abgelehnt bzw. warten („Bauen erst nach Freigabe von Phase 9 (Bauplan)“); danach gilt die Pauschalfreigabe.
+  Bestand (trainer-to-go, codeschmiede, alle mit Live-Stand) „Phase 10 – übernommen“; neue Projekte Phase 1; eingelesene: Vorschlag der KI, Admin bestätigt;
+  Kurzfassung §16 nur als begründete, protokollierte Abweichung. (2) Konzept-Chat: erst Entwurf, dann Klick – zweite KI (globale Aufgabe „kritik“, verpflichtend)
+  prüft kritisch, Gerhard entscheidet „Bauen“ (trotz Einwänden mit Begründung) oder „Ändern“, automatisch im Entscheidungsprotokoll; gilt für alle Wege mit Text von Gerhard.
+  (3) Doku-Pflicht erzwingen (Gerüst, Prüfung im Diff, Nacharbeit, Ampel „Doku vollständig“, Entscheidungsprotokoll über den Auftrag nach `docs/entscheidungen.md`).
+  (4) Kernpflichten global fest, Lockerung nur mit bestätigter Abweichung; Ampel rot bei Aufhebung ohne Abweichung oder ohne bestätigte globale Regeln.
+  Datenbank 0063, `docs/KONZEPT-REGELWERK-ERZWINGEN.md`.
 - **2026-11-03 08:11 – Lange Fragen (0.18.0):** „Auf Fragen will ich so viel Text schreiben können, wie ich will.“ Alle Eingaben für Fragen und Aufträge haben
   eine gemeinsame Grenze von 200.000 Zeichen (eine Konstante je Schicht: `web/src/textGrenze.js`, `desktop/dienst/lib/ki.mjs`, Datenbank `ws_text_max()`), wachsen mit
   und zeigen ab 8.000 Zeichen einen Zähler. Fragen werden **nie still gekürzt**; ist eine Anbieter-/Modellgrenze erreicht, gibt es eine klare Meldung.

@@ -37,6 +37,10 @@ Jedes Projekt hat eigene Bereiche, Gruppen, Features, Mitglieder (Rolle je Proje
 Anmeldung & Rechte), Betrieb (Handbuch & Texte, Einstellungen & Datenschutz). Für jedes Projekt gilt das AI-Dev-OS-Regelwerk; die Werkstatt
 stellt beim ersten Auftrag eines neuen Projekts zuerst ihre Fragen (Pflicht-Start).
 
+### Regelwerk erzwingen (seit 0.19.0, Gerhard 03.11.2026, Datenbank 0063)
+Phasen 1–12 mit Phase-9-Sperre, Entwürfe mit kritischer Prüfung durch eine zweite KI, Doku-Pflicht im Diff, Kernpflichten mit bestätigten Abweichungen,
+Prüf-Station mit Auftrag und Regel-Checkliste, Ideensammlung, Entscheidungsprotokoll – vollständig mit Handbuch in `docs/KONZEPT-REGELWERK-ERZWINGEN.md`.
+
 ### KI-Anbindungen global (seit 0.18.0, Meldung Gerhard 03.11.2026, Datenbank 0062) – Handbuch
 **Warum:** Bis 0.17.1 standen die KI-Zuständigkeiten je Projekt in `ws_ki_zustaendigkeit`. Neue Projekte bekamen über den Trigger aus 0056 nur die
 Standardzeilen (je Aufgabe nur Claude) – die in Trainer to go gespeicherten Reihen mit ChatGPT, Gemini und eigenen Anbietern fehlten dort.
