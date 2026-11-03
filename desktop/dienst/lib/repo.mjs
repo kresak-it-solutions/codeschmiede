@@ -5,6 +5,7 @@
 import { copyFile, lstat, mkdir, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { dokuGeruest } from "./regelwerk.mjs";
 
 export const REPO_KONTO = "kresak-it-solutions";   // GitHub-Organisation (Enterprise „Kresak IT-Solutions“)
 export const REGELWERK = "gerhardkresak-code/ai-dev-os";   // Regelwerk bleibt beim persönlichen Konto
@@ -108,6 +109,8 @@ export async function geruestSchreiben(ziel, vorlageOrdner, { name, repo, beschr
     "docs/WISSEN.md": `# Wissen – ${name}\n\nWas abgeschlossen und live ist, mit Entscheidungen. Konzept-Entscheidungen stehen in der Codeschmiede (Gruppe „Konzept“) und in docs/KONZEPT.md.\n`,
     ".gitattributes": "* text=auto eol=lf\n*.png binary\n*.jpg binary\n*.ico binary\n",
   };
+  // Doku-Gerüst nach §15 der Regeldatei (0.19.0): docs/01–09, 08-design/, entscheidungen, ideen, fehler, versionen, stand – nur, was die Vorlage nicht schon hat
+  for (const [rel, inhalt] of Object.entries(dokuGeruest(name, datum))) if (!geschrieben.includes(rel)) extra[rel] = inhalt;
   for (const [rel, inhalt] of Object.entries(extra)) {
     if (rel === ".gitattributes" && geschrieben.includes(rel)) continue;
     await mkdir(path.dirname(path.join(ziel, rel)), { recursive: true });

@@ -18,13 +18,13 @@ export const ANBIETER = {
   chatgpt: { name: "ChatGPT", programm: "Codex (OpenAI)", paket: "@openai/codex", bin: "codex", install: "npm install -g @openai/codex", login: "codex login" },
   gemini: { name: "Gemini", programm: "Gemini CLI (Google)", paket: "@google/gemini-cli", bin: "gemini", install: "npm install -g @google/gemini-cli", login: "gemini" },
 };
-export const AUFGABEN = ["chat", "konzept", "design", "pruefung", "doku", "texte", "bilder", "bauen"];
+export const AUFGABEN = ["chat", "konzept", "design", "pruefung", "doku", "texte", "bilder", "bauen", "kritik"];   // „kritik“: kritische Prüfung der Entwürfe (0.19.0)
 // Standard, solange der Admin nichts eingestellt hat: NUR Claude (Prüfung 2026-10-23 M5 – nichts geht ohne Admin-Entscheidung an fremde Anbieter).
 // VORSCHLAG = Entwurf 1.2; die Seite „KI-Anbieter“ bietet ihn zum Übernehmen an.
 export const STANDARD = {
   chat: [{ anbieter: "claude", modell: "sonnet" }], konzept: [{ anbieter: "claude", modell: "opus" }], design: [{ anbieter: "claude", modell: "sonnet" }],
   pruefung: [{ anbieter: "claude", modell: "opus" }], doku: [{ anbieter: "claude", modell: "sonnet" }], texte: [{ anbieter: "claude", modell: "haiku" }],
-  bilder: [{ anbieter: "claude" }], bauen: [{ anbieter: "claude" }],
+  bilder: [{ anbieter: "claude" }], bauen: [{ anbieter: "claude" }], kritik: [{ anbieter: "claude", modell: "opus" }],
 };
 export const MODELL = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,59}$/;   // nie mit „-“ beginnend (Prüfung M2: sonst Schalter wie --yolo)
 
