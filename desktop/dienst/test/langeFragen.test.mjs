@@ -42,6 +42,8 @@ test("150.000 Zeichen kommen über die Standardeingabe vollständig beim Program
 test("Eigene Anbieter: ohne {prompt} geht die lange Frage über die Standardeingabe; mit {prompt} als Argument klare Meldung statt Kürzen", () => {
   const ohne = freieArgumente({ id: "copilot", name: "Copilot", argumente: ["-s"] }, lang, null);
   assert.equal(ohne.stdin, lang); assert.ok(!ohne.args.some((x) => x.length > 100), "nichts in der Befehlszeile");
+  const stdinArt = freieArgumente({ id: "x", name: "X", eingabe: "stdin", argumente: ["-p", "{prompt}"] }, lang, null);
+  assert.deepEqual(stdinArt, { args: ["-p"], stdin: lang }, "Übergabe stdin: {prompt} wird nie in die Befehlszeile eingesetzt");
   const kurzOk = freieArgumente({ id: "copilot", name: "Copilot", argumente: ["-p", "{prompt}"] }, "kurz", null);
   assert.deepEqual(kurzOk, { args: ["-p", "kurz"], stdin: null });
   assert.throws(() => freieArgumente({ id: "copilot", name: "Copilot", argumente: ["-p", "{prompt}"] }, "x".repeat(ARG_PROMPT_MAX + 1), null), (e) => e.zuLang && /zu lang für die Übergabe als Argument/.test(e.message) && /nichts gekürzt/.test(e.message));
@@ -65,4 +67,36 @@ test("Dienst: kiAntwort prüft die Größe vorher und meldet „zu lang“ statt
     const q = await readFile(new URL(f, import.meta.url), "utf8");
     assert.ok(!/kurz\((frage|ohne), \d+\)/.test(q), `${f}: Frage nicht gekürzt`);
   }
+});
+
+// ---------- Sicherheitsprüfung 0.18.0 (GELB), Punkte 1–3 und 6–7 ----------
+test("Punkt 3: Nachladen gebündelt (300 ms), nur für die angezeigten Aufträge, Log getrennt", async () => {
+  const { verzoegert, gehoertZu, NACHLADEN_MS } = await import("../../../web/src/daten/nachladen.js");
+  assert.equal(NACHLADEN_MS, 300);
+  let n = 0; const f = verzoegert(() => { n++; }, 30);
+  for (let i = 0; i < 20; i++) f();
+  await new Promise((r) => setTimeout(r, 80));
+  assert.equal(n, 1, "20 Änderungen kurz hintereinander → einmal laden");
+  f(); f.abbrechen(); await new Promise((r) => setTimeout(r, 60)); assert.equal(n, 1, "abbrechen beim Verlassen");
+  const m = new Set([5, 7]);
+  assert.ok(gehoertZu(m, { new: { auftrag_id: 7 } }) && !gehoertZu(m, { new: { auftrag_id: 9 } }) && gehoertZu(m, { old: { id: 3 } }));
+  const q = await readFile(new URL("../../../web/src/daten/werkstattDaten.js", import.meta.url), "utf8");
+  const h = q.slice(q.indexOf("export function useAuftragDetails"), q.indexOf("// ---------------- Zu erledigen"));
+  assert.ok(h.includes("filter: `auftrag_id=in.(${ids.join(\",\")})`") && h.includes('table: "ws_live_log", ...filter }, (p) => { if (gehoertZu(menge, p)) spaeterLog(); }'));
+  assert.ok(!h.includes(", holen)"), "keine Änderung lädt mehr ungefiltert alles");
+  const c = await readFile(new URL("../../../web/src/Chat.jsx", import.meta.url), "utf8");
+  assert.ok(c.includes('table: "ws_claude_chat", filter: `projekt_id=eq.${d.projektId}` }, spaeter)'));
+});
+
+test("Punkte 1, 2, 6, 7 in der Datenbank: Löschen nie still ersetzt, Übergabe stdin als Standard, Weiche in 0057, alte Funktion nur „bauen“", async () => {
+  const sql = await readFile(new URL("../../../supabase/migrations/0062_ki_global.sql", import.meta.url), "utf8");
+  const l = sql.slice(sql.indexOf("create or replace function public.ws_ki_anbieter_loeschen"), sql.indexOf("-- ---------- 7."));
+  assert.ok(l.includes("Anbieter ist allein zuständig für % – erst dort umstellen") && !l.includes('[{"anbieter":"claude"}]'), "nie still durch Claude ersetzt");
+  assert.ok(sql.includes("alter table public.ws_ki_anbieter add column if not exists eingabe text not null default 'stdin';"));
+  assert.ok(sql.includes("(eingabe = 'argument') = public.ws_ki_mit_prompt(argumente)"));
+  assert.ok(sql.includes("KI-Zuständigkeiten gelten seit 0.18.0 global für alle Projekte – bitte ws_ki_global_setzen"));
+  const w = await readFile(new URL("../../../supabase/migrations/0057_programmier_werkzeug.sql", import.meta.url), "utf8");
+  assert.ok(w.includes("if to_regclass('public.ws_ki_zustaendigkeit_global') is null then\n    execute $fassung$"));
+  const ui = await readFile(new URL("../../../web/src/KiAnbieter.jsx", import.meta.url), "utf8");
+  assert.ok(ui.includes("Der Text steht in der Befehlszeile und ist für andere Programme auf dem PC sichtbar") && ui.includes('eingabe: "stdin",') && !ui.includes("ws_ki_zustaendigkeit_setzen"));
 });

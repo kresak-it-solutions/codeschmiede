@@ -183,6 +183,11 @@ alter table public.ws_auftraege drop constraint if exists ws_auftraege_wartet_au
 alter table public.ws_auftraege add constraint ws_auftraege_wartet_auf_check check (wartet_auf is null or char_length(wartet_auf) <= 200);
 
 -- Gesetzt wird das Werkzeug nur einmal (beim Start durch die Werkstatt) und nur so, wie das Projekt es gerade einstellt; danach nie mehr geändert.
+-- Weiche (0.18.0, Sicherheitsprüfung Hinweis 6): Liegt 0062 (KI-Anbindungen global) schon vor, bleibt dessen Fassung des Auftrags-Schutzes
+-- (Projektzeile, sonst global) stehen – ein erneutes Einspielen von 0057 setzt sie nicht auf diese alte Fassung zurück.
+do $weiche$ begin
+  if to_regclass('public.ws_ki_zustaendigkeit_global') is null then
+    execute $fassung$
 create or replace function public.ws_auftraege_werkzeug_schutz() returns trigger
 language plpgsql security definer set search_path = public as $$
 begin
@@ -200,6 +205,9 @@ begin
   end if;
   return new;
 end $$;
+    $fassung$;
+  end if;
+end $weiche$;
 revoke execute on function public.ws_auftraege_werkzeug_schutz() from public, anon, authenticated;
 drop trigger if exists ws_auftraege_werkzeug on public.ws_auftraege;
 create trigger ws_auftraege_werkzeug before insert or update on public.ws_auftraege for each row execute function public.ws_auftraege_werkzeug_schutz();

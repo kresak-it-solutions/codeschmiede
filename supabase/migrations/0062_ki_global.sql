@@ -12,10 +12,12 @@
 --   * Lesen: angemeldete, aktive Mitglieder, die mindestens ein Projekt sehen. Schreiben nur über ws_ki_global_setzen (nur Admin, Protokoll).
 --   * Der Trigger aus 0056 (Standardzeilen je neuem Projekt) entfällt – neue Projekte haben über die globale Tabelle sofort alle Zuständigkeiten.
 --   * Der Auftrags-Schutz aus 0057 prüft das Werkzeug gegen Projektzeile, sonst globalen Wert.
---   * ws_ki_anbieter_loeschen entfernt einen gelöschten eigenen Anbieter auch aus den globalen Zuständigkeiten.
+--   * ws_ki_anbieter_loeschen: allein zuständig → abgelehnt, sonst nur aus den Reihen entfernt (Protokoll). Eigene Anbieter: Übergabe eingabe = stdin|argument.
+--   * ws_ki_zustaendigkeit_setzen (je Projekt) nur noch für „bauen“.
 --   * Teil 2 (Gerhard 03.11.2026 08:11): lange Fragen – gemeinsame Obergrenze 200.000 Zeichen (ws_text_max), siehe unten.
 -- Mehrfach ausführbar. Reihenfolge 0001 → … → 0062. Test: supabase/tests/t49_ki_global.sql.
--- Hinweis: Wird 0057 später noch einmal eingespielt, setzt es den Auftrags-Schutz auf die alte Fassung zurück – danach 0062 erneut einspielen.
+-- Hinweis: 0057 setzt beim erneuten Einspielen den Auftrags-Schutz nicht mehr auf die alte Fassung zurück (Weiche über to_regclass, 0.18.0).
+-- Hinweis: 0012/0018 (ws_ki_anbieter_loeschen, ws_ki_zustaendigkeit_setzen, ws_ki_anbieter_speichern) nach 0062 erneut eingespielt → danach 0062 noch einmal einspielen.
 
 begin;
 
@@ -151,22 +153,93 @@ revoke execute on function public.ws_auftraege_werkzeug_schutz() from public, an
 drop trigger if exists ws_auftraege_werkzeug on public.ws_auftraege;
 create trigger ws_auftraege_werkzeug before insert or update on public.ws_auftraege for each row execute function public.ws_auftraege_werkzeug_schutz();
 
--- ---------- 6. Eigenen Anbieter löschen: auch aus den globalen Zuständigkeiten ----------
+-- ---------- 6. Eigenen Anbieter löschen (Sicherheitsprüfung 0.18.0, Punkt 1) ----------
+-- Ist der Anbieter in einer globalen Reihe oder in einer Projektreihe „bauen“ der EINZIGE, wird das Löschen abgelehnt – nie still durch Claude ersetzt.
+-- Steht er neben anderen, wird er nur aus der Reihe entfernt (Protokoll). Die alten Projektreihen der übrigen Aufgaben haben seit 0.18.0 keine Wirkung:
+-- dort wird er ebenfalls entfernt, wo andere stehen; eine Reihe, in der er allein steht, bleibt unverändert (wird nie gelesen).
 create or replace function public.ws_ki_anbieter_loeschen(p_id text) returns void
 language plpgsql security definer set search_path = public as $$
+declare allein text; global_weg jsonb; projekt_weg jsonb;
 begin
   if not public.ws_ist_admin() then raise exception 'KI-Anbieter löscht nur der Admin'; end if;
+  if not exists (select 1 from public.ws_ki_anbieter where id = p_id) then raise exception 'Unbekannter KI-Anbieter'; end if;
+  perform 1 from public.ws_ki_zustaendigkeit_global for update;
+  select string_agg(x, ', ' order by x) into allein from (
+    select 'global: ' || g.aufgabe x from public.ws_ki_zustaendigkeit_global g
+     where jsonb_array_length(g.reihe) = 1 and g.reihe -> 0 ->> 'anbieter' = p_id
+    union all
+    select 'Projekt ' || z.projekt_id || ': bauen' from public.ws_ki_zustaendigkeit z
+     where z.aufgabe = 'bauen' and jsonb_array_length(z.reihe) = 1 and z.reihe -> 0 ->> 'anbieter' = p_id) q;
+  if allein is not null then raise exception 'Anbieter ist allein zuständig für % – erst dort umstellen', allein; end if;
+  with w as (
+    update public.ws_ki_zustaendigkeit_global set reihe = (select jsonb_agg(x) from jsonb_array_elements(reihe) x where x->>'anbieter' <> p_id),
+           geaendert = now(), geaendert_von = auth.uid()
+     where exists (select 1 from jsonb_array_elements(reihe) x where x->>'anbieter' = p_id) returning aufgabe)
+  select coalesce(jsonb_agg(aufgabe order by aufgabe), '[]') into global_weg from w;
+  with w as (
+    update public.ws_ki_zustaendigkeit set reihe = (select jsonb_agg(x) from jsonb_array_elements(reihe) x where x->>'anbieter' <> p_id)
+     where jsonb_array_length(reihe) > 1 and exists (select 1 from jsonb_array_elements(reihe) x where x->>'anbieter' = p_id) returning projekt_id || '/' || aufgabe pa)
+  select coalesce(jsonb_agg(pa order by pa), '[]') into projekt_weg from w;
   delete from public.ws_ki_kopplung where anbieter = p_id;
-  update public.ws_ki_zustaendigkeit set reihe = coalesce((select jsonb_agg(x) from jsonb_array_elements(reihe) x where x->>'anbieter' <> p_id), '[{"anbieter":"claude"}]'::jsonb)
-   where exists (select 1 from jsonb_array_elements(reihe) x where x->>'anbieter' = p_id);
-  update public.ws_ki_zustaendigkeit_global set reihe = coalesce((select jsonb_agg(x) from jsonb_array_elements(reihe) x where x->>'anbieter' <> p_id), '[{"anbieter":"claude"}]'::jsonb),
-         geaendert = now(), geaendert_von = auth.uid()
-   where exists (select 1 from jsonb_array_elements(reihe) x where x->>'anbieter' = p_id);
   delete from public.ws_ki_anbieter where id = p_id;
-  insert into public.ws_protokoll (wer, was, details) values (auth.uid(), 'ki_anbieter_geloescht', jsonb_build_object('id', p_id));
+  insert into public.ws_protokoll (wer, was, details)
+  values (auth.uid(), 'ki_anbieter_geloescht', jsonb_build_object('id', p_id, 'entfernt_global', global_weg, 'entfernt_projekt', projekt_weg));
 end $$;
 revoke execute on function public.ws_ki_anbieter_loeschen(text) from public, anon;
 grant execute on function public.ws_ki_anbieter_loeschen(text) to authenticated;
+
+-- ---------- 7. Übergabe der Frage an eigene Anbieter (Sicherheitsprüfung 0.18.0, Punkt 2) ----------
+-- eingabe = 'stdin' (Standard): die Frage geht über die Standardeingabe; {prompt} ist dann in den Argumenten nicht erlaubt.
+-- eingabe = 'argument': {prompt} steht in den Argumenten – der Text steht in der Befehlszeile und ist für andere Programme auf dem PC sichtbar.
+-- Bestehende Einträge mit {prompt} bleiben 'argument'. Gebunden an die Argumente, also auch an den Fingerabdruck fp (Zulassung je PC).
+create or replace function public.ws_ki_mit_prompt(a jsonb) returns boolean
+language sql immutable set search_path = public as $$
+  select jsonb_typeof(a) = 'array' and exists (select 1 from jsonb_array_elements(a) x where jsonb_typeof(x) = 'string' and (x #>> '{}') like '%{prompt}%')
+$$;
+revoke execute on function public.ws_ki_mit_prompt(jsonb) from public, anon;
+alter table public.ws_ki_anbieter add column if not exists eingabe text not null default 'stdin';
+-- (fp ändert sich dadurch nicht → Zulassungen auf den PCs bleiben gültig)
+update public.ws_ki_anbieter set eingabe = 'argument' where eingabe <> 'argument' and public.ws_ki_mit_prompt(argumente);
+alter table public.ws_ki_anbieter drop constraint if exists ws_ki_anbieter_eingabe_check;
+alter table public.ws_ki_anbieter add constraint ws_ki_anbieter_eingabe_check check (eingabe in ('stdin', 'argument')
+  and (eingabe = 'argument') = public.ws_ki_mit_prompt(argumente));
+
+create or replace function public.ws_ki_anbieter_speichern(p jsonb) returns void
+language plpgsql security definer set search_path = public as $$
+declare e text := coalesce(nullif(p->>'eingabe', ''), 'stdin'); mit boolean;
+begin
+  if not public.ws_ist_admin() then raise exception 'KI-Anbieter legt nur der Admin an'; end if;
+  if e not in ('stdin', 'argument') then raise exception 'Ungültige Übergabe (stdin oder argument)'; end if;
+  mit := public.ws_ki_mit_prompt(coalesce(p->'argumente', '[]'::jsonb));
+  if e = 'stdin' and mit then raise exception 'Mit Übergabe „Standardeingabe“ darf {prompt} nicht in den Argumenten stehen'; end if;
+  if e = 'argument' and not mit then raise exception 'Mit Übergabe „Befehlszeile“ muss {prompt} in einem Argument stehen'; end if;
+  insert into public.ws_ki_anbieter (id, name, programm, argumente, modelle, installieren, anmelden, hinweis, eingabe)
+    values (p->>'id', p->>'name', p->>'programm', coalesce(p->'argumente','[]'), coalesce(p->'modelle','[]'), p->>'installieren', p->>'anmelden', p->>'hinweis', e)
+  on conflict (id) do update set name = excluded.name, programm = excluded.programm, argumente = excluded.argumente, modelle = excluded.modelle,
+    installieren = excluded.installieren, anmelden = excluded.anmelden, hinweis = excluded.hinweis, eingabe = excluded.eingabe;
+  -- Geänderter Anbieter muss auf jedem PC neu zugelassen werden
+  update public.ws_ki_kopplung set zugelassen = false, zugelassen_fp = null where anbieter = p->>'id';
+  insert into public.ws_protokoll (wer, was, details) values (auth.uid(), 'ki_anbieter', jsonb_build_object('id', p->>'id', 'programm', p->>'programm', 'eingabe', e));
+end $$;
+revoke execute on function public.ws_ki_anbieter_speichern(jsonb) from public, anon;
+grant execute on function public.ws_ki_anbieter_speichern(jsonb) to authenticated;
+
+-- ---------- 8. Alte Funktion je Projekt (Sicherheitsprüfung 0.18.0, Hinweis 7) ----------
+-- Für alle Aufgaben außer „bauen“ gilt seit 0.18.0 nur die globale Zuständigkeit → abgelehnt mit Verweis. „bauen“ bleibt wie bisher (Werkzeug bleibt stehen).
+create or replace function public.ws_ki_zustaendigkeit_setzen(p_projekt text, p_aufgabe text, p_reihe jsonb, p_ab int default 90)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  if not public.ws_ist_admin() then raise exception 'Zuständigkeiten stellt nur der Admin ein'; end if;
+  if p_aufgabe is distinct from 'bauen' then
+    raise exception 'KI-Zuständigkeiten gelten seit 0.18.0 global für alle Projekte – bitte ws_ki_global_setzen (Globale Einstellungen › KI-Anbieter)'; end if;
+  if not exists (select 1 from public.ws_projekte where id = p_projekt) then raise exception 'Unbekanntes Projekt'; end if;
+  if not public.ws_ki_reihe_ok(p_aufgabe, p_reihe) then raise exception 'Ungültige Zuständigkeit (Bauen nur Claude; Prüfungen mit Claude als Rückfall)'; end if;
+  insert into public.ws_ki_zustaendigkeit (projekt_id, aufgabe, reihe, weitergeben_ab, geaendert, geaendert_von)
+    values (p_projekt, p_aufgabe, p_reihe, coalesce(p_ab, 90), now(), auth.uid())
+  on conflict (projekt_id, aufgabe) do update set reihe = excluded.reihe, weitergeben_ab = excluded.weitergeben_ab, geaendert = now(), geaendert_von = auth.uid();
+end $$;
+revoke execute on function public.ws_ki_zustaendigkeit_setzen(text, text, jsonb, int) from public, anon;
+grant execute on function public.ws_ki_zustaendigkeit_setzen(text, text, jsonb, int) to authenticated;
 
 do $$ begin
   begin alter publication supabase_realtime add table public.ws_ki_zustaendigkeit_global; exception when duplicate_object then null; end;
@@ -328,6 +401,8 @@ begin
   insert into public.ws_auftraege (gruppe_id, feature_id, titel, art, erstellt_von)
     values (g, f, left('Aufgabe: ' || s.titel, 80), case when public.ws_rolle_fuer_gruppe(g) = 'texter' then 'text' else 'aendern' end, auth.uid())
     returning id into n;
+  if char_length(replace('Aufgabe: ' || s.titel || E'\n' || s.text, '](', '] (')) > 2 * public.ws_text_max() + 50000 then
+    raise exception 'Text nach Entschärfen zu lang (höchstens % Zeichen) – bitte die Aufgabe kürzen', 2 * public.ws_text_max() + 50000; end if;
   insert into public.ws_nachrichten (auftrag_id, von, art, text, kanal, daten)
     -- Ganzer Text (0.18.0: nicht mehr gekürzt). Klartext ohne klickbare Markdown-Links („](“ entschärft); die Oberfläche zeigt diese Nachricht ohnehin ohne Markdown (Prüfung N3)
     values (n, auth.uid(), 'text', replace('Aufgabe: ' || s.titel || E'\n' || s.text, '](', '] ('), case when f is null then 'gruppe' else 'codeschmiede' end,
@@ -362,6 +437,8 @@ begin
        || case when btrim(a.beschreibung) <> '' then E'\n\n' || btrim(a.beschreibung) else '' end
        || case when zusatz is not null then E'\n\nDazu: ' || zusatz else '' end, 2 * public.ws_text_max() + 200);
   select coalesce(jsonb_agg(x.id order by x.id), '[]'::jsonb) into ids from public.ws_aufgabe_anhaenge x where x.aufgabe_id = a.id and x.fertig;
+  if char_length(replace(t, '](', '] (')) > 2 * public.ws_text_max() + 50000 then
+    raise exception 'Text nach Entschärfen zu lang (höchstens % Zeichen) – bitte den Punkt oder den Zusatz kürzen', 2 * public.ws_text_max() + 50000; end if;
   insert into public.ws_aufgabe_sendungen (aufgabe_id, projekt_id, gruppe_id, feature_id, titel, text, links, anhaenge, von)
     values (a.id, a.projekt_id, g, a.feature_id, a.titel, t, a.links, ids, auth.uid()) returning id into s;
   insert into public.ws_auftraege (gruppe_id, feature_id, titel, art, erstellt_von)

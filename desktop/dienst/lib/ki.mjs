@@ -395,7 +395,8 @@ export function freieArgumente(def, prompt, modell) {
     // {modell} nur als ganzes Argument oder nach „=“ (sonst ergäbe z. B. „-{modell}“ mit Modell „c“ die Option -c, Nachprüfung N2)
     if (a.includes("{modell}") && a !== "{modell}" && !/^[A-Za-z0-9-]+=\{modell\}$/.test(a)) continue;
     if (a.includes("{modell}") && !m) { if (args.length && /^-/.test(args[args.length - 1]) && a === "{modell}") args.pop(); continue; }
-    if (a.includes("{prompt}")) { args.push(a.split("{modell}").join(m).split("{prompt}").join(prompt)); mitPrompt = true; continue; }
+    // Übergabe „stdin“ (Standard seit 0.18.0, ws_ki_anbieter.eingabe): die Frage nie in die Befehlszeile – dort wäre sie für andere Programme sichtbar
+    if (a.includes("{prompt}")) { if (def.eingabe === "stdin") continue; args.push(a.split("{modell}").join(m).split("{prompt}").join(prompt)); mitPrompt = true; continue; }
     args.push(a.split("{modell}").join(m));
   }
   // Lange Fragen nie über die Befehlszeile (Windows: höchstens 32.767 Zeichen; sonst würde gekürzt oder der Start scheitert) – klare Meldung

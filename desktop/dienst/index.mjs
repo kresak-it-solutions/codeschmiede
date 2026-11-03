@@ -665,7 +665,9 @@ async function fuehreAus(auftrag, { fortsetzen = false, nacharbeit = false } = {
     const mcp = { mcpServers: { werkstatt: { command: process.execPath, args: [path.join(HIER, "erlaubnis-mcp.mjs")], env: {
       CS_SUPABASE_URL: cfg.supabase_url, CS_ANON_KEY: cfg.anon_key, CS_TOKEN_DATEI: tokenDatei(), CS_AUFTRAG: String(auftrag.id), CS_GRUPPE: auftrag.gruppe_id, CS_ADMIN_PC: cfg.admin ? "1" : "0", CS_ORDNER: ordner,
     } } } };
-    const args = ["-p", prompt, "--output-format", "stream-json", "--verbose", "--model", modell,
+    // Auftragstext IMMER über die Standardeingabe (Sicherheitsprüfung 0.18.0, Punkt 2): in der Befehlszeile wäre er für andere Programme auf dem PC
+    // sichtbar (Prozessliste) und unter Windows auf 32.767 Zeichen begrenzt. „-p“ ohne Text liest die Frage von stdin (wie claudeOhneWerkzeuge).
+    const args = ["-p", "--output-format", "stream-json", "--verbose", "--model", modell,
       // Lese-Sperren gelten seit Befund S2 (01.11.2026) auch im Bau-Lauf, nicht nur im Chat und in der Prüfung
       "--permission-mode", "default", "--allowedTools", ERLAUBT.join(","), "--disallowedTools", [...VERBOTEN, ...LESE_SPERREN].join(","),
       "--mcp-config", JSON.stringify(mcp), "--strict-mcp-config", "--permission-prompt-tool", "mcp__werkstatt__erlaubnis",
@@ -677,12 +679,6 @@ async function fuehreAus(auftrag, { fortsetzen = false, nacharbeit = false } = {
       // Als DATEI (dritte Prüfung, G1): inline würde die Befehlszeile unter Windows (32.767 Zeichen) bei vielen Arbeitsordnern zu lang
       "--settings", (einstellDatei = await laufEinstellungen(auftrag.id, { disableAllHooks: true, permissions: { ask: [...FRAGEN, "WebSearch", "WebFetch"], deny: laufVerbote, blockReadsOutsideWorkingDirectories: true } }))];
     if ((fortsetzen || nacharbeit) && merk.sitzung) args.push("--resume", merk.sitzung);
-    // Ist die Befehlszeile trotzdem zu lang (großer Auftragstext), geht der Auftrag über die Standardeingabe (wie im Chat, Nachprüfung 0.10.0 N1)
-    // Gezählt wird wie unter Windows: Programm + vorne (cli.js) + alle Argumente, je mit Anführungszeichen und verdoppelten „\“/„"“; Schwelle mit Puffer (H-a)
-    const cl = findeClaude();
-    const zeichen = (a) => String(a).length + (String(a).match(/["\\]/g) || []).length + 3;
-    const ueberEingabe = [cl?.befehl || "claude", ...(cl?.vorne || []), ...args].reduce((n, a) => n + zeichen(a), 0) > 24000;
-    if (ueberEingabe) args.splice(1, 1);
     // Ohne API-Schlüssel in der Umgebung arbeitet Claude Code mit dem eigenen Abo-Login dieser Person
     const env = { ...process.env };
     // Abo-Login erzwingen: keine Schlüssel, fremden Server oder Cloud-Anbieter aus der Umgebung (auch Windows-Schreibweisen)
@@ -693,8 +689,8 @@ async function fuehreAus(auftrag, { fortsetzen = false, nacharbeit = false } = {
       const claude = findeClaude();
       if (!claude) throw new Error("Claude Code wurde auf diesem PC nicht gefunden (erwartet: %USERPROFILE%\\.local\\bin\\claude.exe). Bitte installieren und einmal „claude“ im Terminal starten.");
       nachLauf = { projekt, ordner };
-      const kind = spawn(claude.befehl, [...claude.vorne, ...args], { cwd: ordner, env, shell: false, windowsHide: true, stdio: [ueberEingabe ? "pipe" : "ignore", "pipe", "pipe"] });
-      if (ueberEingabe) { kind.stdin.on("error", () => {}); kind.stdin.end(prompt); }
+      const kind = spawn(claude.befehl, [...claude.vorne, ...args], { cwd: ordner, env, shell: false, windowsHide: true, stdio: ["pipe", "pipe", "pipe"] });
+      kind.stdin.on("error", () => {}); kind.stdin.end(prompt);
       laeuft.kind = kind;
       abort.signal.addEventListener("abort", () => kind.kill("SIGINT"));
       const rl = createInterface({ input: kind.stdout });

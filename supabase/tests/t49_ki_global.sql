@@ -148,16 +148,61 @@ select ws_ki_global_setzen('bauen','[{"anbieter":"claude"}]'::jsonb, 90) \g /dev
 select werkzeug from ws_ki_zustaendigkeit_global where aufgabe = 'bauen';
 select ws_ki_global_setzen('bauen','[{"anbieter":"claude"}]'::jsonb, 90, 'claude-code', null) \g /dev/null
 
-\echo [14] Eigener Anbieter in der globalen Reihe, dann gelöscht -> chat ohne copilot (claude, gemini, chatgpt)
-select ws_ki_anbieter_speichern('{"id":"copilot","name":"GitHub Copilot","programm":"copilot","argumente":["-p","{prompt}"]}'::jsonb) \g /dev/null
+\echo [14] Eigener Anbieter neben anderen in der globalen Reihe, dann gelöscht -> chat ohne copilot (claude, gemini, chatgpt), Protokoll nennt chat
+select ws_ki_anbieter_speichern('{"id":"copilot","name":"GitHub Copilot","programm":"copilot","argumente":["-s"]}'::jsonb) \g /dev/null
 select ws_ki_global_setzen('chat','[{"anbieter":"claude","modell":"sonnet"},{"anbieter":"copilot"},{"anbieter":"gemini"},{"anbieter":"chatgpt"}]'::jsonb, 80) \g /dev/null
 select ws_ki_anbieter_loeschen('copilot') \g /dev/null
 select string_agg(x ->> 'anbieter', ', ') chat from ws_ki_zustaendigkeit_global, jsonb_array_elements(reihe) x where aufgabe = 'chat';
+reset role;
+select details -> 'entfernt_global' entfernt from ws_protokoll where was = 'ki_anbieter_geloescht' and details ->> 'id' = 'copilot' order by id desc limit 1;
+set role authenticated;
+:ADM
+
+\echo [14b] Eigener Anbieter ALLEIN zuständig (global texte) -> Löschen FEHLER „allein zuständig für global: texte“, Anbieter und Reihe bleiben (1 | mistral)
+select ws_ki_anbieter_speichern('{"id":"mistral","name":"Mistral","programm":"vibe","argumente":[]}'::jsonb) \g /dev/null
+select ws_ki_global_setzen('texte','[{"anbieter":"mistral"}]'::jsonb, 90) \g /dev/null
+select ws_ki_anbieter_loeschen('mistral');
+select (select count(*) from ws_ki_anbieter where id = 'mistral') da, (select reihe -> 0 ->> 'anbieter' from ws_ki_zustaendigkeit_global where aufgabe = 'texte') texte;
+select ws_ki_global_setzen('texte','[{"anbieter":"claude","modell":"haiku"},{"anbieter":"mistral"}]'::jsonb, 90) \g /dev/null
+select ws_ki_anbieter_loeschen('mistral') \g /dev/null
+select (select count(*) from ws_ki_anbieter where id = 'mistral') da, (select string_agg(x ->> 'anbieter', ', ') from ws_ki_zustaendigkeit_global, jsonb_array_elements(reihe) x where aufgabe = 'texte') texte;
+
+\echo [14c] Allein in einer Projektreihe „bauen“ (Testaufbau) -> FEHLER „Projekt trainer-to-go: bauen“
+reset role;
+insert into ws_ki_anbieter (id, name, programm, argumente) values ('bau-test', 'Bau-Test', 'bautest', '[]');
+alter table ws_ki_zustaendigkeit drop constraint if exists ws_ki_zustaendigkeit_check;   -- nur im Test: Reihe „bauen“ künstlich mit fremdem Anbieter
+update ws_ki_zustaendigkeit set reihe = '[{"anbieter":"bau-test"}]' where projekt_id = 'trainer-to-go' and aufgabe = 'bauen';
+set role authenticated;
+:ADM
+select ws_ki_anbieter_loeschen('bau-test');
+reset role;
+update ws_ki_zustaendigkeit set reihe = '[{"anbieter":"claude"}]' where projekt_id = 'trainer-to-go' and aufgabe = 'bauen';
+alter table ws_ki_zustaendigkeit add constraint ws_ki_zustaendigkeit_check check (public.ws_ki_reihe_ok(aufgabe, reihe));
+delete from ws_ki_anbieter where id = 'bau-test';
+set role authenticated;
+:ADM
+
+\echo [14d] Übergabe: neuer Anbieter ohne Angabe = stdin; {prompt} mit stdin -> FEHLER; Befehlszeile ohne {prompt} -> FEHLER; Befehlszeile mit {prompt} -> OK (argument); Tabelle erzwingt die Bindung -> FEHLER
+select ws_ki_anbieter_speichern('{"id":"leise","name":"Leise","programm":"leise","argumente":["-q"]}'::jsonb) \g /dev/null
+select eingabe from ws_ki_anbieter where id = 'leise';
+select ws_ki_anbieter_speichern('{"id":"laut","name":"Laut","programm":"laut","argumente":["-p","{prompt}"]}'::jsonb);
+select ws_ki_anbieter_speichern('{"id":"laut","name":"Laut","programm":"laut","argumente":["-q"],"eingabe":"argument"}'::jsonb);
+select ws_ki_anbieter_speichern('{"id":"laut","name":"Laut","programm":"laut","argumente":["-p","{prompt}"],"eingabe":"argument"}'::jsonb) \g /dev/null
+select eingabe from ws_ki_anbieter where id = 'laut';
+reset role;
+update ws_ki_anbieter set eingabe = 'stdin' where id = 'laut';
+set role authenticated;
+:ADM
+
+\echo [14e] Alte Funktion je Projekt: chat -> FEHLER (Verweis auf ws_ki_global_setzen); bauen -> OK
+select ws_ki_zustaendigkeit_setzen('trainer-to-go','chat','[{"anbieter":"claude"}]'::jsonb, 90);
+select ws_ki_zustaendigkeit_setzen('trainer-to-go','bauen','[{"anbieter":"claude"}]'::jsonb, 90) \g /dev/null
+select count(*) bauen from ws_ki_zustaendigkeit where projekt_id = 'trainer-to-go' and aufgabe = 'bauen';
 
 \echo [15] Funktionen: SECURITY DEFINER mit search_path -> 0 ohne; public/anon ohne Ausführrecht -> 0
 reset role;
 select count(*) ohne from pg_proc p join pg_namespace n on n.oid = p.pronamespace
- where n.nspname = 'public' and p.proname in ('ws_ki_global_setzen','ws_werkzeug_wie_global','ws_sieht_ein_projekt','ws_auftraege_werkzeug_schutz','ws_ki_anbieter_loeschen')
+ where n.nspname = 'public' and p.proname in ('ws_ki_global_setzen','ws_werkzeug_wie_global','ws_sieht_ein_projekt','ws_auftraege_werkzeug_schutz','ws_ki_anbieter_loeschen','ws_ki_anbieter_speichern','ws_ki_zustaendigkeit_setzen')
    and (not p.prosecdef or not exists (select 1 from unnest(coalesce(p.proconfig, '{}')) c where c like 'search_path=%'));
 select count(*) offen from pg_proc p join pg_namespace n on n.oid = p.pronamespace
  where n.nspname = 'public' and p.proname in ('ws_ki_global_setzen','ws_werkzeug_wie_global','ws_sieht_ein_projekt','ws_ki_anbieter_loeschen')
@@ -213,3 +258,18 @@ select count(*) alt from pg_proc p join pg_namespace n on n.oid = p.pronamespace
 set role anon;
 select public.ws_text_max();
 reset role;
+
+\echo [24] Aufgabe als Auftrag: Text nach Entschärfen zu lang -> klare Meldung „Text nach Entschärfen zu lang“ (kein Check-Fehler)
+reset role;
+insert into ws_aufgaben(projekt_id,titel,beschreibung,erstellt_von) values ('trainer-to-go','Klammern', repeat('](', 100000), '00000000-0000-0000-0000-00000000000a');
+insert into ws_aufgabe_sendungen(aufgabe_id,projekt_id,gruppe_id,titel,text,von)
+  select id, 'trainer-to-go', 'kader', titel, repeat('](', 200100), '00000000-0000-0000-0000-00000000000a' from ws_aufgaben where titel = 'Klammern';
+set role authenticated;
+:ADM
+select ws_aufgabe_als_auftrag((select max(id) from ws_aufgabe_sendungen));
+
+\echo [25] 0057 erneut einspielen lässt den Auftrags-Schutz von 0062 stehen (Weiche) -> t
+reset role;
+\ir ../migrations/0057_programmier_werkzeug.sql
+\set QUIET 1
+select prosrc like '%ws_ki_zustaendigkeit_global%' fassung_0062 from pg_proc where proname = 'ws_auftraege_werkzeug_schutz';

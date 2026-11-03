@@ -6,6 +6,10 @@
 
 > **Seit 0.18.0 (Datenbank 0062):** Es gibt zusätzlich ein **globales** Programmier-Werkzeug (Globale Einstellungen › KI-Anbieter › Programmieren). Ein Projekt
 > ohne eigene Zeile „bauen“ programmiert „wie global“; die Projekt-Wahl geht vor. Siehe `docs/KONZEPT.md` › KI-Anbindungen global.
+> **Globales fremdes Werkzeug:** Speichern (`ws_ki_global_setzen`) braucht einen bestandenen Sperren-Test in der Soll-Version auf **irgendeinem**
+> erlaubten Entwickler-PC (kein Admin-PC; Inhaber aktiv und Admin oder Entwickler in irgendeinem Projekt) – nicht an ein Projekt gebunden. Das ist nur die
+> Voraussetzung fürs Speichern: **vor jedem Lauf prüft der ausführende PC selbst** (installiert, angemeldet, Sperren-Test in genau dieser Version und mit
+> diesem Nachweis bestanden, sperrbar, nie der Admin-PC); sonst wartet der Auftrag mit „wartet auf <Werkzeug>“.
 
 ## Entscheidungen (Gerhard, 02.11.2026)
 | Thema | Entscheidung |

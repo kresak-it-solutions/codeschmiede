@@ -20,7 +20,13 @@ select aufgabe, reihe from public.ws_ki_zustaendigkeit where projekt_id = 'train
 set role authenticated;
 \echo [3] Admin ändert „chat“ von vereinsheft auf Gemini → bleibt nach erneutem Einspielen von 0056 erhalten (siehe [5])
 :ADM
-select ws_ki_zustaendigkeit_setzen('vereinsheft', 'chat', '[{"anbieter":"gemini"}]'::jsonb, 80) \g /dev/null
+-- Seit 0062 lehnt ws_ki_zustaendigkeit_setzen alles außer „bauen“ ab (gilt global) – die gespeicherte Zeile wird hier direkt angelegt
+reset role;
+insert into public.ws_ki_zustaendigkeit (projekt_id, aufgabe, reihe, weitergeben_ab, geaendert, geaendert_von)
+values ('vereinsheft', 'chat', '[{"anbieter":"gemini"}]', 80, now(), '00000000-0000-0000-0000-00000000000a')
+on conflict (projekt_id, aufgabe) do update set reihe = excluded.reihe, weitergeben_ab = excluded.weitergeben_ab, geaendert = now(), geaendert_von = excluded.geaendert_von;
+set role authenticated;
+:ADM
 reset role;
 create temp table vorher as select projekt_id, aufgabe, reihe, weitergeben_ab, geaendert, geaendert_von from public.ws_ki_zustaendigkeit;
 \echo [4] Eine Zeile fehlt (z. B. von Hand gelöscht) → zweites Einspielen ergänzt nur sie

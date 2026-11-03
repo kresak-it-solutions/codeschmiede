@@ -154,19 +154,23 @@ function Zeile({ id, titel, hinweis, eintrag, admin, onSpeichern, anbieter = ANB
 }
 
 // Vorlage für einen eigenen Anbieter (GitHub Copilot CLI). Befehle bitte mit der Anleitung des Anbieters abgleichen.
-const VORLAGE_COPILOT = { id: "copilot", name: "GitHub Copilot", programm: "copilot", argumenteText: "-p\n{prompt}\n--model\n{modell}", modelleText: "",
+// Seit 0.18.0 (Sicherheitsprüfung Punkt 2): neue Anbieter bekommen die Frage über die Standardeingabe (eingabe „stdin“), nie in der Befehlszeile.
+const VORLAGE_COPILOT = { id: "copilot", name: "GitHub Copilot", programm: "copilot", argumenteText: "--model\n{modell}", modelleText: "", eingabe: "stdin",
   installieren: "npm install -g @github/copilot", anmelden: "copilot (dann /login)", hinweis: "GitHub Copilot CLI mit dem eigenen Copilot-Abo", neu: true };
+const MIT_PROMPT = (t) => /\{prompt\}/.test(String(t || ""));
 
 function AnbieterDialog({ wert, toast, onClose, onFertig }) {
   const fokusfalle = useFokusfalle();   // Fokus bleibt im Dialog (Befund B2)
-  const [w, setW] = useState(wert); const [busy, setBusy] = useState(false);
+  const [w, setW] = useState({ ...wert, eingabe: wert.eingabe || (MIT_PROMPT(wert.argumenteText) ? "argument" : "stdin") }); const [busy, setBusy] = useState(false);
+  const befehlszeile = w.eingabe === "argument";
+  const passt = befehlszeile === MIT_PROMPT(w.argumenteText);
   const feld = (k, t, ph, mono) => <label className="flex flex-col gap-1 text-xs text-slate-500">{t}<input className={`${sel} text-sm ${mono ? "font-mono" : ""}`} value={w[k] || ""} placeholder={ph} onChange={(e) => setW({ ...w, [k]: e.target.value })} /></label>;
   const speichern = async () => {
     setBusy(true);
     const p = { id: (w.id || "").trim().toLowerCase(), name: (w.name || "").trim(), programm: (w.programm || "").trim(),
       argumente: String(w.argumenteText || "").split("\n").map((x) => x.trim()).filter(Boolean),
       modelle: String(w.modelleText || "").split(/[,\s]+/).map((x) => x.trim()).filter(Boolean),
-      installieren: w.installieren || null, anmelden: w.anmelden || null, hinweis: w.hinweis || null };
+      installieren: w.installieren || null, anmelden: w.anmelden || null, hinweis: w.hinweis || null, eingabe: befehlszeile ? "argument" : "stdin" };
     const { error } = await supabase.rpc("ws_ki_anbieter_speichern", { p }); setBusy(false);
     if (error) toast(fehler(error)); else { toast(`${p.name} gespeichert – auf jedem PC einmal zulassen`); onFertig(); }
   };
@@ -177,15 +181,24 @@ function AnbieterDialog({ wert, toast, onClose, onFertig }) {
         {wert.neu && <p className="text-xs text-slate-500">Vorlage: GitHub Copilot. Für andere Anbieter Felder anpassen – wichtig ist ein Kommandozeilen-Programm, das eine Frage beantwortet und die Antwort ausgibt.</p>}
         <div className="grid grid-cols-2 gap-2">{feld("id", "Kennung (klein, z. B. copilot)", "copilot", true)}{feld("name", "Name", "GitHub Copilot")}</div>
         {feld("programm", "Programm (nur Name, kein Pfad)", "copilot", true)}
-        <label className="flex flex-col gap-1 text-xs text-slate-500">Argumente (eine Zeile je Argument; {"{prompt}"} = Frage, {"{modell}"} = Modell; ohne {"{prompt}"} kommt die Frage über die Eingabe)
+        <fieldset className="flex flex-col gap-1 text-xs text-slate-600 dark:text-slate-300"><legend className="text-slate-500 mb-1">Wie bekommt das Programm die Frage?</legend>
+          <label className="flex items-start gap-1.5"><input type="radio" name="ki-eingabe" className="mt-0.5 accent-emerald-700" checked={!befehlszeile} onChange={() => setW({ ...w, eingabe: "stdin" })} />
+            <span><b>Über die Standardeingabe</b> (empfohlen) – die Frage ist für andere Programme nicht sichtbar, beliebig lang.</span></label>
+          <label className="flex items-start gap-1.5"><input type="radio" name="ki-eingabe" className="mt-0.5 accent-emerald-700" checked={befehlszeile} onChange={() => setW({ ...w, eingabe: "argument" })} />
+            <span><b>In der Befehlszeile</b> ({"{prompt}"} in einem Argument) – nur, wenn das Programm keine Standardeingabe liest.</span></label>
+          {befehlszeile && <p role="alert" className="flex items-start gap-1.5 rounded-lg border border-amber-500 bg-amber-50 dark:bg-amber-950/40 p-2 text-amber-900 dark:text-amber-200"><CircleAlert className="w-4 h-4 shrink-0 mt-0.5" />
+            <span><b>Achtung: Der Text steht in der Befehlszeile und ist für andere Programme auf dem PC sichtbar</b> (z. B. in der Prozessliste). Außerdem gehen so höchstens 8.000 Zeichen – längere Fragen werden mit einer Meldung abgelehnt.</span></p>}
+        </fieldset>
+        <label className="flex flex-col gap-1 text-xs text-slate-500">Argumente (eine Zeile je Argument; {"{modell}"} = Modell{befehlszeile ? <>; {"{prompt}"} = Frage</> : <>; die Frage kommt über die Standardeingabe</>})
           <textarea className={`${sel} text-sm font-mono min-h-[84px]`} value={w.argumenteText || ""} onChange={(e) => setW({ ...w, argumenteText: e.target.value })} /></label>
+        {!passt && <p className="text-xs text-red-700 dark:text-red-400">{befehlszeile ? "Mit „In der Befehlszeile“ muss {prompt} in einem Argument stehen." : "Mit „Über die Standardeingabe“ darf {prompt} nicht in den Argumenten stehen."}</p>}
         {feld("modelleText", "Modelle zur Auswahl (Komma getrennt, optional)", "gpt-5, claude-sonnet-4.5", true)}
         {feld("installieren", "Installieren (Hinweis zum Kopieren)", "npm install -g …", true)}
         {feld("anmelden", "Anmelden (Hinweis)", "copilot (dann /login)", true)}
         {feld("hinweis", "Beschreibung", "")}
         <p className="text-xs text-slate-500">Sicherheit: Das Programm läuft mit den Rechten der Person – darum nur echte KI-Programme eintragen (gängige Shells und Skript-Sprachen sind gesperrt, das ersetzt aber kein Vertrauen in das Programm). Es startet erst, wenn die Person genau diese Fassung auf ihrem PC zulässt; nach jeder Änderung muss sie neu zulassen. Für Prüfungen und Bauen werden eigene Anbieter nie verwendet.</p>
         <div className="flex justify-end gap-2"><button type="button" className={ghost} onClick={onClose}>Abbrechen</button>
-          <button type="button" className="inline-flex items-center gap-2 h-9 px-3.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 text-white font-display font-bold text-sm" disabled={busy || !w.id || !w.name || !w.programm} onClick={speichern}>{busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}Speichern</button></div>
+          <button type="button" className="inline-flex items-center gap-2 h-9 px-3.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 text-white font-display font-bold text-sm" disabled={busy || !w.id || !w.name || !w.programm || !passt} onClick={speichern}>{busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}Speichern</button></div>
       </div>
     </div>);
 }
@@ -341,8 +354,9 @@ export default function KiAnbieter({ d, ich, toast }) {
             <div key={key} className="px-3 py-2 flex flex-wrap items-center gap-2 text-sm">
               <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${kiFarbe(key).punkt}`} aria-hidden="true" /><b>{a.name}</b><span className="text-xs text-slate-500 font-mono">{a.eigen ? `${a.programm} ${(a.eigen.argumente || []).join(" ")}` : a.programm}</span>
               <span className={`text-xs rounded-full px-2 py-0.5 ${a.eigen ? "bg-slate-100 dark:bg-slate-800" : "bg-emerald-50 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"}`}>{a.eigen ? "eigener Anbieter" : "eingebaut"}</span>
+              {a.eigen?.eingabe === "argument" && <span className="text-xs rounded-full px-2 py-0.5 bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200" title="Der Text steht in der Befehlszeile und ist für andere Programme auf dem PC sichtbar">Frage in der Befehlszeile</span>}
               {admin && a.eigen && <span className="ml-auto flex gap-1.5"><button type="button" className={ghost} onClick={() => setBearbeite({ ...a.eigen, argumenteText: (a.eigen.argumente || []).join("\n"), modelleText: (a.eigen.modelle || []).join(", ") })}>Bearbeiten</button>
-                <button type="button" className={ghost} onClick={async () => { const { error } = await supabase.rpc("ws_ki_anbieter_loeschen", { p_id: key }); if (error) toast(fehler(error)); else { toast(`${a.name} entfernt`); setTick((t) => t + 1); } }}><X className="w-3.5 h-3.5" />Entfernen</button></span>}
+                <button type="button" className={ghost} onClick={async () => { const { error } = await supabase.rpc("ws_ki_anbieter_loeschen", { p_id: key }); if (error) toast(`${a.name} nicht entfernt: ${fehler(error)}`); else { toast(`${a.name} entfernt – aus allen Reihen genommen, in denen andere Anbieter stehen`); setTick((t) => t + 1); } }}><X className="w-3.5 h-3.5" />Entfernen</button></span>}
             </div>))}
         </div>
         <p className="px-3 py-2 text-xs text-slate-500 border-t border-slate-100 dark:border-slate-800">Eigene Anbieter (z. B. GitHub Copilot) nutzt die Werkstatt für Chat, Konzept, Design, Texte usw. – nie zum Bauen und nicht für Prüfungen. Jede Person lässt einen eigenen Anbieter auf ihrem PC selbst zu.</p>
