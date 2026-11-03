@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import {
   PHASEN, phasenStand, BAU_GESPERRT, DOKU_GERUEST, dokuGeruest, dokuLampe, dokuImDiff, KERNPFLICHTEN, kernpflichtKonflikte, kernpflichtLampe, kernpflichtBlock,
-  steckbriefOk, kritikPrompt, kritikAntwort, PRUEF_CHECKLISTE, checklisteText, checklisteAuswerten, regelStempel, mitNichtGetestet, dokuAuftragBlock,
+  namenStatus, neueZeilen, nurDoku, steckbriefOk, kritikPrompt, kritikAntwort, PRUEF_CHECKLISTE, checklisteText, checklisteAuswerten, regelStempel, mitNichtGetestet, dokuAuftragBlock,
   phaseAusAntwort, ohnePhaseZeile, PHASE_FRAGE,
 } from "../lib/regelwerk.mjs";
 import { regelBlock, regelBlockText } from "../lib/regeln.mjs";
@@ -39,7 +39,7 @@ test("Phasensperre im Dienst: nichts läuft, wenn die Datenbank „laeuft“ abl
   assert.match(s, /if \(\/Phase 9\/\.test\(eLauf\.message \|\| ""\)\) \{ await log\(auftrag\.id, "info", BAU_GESPERRT\);[^\n]*return; \}/);
   assert.match(s, /!\(await bauErlaubt\(pidNeu\)\)\) \{ await wartetAufMelden\(a, BAU_GESPERRT\); continue; \}/);
   // Stationen: ohne Phase 9 bzw. ohne kritische Prüfung und „Bauen“ rot
-  assert.match(s, /zweckBau && projekt\.phase_frei !== undefined && !phasenStand\(projekt\.phase_frei\)\.bauen\) \{ await rot\(BAU_GESPERRT/);
+  assert.match(s, /zweckBau && !\(await bauErlaubt\(projekt\.id\)\)\) \{ await rot\(BAU_GESPERRT/);
   assert.match(s, /zweckBau && a\.kritik && !a\.kritik\.entscheidung\) \{ await rot\(/);
 });
 
@@ -97,26 +97,64 @@ test("Kritische Prüfung im Dienst: eigene Aufgabe „kritik“, verpflichtend, 
   assert.match(s, /kritik: "Kritische Prüfung der Entwürfe"/);
 });
 
-test("Doku-Prüfung im Diff: stand.md und Changelog/versionen immer, entscheidungen.md/ideen.md bei Vormerkungen, Abweichung = Hinweis", () => {
-  assert.equal(dokuImDiff(["src/a.js", "docs/CHANGELOG.md", "docs/stand.md"]).ok, true);
-  assert.equal(dokuImDiff(["src/a.js", "docs/versionen.md", "docs/stand.md"]).ok, true);
-  const ohne = dokuImDiff(["src/a.js"]); assert.equal(ohne.ok, false); assert.equal(ohne.fehlt.length, 2); assert.match(ohne.text, /Doku-Pflicht nicht erfüllt/);
-  const e = dokuImDiff(["docs/stand.md", "docs/CHANGELOG.md"], { entscheidungen: 2, ideen: 1 });
-  assert.equal(e.ok, false); assert.deepEqual(e.fehlt.map((x) => x.split(" ")[0]), ["docs/entscheidungen.md", "docs/ideen.md"]);
-  assert.equal(dokuImDiff(["docs/stand.md", "docs/CHANGELOG.md", "docs/entscheidungen.md", "docs/ideen.md"], { entscheidungen: 2, ideen: 1 }).ok, true);
-  const ab = dokuImDiff(["src/a.js"], { abweichung: true }); assert.equal(ab.ok, true); assert.equal(ab.hinweis, true); assert.match(ab.text, /Abweichung/);
-  assert.equal(dokuImDiff(["docs\\stand.md", " docs/CHANGELOG.md "]).ok, true);
+const diffVon = (dateien) => [...Object.entries(dateien)].map(([pfad, zeilen]) => `diff --git a/${pfad} b/${pfad}\n--- a/${pfad}\n+++ b/${pfad}\n@@ -1,0 +1,${zeilen.length} @@\n${zeilen.map((z) => `+${z}`).join("\n")}`).join("\n");
+const dd = (status, dateien = {}) => ({ status: namenStatus(status), zeilen: neueZeilen(diffVon(dateien)) });
+
+test("Doku-Prüfung im Diff (B1): nur hinzugefügt/geändert mit neuer Zeile mit Inhalt, Löschen rot, Kennungen E<id>/I<id> Pflicht", () => {
+  const gut = dd("M\tsrc/a.js\nM\tdocs/CHANGELOG.md\nM\tdocs/stand.md", { "docs/CHANGELOG.md": ["| 0.2 | Liste sortiert |"], "docs/stand.md": ["Jetzt: Liste sortiert."] });
+  assert.equal(dokuImDiff(gut).ok, true);
+  assert.equal(dokuImDiff(dd("A\tdocs/versionen.md\nA\tdocs/stand.md", { "docs/versionen.md": ["0.1 neu"], "docs/stand.md": ["Stand eins"] })).ok, true);
+  const ohne = dokuImDiff(dd("M\tsrc/a.js")); assert.equal(ohne.ok, false); assert.equal(ohne.fehlt.length, 2); assert.match(ohne.text, /Doku-Pflicht nicht erfüllt/);
+  // Negativ-Nachweise: gelöscht, nur Leerzeilen/Striche, nur in der Statusliste ohne neue Zeilen
+  const weg = dokuImDiff(dd("D\tdocs/stand.md\nM\tdocs/CHANGELOG.md", { "docs/CHANGELOG.md": ["| 0.2 | x y z |"] })); assert.equal(weg.ok, false); assert.match(weg.fehlt[0], /gelöscht/);
+  assert.equal(dokuImDiff(dd("M\tdocs/stand.md\nM\tdocs/CHANGELOG.md", { "docs/stand.md": ["", "   ", "---", "| |"], "docs/CHANGELOG.md": ["| 0.2 | neu |"] })).ok, false);
+  assert.equal(dokuImDiff(dd("M\tdocs/stand.md\nM\tdocs/CHANGELOG.md", {})).ok, false);
+  // Kennungen: E7 und I3 müssen in den NEUEN Zeilen stehen; E70 zählt nicht als E7
+  const basis = { "docs/stand.md": ["Stand neu"], "docs/CHANGELOG.md": ["| 0.2 | neu |"] };
+  const st = "M\tdocs/stand.md\nM\tdocs/CHANGELOG.md\nM\tdocs/entscheidungen.md\nM\tdocs/ideen.md";
+  const e = dokuImDiff(dd(st, { ...basis, "docs/entscheidungen.md": ["| E70 | Bauen |"], "docs/ideen.md": ["- I3 Export"] }), { entscheidungen: [7], ideen: [3] });
+  assert.equal(e.ok, false); assert.deepEqual(e.gefundenE, []); assert.deepEqual(e.gefundenI, [3]); assert.match(e.text, /E7/);
+  const e2 = dokuImDiff(dd(st, { ...basis, "docs/entscheidungen.md": ["| E7 | Bauen trotz Einwand |", "- E9: Phase 3"], "docs/ideen.md": ["- I3 Export"] }), { entscheidungen: [7, 9], ideen: [3] });
+  assert.equal(e2.ok, true); assert.deepEqual(e2.gefundenE, [7, 9]);
+  const ab = dokuImDiff(dd("M\tsrc/a.js"), { abweichung: true }); assert.equal(ab.ok, true); assert.equal(ab.hinweis, true); assert.match(ab.text, /Abweichung/);
 });
 
-test("Doku-Prüfung im Dienst: nach dem Lauf automatisch Nacharbeit, nach zwei Versuchen Rückfrage; Station prüft hart", async () => {
+test("Diff lesen: Status und neue Zeilen; Einrichtungs-Aufträge nur unter docs/ (A2)", () => {
+  assert.deepEqual(namenStatus("M\tdocs/a.md\nD\tsrc\\x.js\nR100\talt\tneu\n"), [{ status: "M", pfad: "docs/a.md" }, { status: "D", pfad: "src/x.js" }, { status: "D", pfad: "alt" }, { status: "A", pfad: "neu" }]);
+  assert.deepEqual(neueZeilen("diff --git a/x b/x\n--- a/x\n+++ b/x\n@@ -1 +1 @@\n-alt\n+neu\n+++ nicht kopf\ndiff --git a/y b/y\n+++ /dev/null\n+weg"), { x: ["neu", "++ nicht kopf"] });
+  assert.equal(nurDoku(namenStatus("A\tdocs/01-konzept.md\nM\tdocs/CHANGELOG.md")).ok, true);
+  for (const s of ["M\tsrc/App.jsx", "A\t.github/workflows/x.yml", "D\tdocs/alt.md", "M\tdocsx/a.md"]) assert.equal(nurDoku(namenStatus(`A\tdocs/stand.md\n${s}`)).ok, false, s);
+});
+
+test("Doku-Prüfung im Dienst: nach dem Lauf Nacharbeit, Station hart, nur Gefundenes gilt als im Repository", async () => {
   const s = await quelle();
-  assert.match(s, /const dokuErg = auftrag\.hand \? null : dokuImDiff\(\(await git\(ordner, "diff", "--name-only", "origin\/main\.\.\.HEAD"\)/);
+  assert.match(s, /"--diff-filter=AM", "origin\/main\.\.\.HEAD", "--",/);
+  assert.match(s, /let dokuErg = auftrag\.hand \? null : dokuImDiff\(dd,/);
   assert.match(s, /lokal = dokuErg && !dokuErg\.ok \? \{ ok: false, text: dokuErg\.text \}/);
   assert.match(s, /\} else if \(dokuVersuche > 2\) \{/);
   assert.match(s, /Sicherheitsprüfung rot \(Kernpflicht Doku\)/);
-  // Anhang: stand.md und entscheidungen.md, Einträge vormerken
+  assert.match(s, /db\.rpc\("ws_doku_gefunden", \{ p_pc: pcId, p_auftrag: a\.id, p_entscheidungen: d\.gefundenE, p_ideen: d\.gefundenI \}\)/);
+  assert.match(s, /Sicherheitsprüfung rot \(Einrichtungs-Auftrag\)/);
   assert.match(s, /for \(const rel of \["docs\/stand\.md", "docs\/entscheidungen\.md"\]\)/);
   assert.match(s, /db\.rpc\("ws_doku_vormerken"/);
+  // A2: Einrichtungs-Aufträge bekommen nur den festen Text
+  assert.match(s, /db\.rpc\("ws_doku_geruest_text"\)/);
+  assert.match(s, /\.\.\.\(nachrichten \|\| \[\]\)\.filter\(\(n\) => !n\.von && n\.art !== "system"\)/);
+});
+
+test("A4/A5/B3/B4: Sperre auch in Rückfrage- und Nacharbeitsschleife, zufällige Grenze, Abweichungen wirken, Zweck in der Prüfung", async () => {
+  const s = await quelle();
+  const schleife = s.slice(s.indexOf("async function naechsterAuftrag()"), s.indexOf("async function start()"));
+  assert.equal((schleife.match(/!\(await bauErlaubt\(pid\)\)\) \{ await wartetAufMelden\(a, BAU_GESPERRT\); continue; \}/g) || []).length, 2);
+  // die Sperre steht VOR ordnerSperre (kein Arbeitsordner) und blockiert die Schleife nicht (continue)
+  assert.ok(schleife.indexOf("bauErlaubt(pid)") < schleife.indexOf("ordnerSperre(pid, { auftragId: a.id })"));
+  assert.match(s, /const aGrenze = regelGrenze\(\)\.replace\("REGELN-", "AUFTRAG-"\);/);
+  assert.match(s, /\.split\(aGrenze\)\.join\("…"\)/);
+  assert.match(s, /Zweck: \$\{\(a\.zweck \|\| "bau"\) === "bau" \? "Bau-Auftrag"/);
+  assert.match(s, /\["regeln", "phase"\]\.includes\(id\) && hatAbw\("regelpruefung"\)/);
+  assert.match(s, /id === "phase" && \(a\.zweck \|\| "bau"\) !== "bau"/);
+  assert.match(s, /db\.rpc\("ws_bau_erlaubt", \{ p_projekt: projektId \}\)/);
+  assert.match(s, /text: String\(k\.text \|\| ""\)/);   // A1: Kritik über genau den gemerkten Text
 });
 
 test("Doku-Gerüst: alle Pfade nach §15, Inhalte ohne Platzhalter; Ampel „Doku vollständig“", () => {
@@ -199,9 +237,9 @@ test("Fertig-Meldung: ehrlich, was nicht getestet wurde; keine Prüfungen auf de
 });
 
 test("Entscheidungsprotokoll und Ideen gehen über den Auftrag ins Repository (Daten, keine Anweisungen)", () => {
-  const b = dokuAuftragBlock({ entscheidungen: [{ text: "Bauen trotz\nEinwand", begruendung: "weil | so", wann: "2026-11-03T10:00:00Z", einwaende: [{ text: "Abnahme fehlt" }] }], ideen: [{ id: 4, titel: "Export", einstufung: "gross", stand: "offen" }] });
-  assert.match(b, /docs\/entscheidungen\.md/); assert.match(b, /2026-11-03 · Bauen trotz Einwand · Begründung: weil so · Einwände: Abnahme fehlt/);
-  assert.match(b, /#4 Export · groß · offen/); assert.match(b, /nichts davon bauen/);
+  const b = dokuAuftragBlock({ entscheidungen: [{ id: 12, text: "Bauen trotz\nEinwand", begruendung: "weil | so", wann: "2026-11-03T10:00:00Z", einwaende: [{ text: "Abnahme fehlt" }] }], ideen: [{ id: 4, titel: "Export", einstufung: "gross", stand: "offen" }] });
+  assert.match(b, /docs\/entscheidungen\.md/); assert.match(b, /MIT ihrer Kennung/); assert.match(b, /- E12 · 2026-11-03 · Bauen trotz Einwand · Begründung: weil so · Einwände: Abnahme fehlt/);
+  assert.match(b, /- I4 Export · groß · offen/); assert.match(b, /nichts davon bauen/);
   assert.match(dokuAuftragBlock({}), /docs\/stand\.md/);
 });
 
@@ -235,7 +273,7 @@ test("Oberfläche: Phasen-Liste in web/src/daten/regelwerk.js ist dieselbe wie i
   const p = await readFile(new URL("../../../web/src/seiten/Phasen.jsx", import.meta.url), "utf8");
   for (const f of ["ws_phase_freigeben", "ws_phasen_kurzfassung", "ws_phase_vorschlag_bestaetigen", "ws_abweichung_bestaetigen", "ws_idee_anlegen"]) assert.ok(p.includes(f), f);
   const e = await readFile(new URL("../../../web/src/Entwurf.jsx", import.meta.url), "utf8");
-  assert.match(e, /ws_entwurf_entscheiden/); assert.match(e, /Bauen trotz Einwänden entscheidet nur der Admin/);
+  assert.match(e, /ws_entwurf_entscheiden/); assert.match(e, /\{admin && <button type="button" className=\{btn\}/); assert.match(e, /„Bauen“ gibt Gerhard \(Admin\) frei/);
   const a = await readFile(new URL("../../../web/src/AnbindungenKacheln.jsx", import.meta.url), "utf8");
   assert.match(a, /titel="Doku vollständig"/); assert.match(a, /titel="Kernpflichten"/);
   const k = await readFile(new URL("../../../web/src/KiAnbieter.jsx", import.meta.url), "utf8");

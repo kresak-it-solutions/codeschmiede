@@ -20,7 +20,7 @@ export function NeuesFeature({ g, ich, texter, toast, onClose, onFertig }) {
       const r = await supabase.from("ws_auftraege").insert({ gruppe_id: g.id, feature_id: id, titel: t.slice(0, 80), art: texter ? "text" : "neu", erstellt_von: ich.id }).select().single();
       if (!r.error) await supabase.from("ws_nachrichten").insert({ auftrag_id: r.data.id, von: ich.id, art: "text", text: t });
     }
-    setBusy(false); toast(`Feature „${name.trim()}“ angelegt`); onFertig(id); onClose();
+    setBusy(false); toast(auftrag ? `Feature „${name.trim()}“ angelegt – Bau-Entwurf wird geprüft` : `Feature „${name.trim()}“ angelegt`); onFertig(id); onClose();
   };
   return (
     <Dialog title={`Neues Feature in ${g.name}`} onClose={onClose}>
@@ -66,7 +66,7 @@ export function Loeschen({ f, g, ich, toast, onClose }) {
       const t = `Feature ausbauen: ${f.name} (Daten vorher sichern, Handbuch, PDF-Layouts und Funktionsverzeichnis bereinigen)`;
       const r = await supabase.from("ws_auftraege").insert({ gruppe_id: g.id, feature_id: f.id, titel: t.slice(0, 80), art: "ausbauen", erstellt_von: ich.id }).select().single();
       if (!r.error) await supabase.from("ws_nachrichten").insert({ auftrag_id: r.data.id, von: ich.id, art: "text", text: t });
-      toast(r.error ? fehler(r.error) : `Ausbau-Auftrag #${r.data.id} gestellt`);
+      toast(r.error ? fehler(r.error) : `Entwurf #${r.data.id} (Ausbau) angelegt – wird geprüft`);
     }
     setBusy(false); onClose();
   };

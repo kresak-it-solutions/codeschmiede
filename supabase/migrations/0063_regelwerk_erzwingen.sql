@@ -15,6 +15,9 @@
 --   5 Ideensammlung ws_ideen (klein/mittel/groß): Aufgaben und Features aus dem Gespräch landen dort automatisch, Spiegel nach docs/ideen.md
 --     über den nächsten Bau-Auftrag (ws_doku_vormerken; nach „Live & Wissen“ als im Repository vermerkt). Gleiches für das Entscheidungsprotokoll.
 --   6 Kernpflichten: begründete, vom Admin bestätigte Abweichungen je Projekt (ws_kernpflicht_abweichungen). Ampel-Lampen „doku“ und „kernpflichten“.
+--   7 Nachschärfung (unabhängige Prüfung GELB, 03.11.2026): neue Nachrichten an Entwürfe → neue Kritik, „Bauen“ nur auf dem geprüften Text (Prüfsumme)
+--     und nur durch den Admin; Kritik nie vom PC des Erstellers, KI nur aus der Zuständigkeit „kritik“; Einrichtungs-Aufträge ohne Nachrichten;
+--     lange Antworten auf Rückfragen und Altbestand „wartet“ → Entwurf; Doku-Kennungen „E<id>“ nur bei Treffer im Repository; Abweichungen wirken.
 -- Sicherheit: RLS auf allen neuen Tabellen, keine direkten Schreibrechte, alle Funktionen SECURITY DEFINER mit search_path, keine Rechte für
 -- public und anon. Interne Schalter (cs.regelwerk) setzen nur diese Funktionen, und nur für die Dauer ihres Aufrufs.
 -- Mehrfach ausführbar. Reihenfolge 0001 → … → 0063. Test: supabase/tests/t50_regelwerk_erzwingen.sql. NICHT in einspielen.txt (Gerhard spielt ein).
@@ -60,11 +63,14 @@ grant select on public.ws_phasen_protokoll to authenticated;
 drop policy if exists ws_phasen_protokoll_lesen on public.ws_phasen_protokoll;
 create policy ws_phasen_protokoll_lesen on public.ws_phasen_protokoll for select to authenticated using (public.ws_sieht_projekt(projekt_id));
 
--- Bauen erlaubt = Phase 9 (Bauplan) freigegeben
+-- Bauen erlaubt = Phase 9 (Bauplan) freigegeben – oder eine vom Admin bestätigte, protokollierte Abweichung „phasen“ (Prüfung 0.19.0, B3)
 create or replace function public.ws_bau_erlaubt(p_projekt text) returns boolean
-language sql stable security definer set search_path = public as $$
-  select coalesce((select p.phase_frei >= 9 from public.ws_projekte p where p.id = p_projekt), false)
-$$;
+language plpgsql stable security definer set search_path = public as $$
+begin
+  return coalesce((select p.phase_frei >= 9 from public.ws_projekte p where p.id = p_projekt), false)
+      or (to_regclass('public.ws_kernpflicht_abweichungen') is not null
+          and exists (select 1 from public.ws_kernpflicht_abweichungen a where a.projekt_id = p_projekt and a.pflicht = 'phasen'));
+end $$;
 revoke execute on function public.ws_bau_erlaubt(text) from public, anon;
 grant execute on function public.ws_bau_erlaubt(text) to authenticated;
 
@@ -73,7 +79,7 @@ create table if not exists public.ws_entscheidungen (
   id bigint generated always as identity primary key,
   projekt_id text not null references public.ws_projekte(id) on delete cascade,
   auftrag_id bigint references public.ws_auftraege(id) on delete set null,
-  art text not null check (art in ('bauen','bauen_trotz','aendern','verwerfen','phase','kurzfassung','eingelesen','bestand','abweichung','abweichung_weg','idee')),
+  art text not null check (art in ('bauen','bauen_trotz','bauen_ohne_kritik','aendern','verwerfen','phase','kurzfassung','eingelesen','bestand','abweichung','abweichung_weg','idee')),
   text text not null check (char_length(text) between 1 and 2000),
   begruendung text check (char_length(begruendung) <= 2000),
   einwaende jsonb check (einwaende is null or (jsonb_typeof(einwaende) = 'array' and pg_column_size(einwaende) <= 16384)),
@@ -81,8 +87,12 @@ create table if not exists public.ws_entscheidungen (
   wann timestamptz not null default now(),
   vorgemerkt_auftrag bigint references public.ws_auftraege(id) on delete set null,
   im_repo boolean not null default false,
-  im_repo_am timestamptz
+  im_repo_am timestamptz,
+  im_diff_auftrag bigint   -- Kennung „E<id>“ von der Sicherheitsprüfung im Diff dieses Auftrags gefunden (B1)
 );
+alter table public.ws_entscheidungen add column if not exists im_diff_auftrag bigint;
+alter table public.ws_entscheidungen drop constraint if exists ws_entscheidungen_art_check;
+alter table public.ws_entscheidungen add constraint ws_entscheidungen_art_check check (art in ('bauen','bauen_trotz','bauen_ohne_kritik','aendern','verwerfen','phase','kurzfassung','eingelesen','bestand','abweichung','abweichung_weg','idee'));
 create index if not exists ws_entscheidungen_projekt on public.ws_entscheidungen (projekt_id, id);
 create index if not exists ws_entscheidungen_offen on public.ws_entscheidungen (projekt_id) where not im_repo;
 alter table public.ws_entscheidungen enable row level security;
@@ -260,10 +270,11 @@ begin
     return new;
   end if;
   if new.zweck is distinct from old.zweck then raise exception 'Der Zweck eines Auftrags ändert sich nicht'; end if;
-  if new.kritik is distinct from old.kritik and intern is distinct from ('kritik:' || new.id) and intern is distinct from ('entscheidung:' || new.id) then
+  if new.kritik is distinct from old.kritik and intern is distinct from ('kritik:' || new.id) and intern is distinct from ('entscheidung:' || new.id)
+     and intern is distinct from ('zurueck:' || new.id) then
     raise exception 'Die kritische Prüfung schreibt nur die Codeschmiede'; end if;
   if new.stand is distinct from old.stand then
-    if new.stand = 'entwurf' then raise exception 'Ein Auftrag wird nicht wieder zum Entwurf'; end if;
+    if new.stand = 'entwurf' and intern is distinct from ('zurueck:' || new.id) then raise exception 'Ein Auftrag wird nicht wieder zum Entwurf'; end if;
     if old.stand = 'entwurf' and new.stand <> 'abgebrochen' and intern is distinct from ('entscheidung:' || new.id) then
       raise exception 'Ein Entwurf startet erst nach der kritischen Prüfung mit dem Klick „Bauen“'; end if;
     if new.zweck = 'bau' and (new.stand = 'laeuft' or old.stand = 'entwurf' and new.stand = 'wartet') and not public.ws_bau_erlaubt(pj) then
@@ -274,6 +285,18 @@ end $$;
 revoke execute on function public.ws_auftraege_regelwerk() from public, anon, authenticated;
 drop trigger if exists ws_auftraege_regelwerk on public.ws_auftraege;
 create trigger ws_auftraege_regelwerk before insert or update on public.ws_auftraege for each row execute function public.ws_auftraege_regelwerk();
+
+-- Altbestand (B2): Aufträge, die vor 0063 im Stand „wartet“ angelegt wurden (ohne Kritik), werden zu Entwürfen – außer Hand-Änderungen.
+-- Ein zweites Einspielen findet nichts mehr (nach „Bauen“ tragen sie eine Kritik).
+do $$
+declare x record;
+begin
+  for x in select id from public.ws_auftraege where stand = 'wartet' and kritik is null and zweck = 'bau' and not coalesce(hand, false) loop
+    perform set_config('cs.regelwerk', 'zurueck:' || x.id, true);
+    update public.ws_auftraege set stand = 'entwurf', kritik = jsonb_build_object('stand', 'wartet', 'runde', 1, 'grund', 'Altbestand vor 0.19.0') where id = x.id;
+  end loop;
+  perform set_config('cs.regelwerk', '', true);
+end $$;
 
 -- ---------- 5. Kritische Prüfung (zweite KI, globale Aufgabe „kritik“) ----------
 create or replace function public.ws_ki_reihe_ok(p_aufgabe text, r jsonb) returns boolean
@@ -323,30 +346,47 @@ language sql immutable set search_path = public as $$
 $$;
 revoke execute on function public.ws_einwaende_ok(jsonb) from public, anon;
 
--- Nehmen: eigener, eingeschalteter Werkstatt-PC; nur Entwürfe der eigenen Person (bzw. Admin), mit Text, nicht gerade in Arbeit
-create or replace function public.ws_kritik_nehmen(p_pc uuid) returns table (auftrag_id bigint, projekt_id text)
+-- Text eines Entwurfs, auf den sich die kritische Prüfung bezieht: alle Nachrichten von Personen, in Reihenfolge (Prüfung 0.19.0, A1)
+create or replace function public.ws_entwurf_text(p_auftrag bigint) returns text
+language sql stable security definer set search_path = public as $$
+  select coalesce(string_agg(n.text, E'\n\n' order by n.id), '') from public.ws_nachrichten n where n.auftrag_id = p_auftrag and n.von is not null
+$$;
+revoke execute on function public.ws_entwurf_text(bigint) from public, anon, authenticated;
+create or replace function public.ws_entwurf_text_sha(p_auftrag bigint) returns text
+language sql stable security definer set search_path = public as $$
+  select encode(sha256(convert_to(public.ws_entwurf_text(p_auftrag), 'UTF8')), 'hex')
+$$;
+revoke execute on function public.ws_entwurf_text_sha(bigint) from public, anon, authenticated;
+
+-- Nehmen (A3): nie der PC der Person, die den Entwurf angelegt hat – nur die Werkstatt einer anderen Person mit Werkstatt-Recht in der Gruppe
+-- oder ein Admin-PC. Geliefert wird genau der Text, dessen Prüfsumme gemerkt wird (A1).
+drop function if exists public.ws_kritik_nehmen(uuid);
+create or replace function public.ws_kritik_nehmen(p_pc uuid) returns table (auftrag_id bigint, projekt_id text, text text)
 language plpgsql security definer set search_path = public as $$
-declare a public.ws_auftraege; jetzt numeric := extract(epoch from now());
+declare a public.ws_auftraege; jetzt numeric := extract(epoch from now()); w public.ws_werkstatt_pcs; t text;
 begin
-  if not exists (select 1 from ws_werkstatt_pcs where id = p_pc and benutzer_id = auth.uid() and an) then raise exception 'Nur vom eigenen, eingeschalteten Werkstatt-PC'; end if;
+  select * into w from ws_werkstatt_pcs where id = p_pc and benutzer_id = auth.uid() and an;
+  if w.id is null then raise exception 'Nur vom eigenen, eingeschalteten Werkstatt-PC'; end if;
   select x.* into a from ws_auftraege x
    where x.stand = 'entwurf' and x.zweck = 'bau'
      and ((x.kritik ->> 'stand' = 'wartet' and coalesce((x.kritik ->> 'naechster_s')::numeric, 0) <= jetzt)
           or (x.kritik ->> 'stand' = 'laeuft' and coalesce((x.kritik ->> 'seit_s')::numeric, 0) < jetzt - 900))
-     and (x.erstellt_von = auth.uid() or public.ws_ist_admin())
+     and ((w.admin_pc and public.ws_ist_admin()) or (x.erstellt_von is distinct from auth.uid() and public.ws_ist_werkstatt_fuer(x.gruppe_id)))
      and public.ws_sieht_projekt(public.ws_projekt_von_gruppe(x.gruppe_id))
      and exists (select 1 from ws_nachrichten n where n.auftrag_id = x.id and n.von is not null)
    order by x.id limit 1 for update skip locked;
   if a.id is null then return; end if;
+  t := public.ws_entwurf_text(a.id);
   perform set_config('cs.regelwerk', 'kritik:' || a.id, true);
-  update ws_auftraege set kritik = (kritik - 'wartet_auf' - 'naechster_s') || jsonb_build_object('stand', 'laeuft', 'pc', p_pc, 'seit_s', round(jetzt)) where id = a.id;
+  update ws_auftraege set kritik = (kritik - 'wartet_auf' - 'naechster_s') || jsonb_build_object('stand', 'laeuft', 'pc', p_pc, 'seit_s', round(jetzt),
+    'text_sha', encode(sha256(convert_to(t, 'UTF8')), 'hex')) where id = a.id;
   perform set_config('cs.regelwerk', '', true);
-  return query select a.id, public.ws_projekt_von_gruppe(a.gruppe_id);
+  return query select a.id, public.ws_projekt_von_gruppe(a.gruppe_id), t;
 end $$;
 revoke execute on function public.ws_kritik_nehmen(uuid) from public, anon;
 grant execute on function public.ws_kritik_nehmen(uuid) to authenticated;
 
--- Melden: nur der PC, der die Prüfung genommen hat. ergebnis ok (nur Hinweise „niedrig“) | einwaende (mind. 1) | wartet (KI nicht verfügbar)
+-- Melden: nur der PC, der die Prüfung genommen hat; KI nur aus der globalen Zuständigkeit „kritik“ (A3). ergebnis ok | einwaende | wartet
 create or replace function public.ws_kritik_melden(p_pc uuid, p_auftrag bigint, p_ergebnis text, p_einwaende jsonb default '[]'::jsonb,
   p_ki text default null, p_hinweis text default null, p_regeln text default null) returns void
 language plpgsql security definer set search_path = public as $$
@@ -367,20 +407,54 @@ begin
     if p_ergebnis = 'ok' and exists (select 1 from jsonb_array_elements(p_einwaende) x where x->>'schwere' <> 'niedrig') then
       raise exception 'Mit Einwänden „hoch“ oder „mittel“ ist das Ergebnis „einwaende“'; end if;
     if p_ki is null or p_ki !~ '^[a-z][a-z0-9-]{1,30}(/[A-Za-z0-9][A-Za-z0-9._:-]{0,59})?$' then raise exception 'Ungültige KI-Kennung'; end if;
+    if not exists (select 1 from ws_ki_zustaendigkeit_global g, jsonb_array_elements(g.reihe) e
+                    where g.aufgabe = 'kritik' and e->>'anbieter' = split_part(p_ki, '/', 1)) then
+      raise exception 'Diese KI ist für die kritische Prüfung nicht eingestellt'; end if;
     if p_regeln is not null and p_regeln !~ '^[0-9a-f]{64}$' then raise exception 'Ungültiger Regel-Stempel'; end if;
     update ws_auftraege set kritik = jsonb_build_object('stand', 'fertig', 'ergebnis', p_ergebnis, 'einwaende', p_einwaende, 'ki', p_ki, 'zeit', now(),
-      'runde', coalesce((a.kritik ->> 'runde')::int, 1), 'regeln', p_regeln) where id = a.id;
+      'runde', coalesce((a.kritik ->> 'runde')::int, 1), 'regeln', p_regeln, 'text_sha', a.kritik ->> 'text_sha') where id = a.id;
   end if;
   perform set_config('cs.regelwerk', '', true);
 end $$;
 revoke execute on function public.ws_kritik_melden(uuid, bigint, text, jsonb, text, text, text) from public, anon;
 grant execute on function public.ws_kritik_melden(uuid, bigint, text, jsonb, text, text, text) to authenticated;
 
+-- Neue Nachrichten an Aufträge (A1, A2, B2): an Einrichtungs-Aufträge keine direkten Nachrichten; an einen Entwurf → Kritik neu (neue Runde);
+-- längere Antwort (> 500 Zeichen) auf eine Rückfrage → zurück auf Entwurf mit Kritik. Kurze Antworten bleiben (dokumentierte Ausnahme).
+create or replace function public.ws_nachricht_regelwerk() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare a public.ws_auftraege;
+begin
+  if new.von is null then return new; end if;
+  select * into a from public.ws_auftraege where id = new.auftrag_id for update;
+  if a.id is null then return new; end if;
+  if a.zweck <> 'bau' then
+    if public.ws_cs_intern() is distinct from 'einrichtung' then raise exception 'Einrichtungs-Aufträge haben einen festen Text – keine Nachrichten'; end if;
+    return new;
+  end if;
+  if a.stand = 'entwurf' and a.kritik is not null and a.kritik ->> 'stand' <> 'wartet' then
+    perform set_config('cs.regelwerk', 'kritik:' || a.id, true);
+    update public.ws_auftraege set kritik = jsonb_build_object('stand', 'wartet', 'runde', coalesce((a.kritik ->> 'runde')::int, 1) + 1, 'grund', 'neuer Text') where id = a.id;
+    perform set_config('cs.regelwerk', '', true);
+  elsif a.stand = 'frage' and not coalesce(a.hand, false) and char_length(new.text) > 500 then
+    perform set_config('cs.regelwerk', 'zurueck:' || a.id, true);
+    update public.ws_auftraege set stand = 'entwurf', werkstatt_pc = null,
+      kritik = jsonb_build_object('stand', 'wartet', 'runde', coalesce((a.kritik ->> 'runde')::int, 1) + 1, 'grund', 'lange Antwort auf Rückfrage (neuer Umfang?)') where id = a.id;
+    perform set_config('cs.regelwerk', '', true);
+  end if;
+  return new;
+end $$;
+revoke execute on function public.ws_nachricht_regelwerk() from public, anon, authenticated;
+drop trigger if exists ws_nachrichten_regelwerk on public.ws_nachrichten;
+create trigger ws_nachrichten_regelwerk after insert on public.ws_nachrichten for each row execute function public.ws_nachricht_regelwerk();
+
 -- ---------- 6. Entscheidung am Entwurf: Bauen · Ändern · Verwerfen ----------
+-- „Bauen“ nur der Admin (A3: Freigeben nur Gerhard); Entwickler: „Ändern“ oder „Verwerfen“. Bauen nur auf genau dem geprüften Text (Prüfsumme, A1).
+-- Abweichung „kritik“ (B3): der Admin darf einen Entwurf auch ohne fertige Kritik bauen (protokolliert als bauen_ohne_kritik).
 create or replace function public.ws_entwurf_entscheiden(p_auftrag bigint, p_entscheidung text, p_begruendung text default null, p_text text default null) returns void
 language plpgsql security definer set search_path = public as $$
 declare a public.ws_auftraege; pj text; b text := nullif(btrim(coalesce(p_begruendung, '')), ''); t text := btrim(coalesce(p_text, ''));
-        einw jsonb; trotz boolean;
+        einw jsonb; trotz boolean; ohne boolean := false; e_art text;
 begin
   select * into a from ws_auftraege where id = p_auftrag for update;
   if a.id is null then raise exception 'Auftrag nicht gefunden'; end if;
@@ -392,27 +466,35 @@ begin
   einw := coalesce(a.kritik -> 'einwaende', '[]'::jsonb);
   perform set_config('cs.regelwerk', 'entscheidung:' || a.id, true);
   if p_entscheidung = 'bauen' then
-    if a.zweck <> 'bau' and not public.ws_ist_admin() then raise exception 'Einrichtungs-Aufträge startet nur der Admin'; end if;
-    if a.kritik ->> 'stand' not in ('fertig','entfaellt') then raise exception 'Die kritische Prüfung ist noch nicht fertig – „Bauen“ geht erst danach'; end if;
-    trotz := a.kritik ->> 'ergebnis' = 'einwaende' and jsonb_array_length(einw) > 0;
-    if trotz and not public.ws_ist_admin() then raise exception 'Bauen trotz Einwänden entscheidet nur der Admin'; end if;
+    if not public.ws_ist_admin() then raise exception '„Bauen“ gibt nur der Admin frei – du kannst den Entwurf ändern oder verwerfen'; end if;
+    if a.kritik ->> 'stand' not in ('fertig','entfaellt') then
+      if a.zweck = 'bau' and exists (select 1 from ws_kernpflicht_abweichungen x where x.projekt_id = pj and x.pflicht = 'kritik') then
+        ohne := true;
+        if b is null or char_length(b) < 10 then raise exception 'Bauen ohne kritische Prüfung (Abweichung „kritik“) braucht eine Begründung (mindestens 10 Zeichen)'; end if;
+      else raise exception 'Die kritische Prüfung ist noch nicht fertig – „Bauen“ geht erst danach'; end if;
+    end if;
+    if a.zweck = 'bau' and not ohne and a.kritik ->> 'text_sha' is distinct from public.ws_entwurf_text_sha(a.id) then
+      raise exception 'Der Text hat sich seit der kritischen Prüfung geändert – sie läuft neu'; end if;
+    trotz := not ohne and a.kritik ->> 'ergebnis' = 'einwaende' and jsonb_array_length(einw) > 0;
     if trotz and (b is null or char_length(b) < 10) then raise exception 'Bauen trotz Einwänden braucht eine Begründung (mindestens 10 Zeichen)'; end if;
     if a.zweck = 'bau' and not public.ws_bau_erlaubt(pj) then raise exception 'Bauen erst nach Freigabe von Phase 9 (Bauplan)'; end if;
+    e_art := case when ohne then 'bauen_ohne_kritik' when trotz then 'bauen_trotz' else 'bauen' end;
     update ws_auftraege set stand = 'wartet', geaendert = now(),
-      kritik = kritik || jsonb_build_object('entscheidung', case when trotz then 'bauen_trotz' else 'bauen' end, 'von', auth.uid(), 'am', now(), 'begruendung', b)
+      kritik = kritik || jsonb_build_object('entscheidung', e_art, 'von', auth.uid(), 'am', now(), 'begruendung', b)
      where id = a.id;
     insert into ws_entscheidungen (projekt_id, auftrag_id, art, text, begruendung, einwaende, wer)
-      values (pj, a.id, case when trotz then 'bauen_trotz' else 'bauen' end,
-              format('Auftrag #%s „%s“: Bauen%s', a.id, left(a.titel, 80), case when trotz then format(' trotz %s Einwand/Einwänden', jsonb_array_length(einw)) else '' end),
+      values (pj, a.id, e_art,
+              format('Auftrag #%s „%s“: Bauen%s', a.id, left(a.titel, 80), case when ohne then ' ohne kritische Prüfung (bestätigte Abweichung „kritik“)'
+                when trotz then format(' trotz %s Einwand/Einwänden', jsonb_array_length(einw)) else '' end),
               b, case when jsonb_array_length(einw) > 0 then einw end, auth.uid());
-    insert into ws_nachrichten (auftrag_id, von, art, text) values (a.id, auth.uid(), 'system',
-      case when trotz then 'Entwurf freigegeben: Bauen trotz Einwänden – Begründung: ' || b else 'Entwurf freigegeben: Bauen' end);
+    insert into ws_nachrichten (auftrag_id, von, art, text) values (a.id, null, 'system',
+      case when ohne then 'Entwurf freigegeben: Bauen ohne kritische Prüfung – Begründung: ' || b
+           when trotz then 'Entwurf freigegeben: Bauen trotz Einwänden – Begründung: ' || b else 'Entwurf freigegeben: Bauen' end);
   elsif p_entscheidung = 'aendern' then
+    if a.zweck <> 'bau' then raise exception 'Einrichtungs-Aufträge haben einen festen Text'; end if;
     if char_length(t) < 10 or char_length(t) > public.ws_text_max() then raise exception 'Bitte die Änderung beschreiben (mindestens 10 Zeichen)'; end if;
     if t ~ '[\x01-\x08\x0b\x0c\x0e-\x1f\x7f​-‏‪-‮⁦-⁩﻿]' then raise exception 'Ungültige Zeichen in der Änderung'; end if;
-    insert into ws_nachrichten (auftrag_id, von, art, text, kanal) values (a.id, auth.uid(), 'text', 'Änderung am Entwurf: ' || t, 'codeschmiede');
-    update ws_auftraege set geaendert = now(), kritik = case when a.zweck = 'bau'
-        then jsonb_build_object('stand', 'wartet', 'runde', coalesce((a.kritik ->> 'runde')::int, 1) + 1) else a.kritik end where id = a.id;
+    insert into ws_nachrichten (auftrag_id, von, art, text, kanal) values (a.id, auth.uid(), 'text', 'Änderung am Entwurf: ' || t, 'codeschmiede');   -- Trigger: Kritik neu
     insert into ws_entscheidungen (projekt_id, auftrag_id, art, text, begruendung, einwaende, wer)
       values (pj, a.id, 'aendern', format('Auftrag #%s „%s“: Entwurf geändert – neue kritische Prüfung', a.id, left(a.titel, 80)), coalesce(b, left(t, 2000)),
               case when jsonb_array_length(einw) > 0 then einw end, auth.uid());
@@ -440,6 +522,7 @@ language sql immutable set search_path = public as $$
     || E'was als Nächstes kommt, was offen ist. Nur Dokumentation – kein Code, keine Einstellungen, keine Abläufe ändern.'
 $$;
 revoke execute on function public.ws_doku_geruest_text() from public, anon;
+grant execute on function public.ws_doku_geruest_text() to authenticated;   -- fester Text, den der Dienst für Einrichtungs-Aufträge nimmt (A2)
 
 create or replace function public.ws_einrichtung_gruppe(p_projekt text) returns text
 language sql stable security definer set search_path = public as $$
@@ -463,7 +546,7 @@ begin
   perform set_config('cs.regelwerk', 'einrichtung', true);
   insert into ws_auftraege (gruppe_id, titel, art, zweck, erstellt_von) values (g, 'Doku-Gerüst anlegen', 'aendern', 'einrichtung', auth.uid()) returning id into n;
   perform set_config('cs.regelwerk', '', true);
-  insert into ws_nachrichten (auftrag_id, von, art, text, kanal) values (n, auth.uid(), 'text', public.ws_doku_geruest_text(), 'codeschmiede');
+  insert into ws_nachrichten (auftrag_id, von, art, text, kanal) values (n, null, 'system', public.ws_doku_geruest_text(), 'codeschmiede');   -- Systemtext, nicht von Gerhard
   insert into ws_protokoll (wer, was, details) values (auth.uid(), 'einrichtung_auftrag', jsonb_build_object('projekt', p_projekt, 'auftrag', n, 'art', p_art));
   return n;
 end $$;
@@ -482,7 +565,7 @@ begin
     perform set_config('cs.regelwerk', 'einrichtung', true);
     insert into public.ws_auftraege (gruppe_id, titel, art, zweck, erstellt_von) values (g, 'Doku-Gerüst anlegen', 'aendern', 'einrichtung', adm) returning id into n;
     perform set_config('cs.regelwerk', '', true);
-    insert into public.ws_nachrichten (auftrag_id, von, art, text, kanal) values (n, adm, 'text', public.ws_doku_geruest_text(), 'codeschmiede');
+    insert into public.ws_nachrichten (auftrag_id, von, art, text, kanal) values (n, null, 'system', public.ws_doku_geruest_text(), 'codeschmiede');
     insert into public.ws_protokoll (wer, was, details) values (null, 'einrichtung_auftrag', jsonb_build_object('projekt', p.id, 'auftrag', n, 'art', 'doku_geruest', 'quelle', '0063'));
   end loop;
 end $$;
@@ -738,18 +821,39 @@ begin
     raise exception 'Dieser Auftrag läuft nicht auf diesem PC'; end if;
   if coalesce(array_length(p_entscheidungen, 1), 0) > 50 or coalesce(array_length(p_ideen, 1), 0) > 50 then raise exception 'Höchstens 50 Einträge je Auftrag'; end if;
   pj := public.ws_projekt_von_gruppe(a.gruppe_id);
-  update ws_entscheidungen set vorgemerkt_auftrag = a.id where projekt_id = pj and not im_repo and id = any (coalesce(p_entscheidungen, '{}'));
-  update ws_ideen set vorgemerkt_auftrag = a.id where projekt_id = pj and not im_repo and id = any (coalesce(p_ideen, '{}'));
+  -- Nie einem anderen, noch offenen Auftrag wegnehmen
+  update ws_entscheidungen e set vorgemerkt_auftrag = a.id where e.projekt_id = pj and not e.im_repo and e.id = any (coalesce(p_entscheidungen, '{}'))
+     and (e.vorgemerkt_auftrag is null or e.vorgemerkt_auftrag = a.id or not exists (select 1 from ws_auftraege x where x.id = e.vorgemerkt_auftrag and x.stand not in ('abgebrochen','erledigt','wissen')));
+  update ws_ideen i set vorgemerkt_auftrag = a.id where i.projekt_id = pj and not i.im_repo and i.id = any (coalesce(p_ideen, '{}'))
+     and (i.vorgemerkt_auftrag is null or i.vorgemerkt_auftrag = a.id or not exists (select 1 from ws_auftraege x where x.id = i.vorgemerkt_auftrag and x.stand not in ('abgebrochen','erledigt','wissen')));
 end $$;
 revoke execute on function public.ws_doku_vormerken(uuid, bigint, bigint[], bigint[]) from public, anon;
 grant execute on function public.ws_doku_vormerken(uuid, bigint, bigint[], bigint[]) to authenticated;
+
+-- Gefunden (B1): die Sicherheitsprüfung (Werkstatt des Admins) meldet, welche Kennungen „E<id>“/„I<id>“ sie in den neuen Zeilen gefunden hat
+alter table public.ws_ideen add column if not exists im_diff_auftrag bigint;
+create or replace function public.ws_doku_gefunden(p_pc uuid, p_auftrag bigint, p_entscheidungen bigint[] default '{}', p_ideen bigint[] default '{}') returns void
+language plpgsql security definer set search_path = public as $$
+declare a public.ws_auftraege;
+begin
+  if not public.ws_ist_admin() or not exists (select 1 from ws_werkstatt_pcs where id = p_pc and benutzer_id = auth.uid() and an and admin_pc) then
+    raise exception 'Nur die Werkstatt des Admins (Prüf-Station)'; end if;
+  select * into a from ws_auftraege where id = p_auftrag;
+  if a.id is null or a.stand <> 'sicherheit' then raise exception 'Der Auftrag ist nicht in der Sicherheitsprüfung'; end if;
+  if coalesce(array_length(p_entscheidungen, 1), 0) > 50 or coalesce(array_length(p_ideen, 1), 0) > 50 then raise exception 'Höchstens 50 Einträge je Auftrag'; end if;
+  update ws_entscheidungen set im_diff_auftrag = a.id where vorgemerkt_auftrag = a.id and id = any (coalesce(p_entscheidungen, '{}'));
+  update ws_ideen set im_diff_auftrag = a.id where vorgemerkt_auftrag = a.id and id = any (coalesce(p_ideen, '{}'));
+end $$;
+revoke execute on function public.ws_doku_gefunden(uuid, bigint, bigint[], bigint[]) from public, anon;
+grant execute on function public.ws_doku_gefunden(uuid, bigint, bigint[], bigint[]) to authenticated;
 
 create or replace function public.ws_doku_im_repo() returns trigger
 language plpgsql security definer set search_path = public as $$
 begin
   if new.stand = 'wissen' and old.stand is distinct from 'wissen' then
-    update public.ws_entscheidungen set im_repo = true, im_repo_am = now() where vorgemerkt_auftrag = new.id and not im_repo;
-    update public.ws_ideen set im_repo = true where vorgemerkt_auftrag = new.id and not im_repo;
+    -- nur, was im Diff wirklich gefunden wurde (nicht pauschal alles Vorgemerkte)
+    update public.ws_entscheidungen set im_repo = true, im_repo_am = now() where vorgemerkt_auftrag = new.id and im_diff_auftrag = new.id and not im_repo;
+    update public.ws_ideen set im_repo = true where vorgemerkt_auftrag = new.id and im_diff_auftrag = new.id and not im_repo;
   end if;
   return new;
 end $$;

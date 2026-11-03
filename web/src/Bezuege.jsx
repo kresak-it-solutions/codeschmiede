@@ -107,7 +107,7 @@ export function FeatureBezuege({ f, d, darfAuftrag, toast, ich }) {
       const { data, error } = await supabase.from("ws_auftraege").insert({ gruppe_id: f.gruppe_id, feature_id: f.id, titel: t.slice(0, 80), art: "aendern", erstellt_von: ich.id }).select().single();
       if (error) { toast(fehler(error)); return; }
       await supabase.from("ws_nachrichten").insert({ auftrag_id: data.id, von: ich.id, art: "text", text: `${h.text}\nÜbernimm die Änderung der Vorlage „${name(h.vorlage_feature)}“${h.auftrag_id ? ` (Auftrag #${h.auftrag_id})` : ""} sinngemäß für dieses Feature.`, kanal: "codeschmiede" });
-      toast(`Auftrag #${data.id} zum Nachziehen angelegt`);
+      toast(`Entwurf #${data.id} (Nachziehen) angelegt – wird geprüft`);
     }
     const { error } = await supabase.rpc("ws_hinweis_erledigen", { p_id: h.id, p_stand: stand }); if (error) toast(fehler(error)); else setTick((x) => x + 1);
   };

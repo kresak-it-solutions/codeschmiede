@@ -34,14 +34,20 @@ export function EntwurfKarte({ a, ich, kann, toast, onFertig }) {
         {k.stand === "laeuft" && <Loader2 className="w-4 h-4 animate-spin text-emerald-700" aria-hidden="true" />}</div>
       {einwaende.length > 0 && <ul className="grid gap-1">{einwaende.map((e, i) => <li key={i} className="flex gap-2 items-start">
         <span className={`shrink-0 text-xs font-semibold rounded-md px-1.5 py-0.5 ${SCHWERE[e.schwere] || SCHWERE.niedrig}`}>{EINWAND_ART[e.art] || e.art} · {e.schwere}</span><span>{e.text}</span></li>)}</ul>}
-      {kann && modus === null && <div className="flex flex-wrap gap-1.5">
-        <button type="button" className={btn} disabled={busy || !fertig || (trotz && !admin) || (a.zweck !== "bau" && !admin)} title={!fertig ? "Erst nach der kritischen Prüfung" : trotz && !admin ? "Bauen trotz Einwänden entscheidet nur der Admin" : undefined}
-          onClick={() => (trotz ? setModus("trotz") : entscheiden("bauen"))}><Hammer className="w-4 h-4" />{trotz ? "Trotzdem bauen …" : "Bauen"}</button>
+      {/* „Bauen“ gibt nur der Admin frei (Prüfung 0.19.0, A3: Freigeben nur Gerhard); Entwickler ändern oder verwerfen */}
+      {kann && modus === null && <div className="flex flex-wrap gap-1.5 items-center">
+        {admin && <button type="button" className={btn} disabled={busy || !fertig} title={!fertig ? "Erst nach der kritischen Prüfung" : undefined}
+          onClick={() => (trotz ? setModus("trotz") : entscheiden("bauen"))}><Hammer className="w-4 h-4" />{trotz ? "Trotzdem bauen …" : "Bauen"}</button>}
+        {admin && !fertig && a.zweck === "bau" && <button type="button" className={ghost} disabled={busy} title="Nur mit bestätigter Abweichung „kritik“ für dieses Projekt" onClick={() => setModus("ohne")}>Ohne Kritik bauen …</button>}
+        {!admin && <span className="text-xs text-slate-500">„Bauen“ gibt Gerhard (Admin) frei.</span>}
         {a.zweck === "bau" && <button type="button" className={ghost} disabled={busy} onClick={() => setModus("aendern")}><PenLine className="w-4 h-4" />Ändern</button>}
         <button type="button" className={ghost} disabled={busy} onClick={() => entscheiden("verwerfen")}><X className="w-4 h-4" />Verwerfen</button></div>}
       {modus === "trotz" && <div className="grid gap-1.5"><label className="font-semibold flex items-center gap-1.5"><AlertTriangle className="w-4 h-4 text-amber-600" />Warum trotz der Einwände bauen? (Pflicht, kommt ins Entscheidungsprotokoll)
         <textarea className={`${input} mt-1`} rows={3} maxLength={2000} value={text} onChange={(e) => setText(e.target.value)} /></label>
         <div className="flex gap-1.5"><button type="button" className={btn} disabled={busy || text.trim().length < 10} onClick={() => entscheiden("bauen", { begruendung: text.trim() })}><Check className="w-4 h-4" />Bauen trotz Einwänden</button><button type="button" className={ghost} onClick={() => setModus(null)}>Zurück</button></div></div>}
+      {modus === "ohne" && <div className="grid gap-1.5"><label className="font-semibold">Warum ohne kritische Prüfung bauen? (nur mit bestätigter Abweichung „kritik“, kommt ins Entscheidungsprotokoll)
+        <textarea className={`${input} mt-1`} rows={3} maxLength={2000} value={text} onChange={(e) => setText(e.target.value)} /></label>
+        <div className="flex gap-1.5"><button type="button" className={btn} disabled={busy || text.trim().length < 10} onClick={() => entscheiden("bauen", { begruendung: text.trim() })}><Check className="w-4 h-4" />Ohne Kritik bauen</button><button type="button" className={ghost} onClick={() => setModus(null)}>Zurück</button></div></div>}
       {modus === "aendern" && <div className="grid gap-1.5"><label className="font-semibold">Was soll anders sein? (ergänzt den Auftrag, danach neue kritische Prüfung – keine Personendaten)
         <textarea className={`${input} mt-1`} rows={4} maxLength={TEXT_MAX} value={text} onChange={(e) => setText(e.target.value)} /></label>
         <div className="flex gap-1.5"><button type="button" className={btn} disabled={busy || text.trim().length < 10} onClick={() => entscheiden("aendern", { text: text.trim() })}><Check className="w-4 h-4" />Ändern und neu prüfen</button><button type="button" className={ghost} onClick={() => setModus(null)}>Zurück</button></div></div>}

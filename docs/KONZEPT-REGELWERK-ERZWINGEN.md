@@ -22,8 +22,7 @@ dürfen ergänzen, Kernpflichten aber nur mit einer **begründeten, vom Admin be
 `ws_abweichung_bestaetigen`, Begründung mindestens 20 Zeichen, Entscheidungsprotokoll). Die Konfliktprüfung `kernpflichtKonflikte` erkennt
 REGELN.md-Zeilen wie „ohne Bauplan“, „sofort bauen“, „Doku ist optional“, „ohne kritische Prüfung“, „die globalen Regeln gelten nicht“
 (Verneinung direkt davor hebt auf, Code-Blöcke ausgenommen). Ohne bestätigte Abweichung gilt die globale Pflicht und die Ampel „Kernpflichten“ ist
-**rot** – ebenso, wenn es keine bestätigte Fassung der globalen Regeln gibt. Wirkung einer bestätigten Abweichung in 0.19.0: der Regel-Block nennt sie,
-die Doku-Prüfung („doku“) wird zum Hinweis. Die harten Sperren der Datenbank (Phase 9, Entwurf) und die Prüf-Station bleiben bestehen.
+**rot** – ebenso, wenn es keine bestätigte Fassung der globalen Regeln gibt. Wirkung einer bestätigten Abweichung: siehe 7b (B3).
 
 ## 2. Phasen
 
@@ -50,8 +49,8 @@ die Doku-Prüfung („doku“) wird zum Hinweis. Die harten Sperren der Datenban
    sonst die Prüf-Zuständigkeit. Geprüft wird gegen Gerhards Regeln, Kernpflichten und den Konzept-Stand: Sinn, Risiken, fehlende Angaben
    (Steckbrief), Widersprüche, Phase, Regeln. Ergebnis als Schlusszeile `KRITIK: {"ergebnis":"ok|einwaende","einwaende":[…]}`; ohne gültige Zeile gilt
    es als Einwand (nie still „ok“). Ist kein Anbieter nutzbar: „wartet auf …“, neuer Versuch nach 10 Minuten.
-3. Die Einwände stehen am Entwurf (Auftrags-Chat, Konzept-Chat, Station „Entwürfe“). Gerhard entscheidet:
-   **Bauen** (bei Einwänden nur der Admin und nur mit Begründung ≥ 10 Zeichen), **Ändern** (Text ergänzt den Auftrag, neue Prüfung) oder **Verwerfen**.
+3. Die Einwände stehen am Entwurf (Auftrags-Chat, Konzept-Chat, Station „Entwürfe“). **Bauen** gibt nur der Admin frei (bei Einwänden mit Begründung
+   ≥ 10 Zeichen); wer den Entwurf angelegt hat, kann ihn **ändern** (Text ergänzt den Auftrag, neue Prüfung) oder **verwerfen**.
 4. Jede Entscheidung steht automatisch im **Entscheidungsprotokoll** (`ws_entscheidungen`) und kommt über den nächsten Bau-Auftrag in
    `docs/entscheidungen.md` (`ws_doku_vormerken`; bei „Live & Wissen“ als im Repository vermerkt) – nie direkt auf main.
 
@@ -93,6 +92,32 @@ bekommen per Migration einmal den Entwurf **„Doku-Gerüst anlegen“** (zweck 
 legt nur fehlende Dateien an, überschreibt nichts). Weitere Male über die Lampe „Doku vollständig“ › „Doku-Gerüst anlegen (Entwurf)“.
 Jeder Bau-Auftrag bekommt `docs/stand.md` und `docs/entscheidungen.md` als Anhang (`.codeschmiede-anhaenge/doku/`).
 
+## 7b. Nachschärfung nach der unabhängigen Prüfung (GELB, 03.11.2026)
+
+- **A1 Text nach der Kritik:** Jede neue Nachricht einer Person an einen Entwurf setzt die Kritik zurück auf „wartet“ (neue Runde, Trigger
+  `ws_nachricht_regelwerk`). Beim Nehmen merkt die Datenbank die Prüfsumme des geprüften Textes (`text_sha`, `ws_entwurf_text_sha`) und liefert genau
+  diesen Text an die Werkstatt; „Bauen“ geht nur, wenn der Text noch dieselbe Prüfsumme hat.
+- **A2 Einrichtungs-Aufträge:** keine Nachrichten von Personen (auch nicht vom Admin, kein „Ändern“); ihr Text ist ein Systemtext (`von` leer, `system`).
+  Der Dienst nimmt nur den festen Text `ws_doku_geruest_text()`. Nach dem Lauf und in der Sicherheitsprüfung: nur Dateien unter `docs/` hinzugefügt
+  oder geändert, nichts gelöscht – sonst Nacharbeit bzw. ROT.
+- **A3 Wer prüft, wer gibt frei:** Die Kritik übernimmt nie der PC der Person, die den Entwurf angelegt hat – nur die Werkstatt einer anderen Person mit
+  Werkstatt-Recht in der Gruppe oder ein Admin-PC. Die gemeldete KI muss in der globalen Zuständigkeit „kritik“ stehen. **„Bauen“ gibt nur der Admin frei**
+  (Gerhards Regel „Freigeben nur er“); Entwickler können „Ändern“ oder „Verwerfen“.
+- **A4:** Die Phase-9-Sperre greift auch in den Schleifen für beantwortete Rückfragen und Nacharbeit – vor dem Arbeitsordner, die Warteschlange läuft weiter.
+- **A5 Wo die Sicherheit liegt:** Die kritische Prüfung ist **beratend** – sie zeigt Einwände, entscheidet aber nichts. Die Sicherheit hängt an Gerhards
+  Klick „Bauen“ (Datenbank) und an der Prüf-Station (Sicherheits- und Feature-Prüfung). Der Auftragstext steht in der Prüf-Station hinter einer zufälligen Grenze.
+- **A6:** Datenfluss zur Zuständigkeit „kritik“ in `docs/DATENSCHUTZ.md`.
+- **B1 Doku im Diff:** zählen nur hinzugefügte oder geänderte Dateien mit mindestens einer neuen Zeile mit Inhalt; Löschen von `docs/stand.md` ist ein Verstoß.
+  Jede vorgemerkte Entscheidung braucht ihre Kennung `E<id>` in den neuen Zeilen von `docs/entscheidungen.md` (Ideen: `I<id>` in `docs/ideen.md`).
+  Die Sicherheitsprüfung meldet die gefundenen Kennungen (`ws_doku_gefunden`); nur diese gelten nach „Live & Wissen“ als im Repository.
+- **B2 Rückfragen und Altbestand:** Eine Antwort auf eine Rückfrage mit mehr als 500 Zeichen (neuer Umfang möglich) setzt den Auftrag zurück auf Entwurf
+  mit neuer Kritik. **Dokumentierte Ausnahme:** kürzere Antworten setzen den Lauf fort, ohne neue Kritik. Aufträge, die vor 0063 im Stand „wartet“ angelegt
+  wurden, werden beim Einspielen zu Entwürfen (außer Hand-Änderungen).
+- **B3 Abweichungen wirken:** „phasen“ hebt die Phase-9-Sperre für das Projekt auf (wie eine Kurzfassung); „kritik“ erlaubt dem Admin „Bauen“ ohne fertige
+  Kritik (mit Begründung, `bauen_ohne_kritik`); „regelpruefung“ macht die Checklisten-Punkte „regeln“ und „phase“ zu Hinweisen – die Sicherheitsprüfung
+  selbst (PRÜFUNG: ROT) bleibt; „doku“ macht die Doku-Prüfung zum Hinweis. Alle nur mit vom Admin bestätigter, protokollierter Abweichung.
+- **B4:** Der Zweck steht im Auftrags-Block der Prüf-Station; bei Einrichtungs-Aufträgen gilt der Punkt „phase“ als erfüllt.
+
 ## 8. Bewusst nicht in 0.19.0 (offen)
 
 - Live-Tor: Datenschutzerklärung, Impressum und aktiver Fehler-Melder als Vorbedingung für Live (§14).
@@ -101,7 +126,6 @@ Jeder Bau-Auftrag bekommt `docs/stand.md` und `docs/entscheidungen.md` als Anhan
 - 2–3 Stilrichtungen als Pflicht in Phase 3 (§4).
 - Neutraler Standard-Baukasten (der Katalog stammt aus Trainer to go) und Baukasten-Prüftor im Prüflauf (feste Farbwerte/Schriftgrößen).
 - Fehlerliste mit drei Stufen in `ws_fehler`; Phasen-Dokumente werden nicht inhaltlich geprüft (nur ihr Vorhandensein).
-- Technische Wirkung bestätigter Abweichungen für „phasen“, „kritik“, „regelpruefung“ (bisher nur Prompt und Ampel).
 
 ## Handbuch
 
@@ -110,8 +134,8 @@ solange das gilt, und den Knopf **„Phase n freigeben“** (nur Admin; Pflichtp
 **Details:** Pflichtpunkte und Protokoll, Kurzfassung (§16), Kernpflichten mit Abweichungen, Entscheidungsprotokoll, Ideen.
 
 **Entwürfe:** Was du in einem Chat als Auftrag gibst oder der Konzept-Chat anlegt, steht zuerst als **Entwurf** im Verlauf (gestrichelter Rahmen).
-Die zweite KI prüft ihn in der Regel innerhalb einer Minute. Danach: **Bauen**, **Ändern** (neue Prüfung) oder **Verwerfen**. Mit Einwänden heißt der
-Knopf „Trotzdem bauen …“ und braucht eine Begründung. Oben in der Zentrale führt „n Entwürfe prüfen“ zu allen offenen Entwürfen.
+Die zweite KI (auf dem PC einer anderen Person oder dem Admin-PC) prüft ihn. Danach: **Bauen** (nur Gerhard/Admin), **Ändern** (neue Prüfung) oder
+**Verwerfen**. Mit Einwänden heißt der Knopf „Trotzdem bauen …“ und braucht eine Begründung. Wer nach der Prüfung noch etwas dazuschreibt, startet eine neue Prüfung. Oben in der Zentrale führt „n Entwürfe prüfen“ zu allen offenen Entwürfen.
 
 **Ampel (Projekt › Einrichten):** „Doku vollständig“ (grün = Gerüst komplett, gelb = Phasen-Dateien fehlen, rot = `stand.md` oder
 `entscheidungen.md` fehlt) mit Knopf „Doku-Gerüst anlegen (Entwurf)“; „Kernpflichten“ (rot = REGELN.md hebt eine Kernpflicht ohne

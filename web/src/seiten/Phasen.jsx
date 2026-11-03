@@ -117,7 +117,7 @@ function VorschlagBestaetigen({ projekt, vorschlag, toast, onClose, onFertig }) 
 }
 function Abweichung({ projekt, id, name, toast, onClose, onFertig }) {
   const [b, setB] = useState(""); const [busy, los] = useAktion(toast, onClose, onFertig);
-  return <Formular titel={`Abweichung von „${name}“ bestätigen`} kurz="Nur, wenn die Projektregeln diese Kernpflicht bewusst anders regeln. Die Begründung steht im Entscheidungsprotokoll; die harten Sperren der Datenbank (Phase 9, Entwurf, Prüf-Station) bleiben bestehen – „Doku-Pflicht“ wird dann nur noch als Hinweis geprüft."
+  return <Formular titel={`Abweichung von „${name}“ bestätigen`} kurz={`Nur, wenn die Projektregeln diese Kernpflicht bewusst anders regeln. Die Begründung steht im Entscheidungsprotokoll. Wirkung: ${{ phasen: "die Phase-9-Sperre gilt für dieses Projekt nicht mehr (wie eine Kurzfassung).", doku: "die Doku-Pflicht wird nur noch als Hinweis geprüft.", kritik: "der Admin darf Entwürfe auch ohne fertige kritische Prüfung bauen (mit Begründung).", regelpruefung: "die Punkte „regeln“ und „phase“ der Prüf-Checkliste sind nur noch Hinweise – die Sicherheitsprüfung selbst bleibt rot bei Befunden." }[id]}`}
     onClose={onClose} busy={busy} deaktiviert={b.trim().length < 20} okText="Abweichung bestätigen" onOk={() => los("ws_abweichung_bestaetigen", { p_projekt: projekt.id, p_pflicht: id, p_begruendung: b.trim() }, `Abweichung „${name}“ bestätigt`)}>
     <label className="text-sm font-semibold">Begründung (Pflicht, mindestens 20 Zeichen)<textarea className={`${input} mt-1`} rows={3} maxLength={2000} value={b} onChange={(e) => setB(e.target.value)} /></label>
   </Formular>;
