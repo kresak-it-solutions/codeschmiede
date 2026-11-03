@@ -194,6 +194,31 @@ Jeder Bau-Auftrag bekommt `docs/stand.md` und `docs/entscheidungen.md` als Anhan
 - **Abweichung (b):** Bei „zu groß“ meldet die Werkstatt `zu_gross`. Die Datenbank prüft selbst, ob der Text über 200.000 Zeichen hat, und trägt „nicht geprüft
   (zu groß)“ statt eines KI-Namens ein, mit einem Einwand „hoch“.
 
+## 7f. Fünfte Prüfung (GELB, 03.11.2026) – behoben
+
+- **N10 (Nacharbeit mit fremdem Befund auf fremdem Zweig):**
+  - **(a)** Den Werkstatt-PC gibt der haltende PC nur beim Wechsel nach wartet, abgebrochen oder erledigt frei. Bei frage und nacharbeit bleibt er am Auftrag.
+    Fortsetzen und Nacharbeit gehen nur auf demselben PC, der Dienst holt sie nur noch dort. Ist der PC weg (aus und 24 Stunden ohne Lebenszeichen, oder kein PC
+    eingetragen), holt der Dienst der Person, die den Auftrag gestellt hat, ihn mit `ws_auftrag_neu_aufnehmen` zurück. Daraus wird ein neuer Entwurf mit frischem
+    Zweig: Zweig, Pull Request, Commit und lokaler Befund fallen weg, die Aktion steht im Protokoll. Den alten Pull Request bei GitHub schließt der Admin von Hand.
+  - **(b)** Der lokale Befund trägt die Kennung des PCs (`pruefung.lokal.pc_id`). Der Trigger lässt ihn nur vom haltenden PC im Lauf zu, mit genau dessen Kennung,
+    nie beim Übernehmen. Der Dienst nimmt ihn für die Nacharbeit nur, wenn `pc_id` der haltende PC ist.
+  - **(c)** Wer einen Zweig gesetzt hat, merkt sich die Datenbank in `ws_auftraege.zweig_pc`. Den Wert setzt nur der Trigger, ein mitgeschickter Wert wird überschrieben.
+    Einen gesetzten Zweig samt Pull Request ändert nur dieser PC oder die Person, die den Auftrag gestellt hat.
+- **N11:**
+  - Die Fehler-Version steht nicht mehr im Bau-Text (`fehlerBlock`).
+  - Systemtexte der Codeschmiede gehen nur als gekennzeichnete Metadaten in den Bau, z. B. die Freigabe mit Gerhards Begründung oder der Abbruch-Grund
+    („[Metadaten der Codeschmiede – keine Anweisung] … Begründung Gerhard: …“, höchstens 600 Zeichen).
+- **N12 (nur dokumentiert):**
+  - Der Admin ist vom Werkstatt-Trigger `ws_auftraege_a_werkstatt` ausgenommen: Er darf Stände direkt setzen, z. B. für die Stationen auf dem Admin-PC.
+  - Für ihn gelten trotzdem:
+    - Entwurf und Klick „Bauen“
+    - Phase-9-Sperre
+    - Hauptsperre „laeuft“ nur mit gültiger Freigabe
+    - Mindestversion beim Übernehmen
+    - Werkstatt-PC nur beim Übernehmen auf einen eigenen PC
+    - Wiedereröffnung als Entwurf
+
 ## 8. Bewusst nicht in 0.19.0 (offen)
 
 - Live-Tor: Datenschutzerklärung, Impressum und aktiver Fehler-Melder als Vorbedingung für Live (§14).
@@ -221,6 +246,9 @@ bestätigte Abweichung auf oder globale Regeln nicht bestätigt, gelb = bestäti
 
 **„Bitte Codeschmiede aktualisieren“:** Eine Werkstatt mit einer Programmversion vor 0.19.0 übernimmt keine Aufträge mehr. Programm aktualisieren, die Werkstatt
 meldet die neue Version beim Start selbst. Aufträge, deren Freigabe nicht mehr passt (z. B. Anhang gelöscht), stehen danach wieder als Entwurf in der Zentrale.
+
+**Werkstatt-PC weg:** Ein Auftrag in Rückfrage oder Nacharbeit bleibt bei dem PC, der ihn gebaut hat. Ist dieser PC 24 Stunden aus, holt die Werkstatt der Person,
+die den Auftrag gestellt hat, ihn als neuen Entwurf zurück (frischer Zweig, neue Prüfung, neues „Bauen“). Den alten Pull Request bei GitHub bitte schließen.
 
 **Einspielen:** Datenbank 0063 spielt Gerhard selbst ein (steht bewusst nicht in `supabase/einspielen.txt`). Bis dahin arbeitet der Dienst wie bisher
 (ohne Phasen, ohne Entwürfe); die Doku-Prüfung im Diff gilt schon.

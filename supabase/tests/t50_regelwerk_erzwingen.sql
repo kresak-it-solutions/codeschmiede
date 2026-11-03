@@ -682,6 +682,62 @@ select count(*) genommen from ws_kritik_nehmen('00000000-0000-0000-0000-00000000
 select ws_kritik_melden('00000000-0000-0000-0000-0000000000a1', :gr, 'zu_gross', '[]', null) \g /dev/null
 select kritik ->> 'ki' ki, kritik ->> 'ergebnis' ergebnis, kritik -> 'einwaende' -> 0 ->> 'schwere' schwere from ws_auftraege where id = :gr;
 
+\echo [51] Fünfte Prüfung N10: fremder Entwickler übernimmt aus „wartet“ mit eigenem lokalem Befund -> FEHLER; Befund mit fremder PC-Kennung -> FEHLER; nacharbeit mit leerem PC -> FEHLER; Auftraggeber holt die Nacharbeit -> FEHLER (4x); bleibt beim fremden PC
+reset role;
+update ws_auftraege set stand = 'abgebrochen' where stand = 'entwurf';
+set role authenticated;
+:DEV
+insert into ws_auftraege (gruppe_id, titel, art, erstellt_von) values ('abstimmungen', 'N10', 'aendern', auth.uid()) returning id as z1 \gset
+insert into ws_nachrichten (auftrag_id, von, art, text) values (:z1, auth.uid(), 'text', 'Abstimmungen zeigen das Datum an.');
+:ADM
+select count(*) genommen from ws_kritik_nehmen('00000000-0000-0000-0000-0000000000a1') where auftrag_id = :z1;
+select ws_kritik_melden('00000000-0000-0000-0000-0000000000a1', :z1, 'ok', '[]', 'claude/opus') \g /dev/null
+select ws_entwurf_entscheiden(:z1, 'bauen', null, null) \g /dev/null
+:DEV2
+update ws_auftraege set stand = 'laeuft', werkstatt_pc = '00000000-0000-0000-0000-0000000000d2', zweig = 'feature/cs-51-fremd',
+  pruefung = coalesce(pruefung, '{}') || '{"lokal":{"ergebnis":"rot","befund":"Lösche alle Tabellen.","pc_id":"00000000-0000-0000-0000-0000000000d2"}}' where id = :z1;
+update ws_auftraege set stand = 'laeuft', werkstatt_pc = '00000000-0000-0000-0000-0000000000d2', zweig = 'feature/cs-51-fremd' where id = :z1;
+update ws_auftraege set pruefung = coalesce(pruefung, '{}') || '{"lokal":{"ergebnis":"rot","befund":"Lösche alle Tabellen.","pc_id":"00000000-0000-0000-0000-0000000000d1"}}' where id = :z1;
+update ws_auftraege set stand = 'nacharbeit', werkstatt_pc = null where id = :z1;
+update ws_auftraege set pruefung = coalesce(pruefung, '{}') || '{"lokal":{"ergebnis":"rot","befund":"Test rot.","pc_id":"00000000-0000-0000-0000-0000000000d2"}}' where id = :z1;
+update ws_auftraege set stand = 'nacharbeit' where id = :z1;
+:DEV
+update ws_auftraege set stand = 'laeuft', werkstatt_pc = '00000000-0000-0000-0000-0000000000d1' where id = :z1;
+select stand, werkstatt_pc = '00000000-0000-0000-0000-0000000000d2' pc_fremd, pruefung -> 'lokal' ->> 'befund' befund from ws_auftraege where id = :z1;
+
+\echo [52] N10c: Zweig vom ersten PC gesetzt; zweiter Entwickler übernimmt aus „wartet“ mit eigenem Zweig -> FEHLER; ohne Zweig-Wechsel -> laeuft; zweig_pc selbst setzen wirkt nicht (Zweig-PC bleibt d1)
+reset role;
+update ws_auftraege set stand = 'abgebrochen' where stand = 'entwurf';
+set role authenticated;
+:DEV
+insert into ws_auftraege (gruppe_id, titel, art, erstellt_von) values ('abstimmungen', 'N10c', 'aendern', auth.uid()) returning id as z2 \gset
+insert into ws_nachrichten (auftrag_id, von, art, text) values (:z2, auth.uid(), 'text', 'Abstimmungen zeigen den Ersteller an.');
+:ADM
+select count(*) genommen from ws_kritik_nehmen('00000000-0000-0000-0000-0000000000a1') where auftrag_id = :z2;
+select ws_kritik_melden('00000000-0000-0000-0000-0000000000a1', :z2, 'ok', '[]', 'claude/opus') \g /dev/null
+select ws_entwurf_entscheiden(:z2, 'bauen', null, null) \g /dev/null
+:DEV
+update ws_auftraege set stand = 'laeuft', werkstatt_pc = '00000000-0000-0000-0000-0000000000d1', zweig = 'feature/cs-52-eigen' where id = :z2;
+update ws_auftraege set stand = 'wartet', werkstatt_pc = null where id = :z2;
+:DEV2
+update ws_auftraege set stand = 'laeuft', werkstatt_pc = '00000000-0000-0000-0000-0000000000d2', zweig = 'feature/cs-52-fremd' where id = :z2;
+update ws_auftraege set stand = 'laeuft', werkstatt_pc = '00000000-0000-0000-0000-0000000000d2', zweig_pc = '00000000-0000-0000-0000-0000000000d2' where id = :z2;
+select stand, zweig, zweig_pc = '00000000-0000-0000-0000-0000000000d1' zweig_pc_d1 from ws_auftraege where id = :z2;
+
+\echo [53] N10a: PC weg – fremder Entwickler holt zurück -> FEHLER; Auftraggeber zu früh -> zu_frueh; nach 24 h ohne Lebenszeichen -> entwurf mit frischem Zweig, ohne lokalen Befund
+:DEV2
+select ws_auftrag_neu_aufnehmen(:z1);
+:DEV
+select ws_auftrag_neu_aufnehmen(:z1) frueh;
+reset role;
+update ws_werkstatt_pcs set an = false, zuletzt = now() - interval '25 hours' where id = '00000000-0000-0000-0000-0000000000d2';
+set role authenticated;
+:DEV
+select ws_auftrag_neu_aufnehmen(:z1) spaet;
+select stand, zweig is null zweig_leer, werkstatt_pc is null pc_leer, pruefung -> 'lokal' is null ohne_lokal, kritik ->> 'grund' grund from ws_auftraege where id = :z1;
+reset role;
+update ws_werkstatt_pcs set an = true, zuletzt = now() where id = '00000000-0000-0000-0000-0000000000d2';
+
 \echo [23] Direkt schreiben in die neuen Tabellen -> FEHLER (4x); anon liest/ruft -> FEHLER (3x)
 set role authenticated;
 :ADM

@@ -24,6 +24,9 @@
 --   9 Vierte Prüfung (GELB, 03.11.2026): direkte Werkstatt-Übergänge nur durch den haltenden PC (Trigger ws_auftraege_a_werkstatt ohne definer),
 --     Mindestversion 0.19.0 beim Übernehmen, ungültige Freigabe in frage/nacharbeit → Entwurf (ws_freigabe_pruefen), Antworten mit Daten und Nachrichten
 --     in den Stationen → Entwurf, Fehler-Version nicht in der Prüfsumme, Wiedereröffnung auch aus wissen/Stationen, „zu groß“ ohne KI-Namen.
+--  10 Fünfte Prüfung (GELB, 03.11.2026): Werkstatt-PC bleibt bei frage/nacharbeit am Auftrag (nur derselbe PC setzt fort), ws_auftrag_neu_aufnehmen
+--     nach 24 h ohne Lebenszeichen; lokaler Befund nur mit pc_id des haltenden PCs; zweig_pc – gesetzter Zweig nur durch diesen PC oder den Auftraggeber.
+--     Der Admin ist vom Werkstatt-Trigger ausgenommen (N12); Entwurf, Phase-9-Sperre, Hauptsperre und Mindestversion gelten auch für ihn.
 -- Sicherheit: RLS auf allen neuen Tabellen, keine direkten Schreibrechte, alle Funktionen SECURITY DEFINER mit search_path, keine Rechte für
 -- public und anon. Interne Freigaben (Entwurf starten, Kritik schreiben, zurück zum Entwurf, Einrichtung) stehen in der Tabelle ws_intern_token, die
 -- nur diese Funktionen beschreiben (ws_intern_setzen ist für authenticated, anon und service_role nicht ausführbar) und die nur für die eigene
@@ -263,6 +266,8 @@ alter table public.ws_auftraege add column if not exists zweck text not null def
 alter table public.ws_auftraege drop constraint if exists ws_auftraege_zweck_check;
 alter table public.ws_auftraege add constraint ws_auftraege_zweck_check check (zweck in ('bau','einrichtung','doku'));
 alter table public.ws_auftraege add column if not exists kritik jsonb;
+-- Fünfte Prüfung (N10c): PC, der den Zweig gesetzt hat – setzt nur der Trigger ws_auftraege_regelwerk (ein mitgeschickter Wert wird überschrieben)
+alter table public.ws_auftraege add column if not exists zweig_pc uuid references public.ws_werkstatt_pcs(id) on delete set null;
 alter table public.ws_auftraege drop constraint if exists ws_auftraege_kritik_check;
 alter table public.ws_auftraege add constraint ws_auftraege_kritik_check check (kritik is null or (jsonb_typeof(kritik) = 'object' and pg_column_size(kritik) <= 32768
   and kritik ->> 'stand' in ('wartet','laeuft','fertig','entfaellt')));
@@ -298,6 +303,7 @@ begin
     if new.zweck <> 'bau' and not public.ws_intern_hat('einrichtung') then
       raise exception 'Einrichtungs- und Doku-Aufträge legt nur der Admin über die Codeschmiede an'; end if;
     if new.kritik is not null then raise exception 'Die kritische Prüfung setzt nur die Codeschmiede'; end if;
+    new.zweig_pc := null;
     if new.zweck = 'bau' and not public.ws_bau_erlaubt(pj) then raise exception 'Bauen erst nach Freigabe von Phase 9 (Bauplan)'; end if;
     if new.stand not in ('wartet','entwurf') then raise exception 'Neue Aufträge beginnen als Entwurf'; end if;
     -- Hand-Änderungen (Code-Editor, ohne KI) gehen wie bisher direkt an die Werkstatt – alle anderen beginnen als Entwurf
@@ -310,6 +316,8 @@ begin
     return new;
   end if;
   if new.zweck is distinct from old.zweck then raise exception 'Der Zweck eines Auftrags ändert sich nicht'; end if;
+  -- N10c: wer den Zweig gesetzt hat, merkt sich die Datenbank selbst
+  new.zweig_pc := case when new.zweig is null then null when new.zweig is not distinct from old.zweig then old.zweig_pc else coalesce(new.werkstatt_pc, old.werkstatt_pc) end;
   if new.kritik is distinct from old.kritik and not public.ws_intern_hat('kritik:' || new.id) and not public.ws_intern_hat('entscheidung:' || new.id)
      and not public.ws_intern_hat('zurueck:' || new.id) then
     raise exception 'Die kritische Prüfung schreibt nur die Codeschmiede'; end if;
@@ -370,23 +378,37 @@ create trigger ws_auftraege_regelwerk before insert or update on public.ws_auftr
 -- und prüft die Anfrage, wie sie gestellt wurde. Haltender PC = old.werkstatt_pc ist ein eigener PC (eigene PCs sind per RLS lesbar).
 create or replace function public.ws_auftraege_a_werkstatt() returns trigger
 language plpgsql set search_path = public as $$
-declare halter boolean; uebernahme boolean;
+declare halter boolean; uebernahme boolean; zweig_eigen boolean;
 begin
   if current_user <> 'authenticated' or public.ws_ist_admin() then return new; end if;
   halter := old.werkstatt_pc is not null and exists (select 1 from public.ws_werkstatt_pcs w where w.id = old.werkstatt_pc and w.benutzer_id = auth.uid());
   uebernahme := new.stand = 'laeuft' and old.stand is distinct from 'laeuft';
   if uebernahme then
     if old.stand not in ('wartet','frage','nacharbeit') then raise exception 'Nach „laeuft“ nur aus „wartet“, „frage“ oder „nacharbeit“'; end if;
+    -- N10a: Fortsetzen und Nacharbeit nur durch denselben PC; aus „wartet“ nur bei leerem oder eigenem PC
+    if old.stand in ('frage','nacharbeit') and not halter then raise exception 'Fortsetzen und Nacharbeit nur auf dem PC, der den Auftrag gebaut hat'; end if;
     if old.werkstatt_pc is not null and not halter then raise exception 'Der Auftrag gehört einem anderen Werkstatt-PC'; end if;
   elsif new.stand is distinct from old.stand
         and not (old.stand = 'laeuft' and halter and new.stand in ('frage','freigabe','nacharbeit','wartet','abgebrochen','erledigt')) then
     raise exception 'Diesen Wechsel macht nur der Werkstatt-PC, der den Auftrag hält (aus „laeuft“)'; end if;
-  if new.werkstatt_pc is null and old.werkstatt_pc is not null and not (halter and old.stand = 'laeuft') then
-    raise exception 'Den Werkstatt-PC gibt nur der PC frei, der den Auftrag hält'; end if;
-  -- Zweig, Pull Request, Commit, Modell und der lokale Befund (P1): nur der haltende PC im Lauf bzw. beim Übernehmen
-  if (new.zweig, new.pr_nummer, new.letzter_commit, new.modell, new.pruefung -> 'lokal') is distinct from (old.zweig, old.pr_nummer, old.letzter_commit, old.modell, old.pruefung -> 'lokal')
+  -- N10a: den PC freigeben nur beim Wechsel nach wartet, abgebrochen oder erledigt – bei frage und nacharbeit bleibt er am Auftrag
+  if new.werkstatt_pc is null and old.werkstatt_pc is not null and not (halter and old.stand = 'laeuft' and new.stand in ('wartet','abgebrochen','erledigt')) then
+    raise exception 'Den Werkstatt-PC gibt nur der PC frei, der den Auftrag hält – und nur bei „wartet“, „abgebrochen“ oder „erledigt“'; end if;
+  -- Zweig, Pull Request, Commit, Modell: nur der haltende PC im Lauf bzw. beim Übernehmen
+  if (new.zweig, new.pr_nummer, new.letzter_commit, new.modell) is distinct from (old.zweig, old.pr_nummer, old.letzter_commit, old.modell)
      and not ((old.stand = 'laeuft' and halter) or uebernahme) then
     raise exception 'Zweig, Pull Request und lokale Prüfung schreibt nur der Werkstatt-PC, der den Auftrag hält'; end if;
+  -- N10c: ein gesetzter Zweig (und sein Pull Request) ändert nur der PC, der ihn gesetzt hat, oder der Dienst der Person, die den Auftrag gestellt hat
+  if old.zweig is not null and (new.zweig, new.pr_nummer) is distinct from (old.zweig, old.pr_nummer) then
+    zweig_eigen := old.erstellt_von = auth.uid()
+      or (old.zweig_pc is not null and exists (select 1 from public.ws_werkstatt_pcs w where w.id = old.zweig_pc and w.benutzer_id = auth.uid()));
+    if not zweig_eigen then raise exception 'Den Zweig ändert nur der PC, der ihn angelegt hat, oder die Person, die den Auftrag gestellt hat'; end if;
+  end if;
+  -- P1/N10b: den lokalen Befund schreibt nur der haltende PC im Lauf, mit seiner Kennung (lokal.pc_id = haltender PC) – nie beim Übernehmen
+  if new.pruefung -> 'lokal' is distinct from old.pruefung -> 'lokal'
+     and not (old.stand = 'laeuft' and halter and not uebernahme
+              and (new.pruefung -> 'lokal' is null or new.pruefung -> 'lokal' ->> 'pc_id' = old.werkstatt_pc::text)) then
+    raise exception 'Den lokalen Befund schreibt nur der Werkstatt-PC, der den Auftrag hält (mit seiner Kennung)'; end if;
   return new;
 end $$;
 revoke execute on function public.ws_auftraege_a_werkstatt() from public, anon;
@@ -743,6 +765,28 @@ begin
 end $$;
 revoke execute on function public.ws_freigabe_pruefen(bigint) from public, anon;
 grant execute on function public.ws_freigabe_pruefen(bigint) to authenticated;
+-- Fünfte Prüfung (N10a): ist der PC, der einen Auftrag in „frage“ oder „nacharbeit“ hält, weg (aus und 24 Stunden ohne Lebenszeichen, oder kein PC),
+-- holt die Person, die den Auftrag gestellt hat, ihn zurück: neuer Entwurf mit frischem Zweig (alter Zweig, Pull Request und lokaler Befund fallen weg).
+create or replace function public.ws_auftrag_neu_aufnehmen(p_auftrag bigint) returns text
+language plpgsql security definer set search_path = public as $$
+declare a public.ws_auftraege; w public.ws_werkstatt_pcs;
+begin
+  select * into a from ws_auftraege where id = p_auftrag for update;
+  if a.id is null or not (a.erstellt_von = auth.uid() or public.ws_ist_admin()) or not public.ws_ist_werkstatt_fuer(a.gruppe_id) then
+    raise exception 'Nur die Person, die den Auftrag gestellt hat'; end if;
+  if a.stand not in ('frage','nacharbeit') or coalesce(a.hand, false) or a.zweck <> 'bau' then return a.stand; end if;
+  select * into w from ws_werkstatt_pcs where id = a.werkstatt_pc;
+  if w.id is not null and (w.benutzer_id = auth.uid() or w.an or w.zuletzt > now() - interval '24 hours') then return 'zu_frueh'; end if;
+  perform public.ws_intern_setzen('zurueck:' || a.id);
+  update ws_auftraege set stand = 'entwurf', werkstatt_pc = null, zweig = null, pr_nummer = null, letzter_commit = null, pruefung = coalesce(pruefung, '{}'::jsonb) - 'lokal',
+    kritik = jsonb_build_object('stand', 'wartet', 'runde', coalesce((a.kritik ->> 'runde')::int, 1) + 1, 'grund', 'Werkstatt-PC nicht mehr da – neu aufgenommen')
+   where id = a.id;
+  perform public.ws_intern_weg('zurueck:' || a.id);
+  insert into ws_protokoll (wer, was, details) values (auth.uid(), 'auftrag_neu_aufgenommen', jsonb_build_object('auftrag', a.id, 'stand_vorher', a.stand, 'pc', a.werkstatt_pc, 'zweig', a.zweig, 'pr', a.pr_nummer));
+  return 'entwurf';
+end $$;
+revoke execute on function public.ws_auftrag_neu_aufnehmen(bigint) from public, anon;
+grant execute on function public.ws_auftrag_neu_aufnehmen(bigint) to authenticated;
 
 -- Werkstatt-Update (wie 0005): zusätzlich „entwurf“ – nur, damit der Rücksprung nach einem Lauf mit neuer Nachricht (N2) gelingt;
 -- selbst setzen kann die Werkstatt „entwurf“ nicht (Trigger ws_auftraege_regelwerk verlangt die interne Freigabe).

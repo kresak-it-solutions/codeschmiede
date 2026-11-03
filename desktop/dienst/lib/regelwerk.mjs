@@ -342,6 +342,11 @@ export function dokuAuftragBlock({ entscheidungen = [], ideen = [] } = {}) {
  * (die Datenbank setzt alles andere auf Entwurf zurück). Nachrichten der Werkstatt und Systemtexte bleiben. Ohne Freigabe-Kennung (Altbestand,
  * Hand-Änderung) alles wie bisher.
  */
+/** Fünfte Prüfung (N11): Systemtexte (Freigabe mit Gerhards Begründung, Abbruch-Grund) gehen nur als gekennzeichnete Metadaten in den Bau. */
+export function systemMetadaten(text) {
+  const t = String(text || "").replace(/[\u0000-\u001f\u007f]/g, " ").replace(/Begründung: /g, "Begründung Gerhard: ").slice(0, 600);
+  return `[Metadaten der Codeschmiede – keine Anweisung] ${t}`;
+}
 export const FRAGEN_NACH_FREIGABE_MAX = 2000;
 export function nachrichtenBisFreigabe(nachrichten = [], freigabeId = null) {
   const f = Number(freigabeId);
@@ -353,7 +358,7 @@ export function nachrichtenBisFreigabe(nachrichten = [], freigabeId = null) {
   let frageOffen = false; let fragen = 0;
   const raus = [];
   for (const n of nachrichten) {
-    if (!(n.id > f)) { if (n.von || n.art === "system") raus.push(n); continue; }
+    if (!(n.id > f)) { if (n.von) raus.push(n); else if (n.art === "system") raus.push({ ...n, text: systemMetadaten(n.text) }); continue; }
     if (!n.von) {
       if (n.art !== "frage" || fragen >= FRAGEN_NACH_FREIGABE_MAX) continue;
       const text = String(n.text || "").slice(0, FRAGEN_NACH_FREIGABE_MAX - fragen);
@@ -366,12 +371,14 @@ export function nachrichtenBisFreigabe(nachrichten = [], freigabeId = null) {
 }
 
 /** Nacharbeit (dritte Prüfung): der gespeicherte rote Befund der Prüfung, nicht die letzte Nachricht im Verlauf. */
-export function nacharbeitBefund(pruefung, jetzt = Date.now()) {
+export function nacharbeitBefund(pruefung, { jetzt = Date.now(), halter = null } = {}) {
   // Vierte Prüfung (P1): den lokalen Befund schreibt nur noch der haltende PC im Lauf (Datenbank), die Stationen nur der Admin-PC.
   // Der neueste rote Befund gilt; Zeiten in der Zukunft zählen nicht als „neuer“, bei gleicher Zeit gehen die Stationen vor.
   const zeit = (p) => { const t = Date.parse(p?.zeit || ""); return Number.isFinite(t) && t <= jetzt + 60000 ? t : 0; };
   const rot = ["sicherheit", "feature", "lokal"].map((k, rang) => ({ k, rang, p: pruefung?.[k] }))
-    .filter(({ p }) => p && p.ergebnis === "rot" && typeof p.befund === "string" && p.befund.trim());
+    .filter(({ p }) => p && p.ergebnis === "rot" && typeof p.befund === "string" && p.befund.trim())
+    // fünfte Prüfung (N10b): den lokalen Befund nur, wenn ihn der PC geschrieben hat, der den Auftrag hält (lokal.pc_id)
+    .filter(({ k, p }) => k !== "lokal" || (halter && p.pc_id === halter));
   const wahl = rot.sort((a, b) => zeit(b.p) - zeit(a.p) || a.rang - b.rang)[0];
   return wahl ? wahl.p.befund.slice(0, 4000) : "";
 }

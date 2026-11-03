@@ -702,9 +702,9 @@ async function fuehreAus(auftrag, { fortsetzen = false, nacharbeit = false } = {
     let prompt = fremd
       // Fremde Werkzeuge: immer der ganze Auftrag mit Verlauf (keine Sitzung zum Fortsetzen); Commit/PR macht die Werkstatt
       ? [werkzeugVorspann(werkzeug), auftragstext(auftrag, projekt, gruppe, feature, nachrichten, zweig, (count || 0) === 0 && projekt.id !== "trainer-to-go", await vorlagenFuer(feature), await holeWissen(projekt.id), [await fehlerDatenFuer(nachrichten, projekt.id), await bausteinDatenFuer(auftrag, nachrichten, projekt.id, ordner), await aufgabeDatenFuer(auftrag, nachrichten, projekt.id, ordner)].filter(Boolean).join("\n"), { fremd: true, doku: doku.block }),
-          nacharbeit ? `Nacharbeit aus der Prüfung (nichts ist live gegangen):\n${nacharbeitBefund(auftrag.pruefung)}\nBehebe die Befunde in diesem Ordner.` : ""].filter(Boolean).join("\n\n")
+          nacharbeit ? `Nacharbeit aus der Prüfung (nichts ist live gegangen):\n${nacharbeitBefund(auftrag.pruefung, { halter: auftrag.werkstatt_pc })}\nBehebe die Befunde in diesem Ordner.` : ""].filter(Boolean).join("\n\n")
       : nacharbeit
-      ? `Nacharbeit aus der Prüfung (nichts ist live gegangen):\n${nacharbeitBefund(auftrag.pruefung)}\n\nBehebe die Befunde auf demselben Zweig ${zweig} (keine Prüfungen auf diesem PC ausführen – sie laufen in GitHub), committe, \`git push origin HEAD\` und antworte wieder mit „ERGEBNIS-PR: #${auftrag.pr_nummer || "<Nummer>"} ${zweig}“ (denselben Pull Request weiterverwenden).${doku.block ? `\n\n${doku.block}` : ""}\n${NICHT_GETESTET_PFLICHT}`
+      ? `Nacharbeit aus der Prüfung (nichts ist live gegangen):\n${nacharbeitBefund(auftrag.pruefung, { halter: auftrag.werkstatt_pc })}\n\nBehebe die Befunde auf demselben Zweig ${zweig} (keine Prüfungen auf diesem PC ausführen – sie laufen in GitHub), committe, \`git push origin HEAD\` und antworte wieder mit „ERGEBNIS-PR: #${auftrag.pr_nummer || "<Nummer>"} ${zweig}“ (denselben Pull Request weiterverwenden).${doku.block ? `\n\n${doku.block}` : ""}\n${NICHT_GETESTET_PFLICHT}`
       : fortsetzen && merk.sitzung
       // Anhänge wurden nach dem letzten Lauf gelöscht – für die Fortsetzung neu bereitstellen (Prüfung N5)
       ? [`Antwort von Gerhard/Team auf deine Rückfrage:\n${nachrichten.filter((n) => n.von).slice(-1)[0]?.text || ""}\n\nArbeite weiter nach denselben Regeln.`,
@@ -849,7 +849,7 @@ async function fuehreAus(auftrag, { fortsetzen = false, nacharbeit = false } = {
       const { data: jetzt } = await db.from("ws_auftraege").select("pruefung").eq("id", auftrag.id).single();
       const dokuVersuche = Number(jetzt?.pruefung?.lokal?.doku_versuche || 0) + (dokuErg && !dokuErg.ok ? 1 : 0);
       const lokal = dokuErg && !dokuErg.ok ? { ok: false, text: dokuErg.text } : { ok: true, text: dokuErg?.hinweis ? `${ohneTest} · ${dokuErg.text}` : ohneTest };
-      const pruefung = { ...(jetzt?.pruefung || {}), lokal: { ergebnis: lokal.ok ? "gruen" : "rot", befund: kuerzen(lokal.text, 1500), zeit: new Date().toISOString(), pc: cfg.pc_name, doku_versuche: dokuVersuche } };
+      const pruefung = { ...(jetzt?.pruefung || {}), lokal: { ergebnis: lokal.ok ? "gruen" : "rot", befund: kuerzen(lokal.text, 1500), zeit: new Date().toISOString(), pc: cfg.pc_name, pc_id: pcId, doku_versuche: dokuVersuche } };
       if (lokal.ok) {
         await db.from("ws_auftraege").update({ stand: "freigabe", pr_nummer: r.nummer, zweig, letzter_commit: commit, pruefung }).eq("id", auftrag.id);
         await log(auftrag.id, "test", lokal.text);
@@ -3548,7 +3548,15 @@ async function naechsterAuftrag() {
   // Nur der PC, der den Auftrag gebaut hat (bzw. die Person, die ihn gestellt hat) – nie fremden Code auf anderen PCs (Prüfung O1)
   const { data: nach } = await db.from("ws_auftraege").select("*").eq("stand", "nacharbeit").order("id").limit(10);
   for (const a of nach || []) {
-    if (!(pcIds.includes(a.werkstatt_pc) || a.erstellt_von === cfg.user_id)) continue;
+    // fünfte Prüfung (N10a): Nacharbeit nur auf dem PC, der gebaut hat. Ist er weg, holt der Dienst der Person, die den Auftrag gestellt hat,
+    // ihn als neuen Entwurf zurück (die Datenbank prüft die Zeitgrenze: 24 Stunden ohne Lebenszeichen)
+    if (!pcIds.includes(a.werkstatt_pc)) {
+      if (a.erstellt_von === cfg.user_id) {
+        const { data: neu } = await db.rpc("ws_auftrag_neu_aufnehmen", { p_auftrag: a.id }).then((x) => x, () => ({}));
+        if (neu === "entwurf") { await log(a.id, "info", "Werkstatt-PC nicht mehr da – Auftrag als neuer Entwurf aufgenommen (frischer Zweig)"); melde("status", "Auftrag als neuer Entwurf aufgenommen", a.id); }
+      }
+      continue;
+    }
     const { data: darf } = await db.rpc("ws_ist_werkstatt_fuer", { p_gruppe: a.gruppe_id });
     if (!darf) continue;
     const wzN = !a.hand && werkzeugOk(a.werkzeug) ? a.werkzeug : "claude-code";
