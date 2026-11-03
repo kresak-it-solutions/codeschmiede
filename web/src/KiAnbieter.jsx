@@ -49,9 +49,10 @@ const AUFGABEN = [
   ["texte", "Texte & Übersetzungen", "wird genutzt, sobald Text-Aufträge getrennt laufen (Etappe 4)"],
   ["bilder", "Bilder & Grafiken", "wird mit Etappe 5 (Marke, Logo) genutzt; nur Anbieter, die Bilder erzeugen können"],
   ["bauen", "Programmieren", "ein Werkzeug je Projekt (seit 0.14.0): Claude Code, Codex, Gemini CLI oder OpenCode – verpflichtend, kein Einspringen"],
+  ["kritik", "Kritische Prüfung der Entwürfe", "seit 0.19.0: prüft jeden Entwurf vor dem Bauen gegen Gerhards Regeln – verpflichtend, kein Ausweichen; am besten ein anderer Anbieter als fürs Programmieren"],
 ];
 // Ohne Admin-Einstellung gilt nur Claude (Prüfung M5). VORSCHLAG = Entwurf 1.2 zum Übernehmen.
-const STANDARD = Object.fromEntries(["chat", "konzept", "design", "pruefung", "doku", "texte", "bilder", "bauen"].map((a) => [a, [{ anbieter: "claude", ...({ konzept: { modell: "opus" }, pruefung: { modell: "opus" }, texte: { modell: "haiku" } }[a] || {}) }]]));
+const STANDARD = Object.fromEntries(["chat", "konzept", "design", "pruefung", "doku", "texte", "bilder", "bauen", "kritik"].map((a) => [a, [{ anbieter: "claude", ...({ konzept: { modell: "opus" }, pruefung: { modell: "opus" }, texte: { modell: "haiku" }, kritik: { modell: "opus" } }[a] || {}) }]]));
 // Vorschläge: je Zuständigkeit die 3 ehrlich besten Anbieter (Gerhard 2026-10-23 22:54 „ernst gemeint, 100 % ehrlich, immer 3“).
 // Grundlage Stand 23.10.2026: LMArena (WebDev, Text, Bild), Artificial Analysis Intelligence Index, LiveBench – siehe GRUND.
 // Reihenfolge = wer zuerst drankommt – nur innerhalb der eingestellten Liste (verpflichtend, kein Ausweichen, 0.13.1). Bauen nur Claude Code.

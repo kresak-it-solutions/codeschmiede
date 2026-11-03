@@ -19,6 +19,8 @@ import { ChatKopf, ChatNachricht, ChatEingabe } from "../bausteine/chat";
 import { Leerzustand } from "../bausteine/zustand";
 import { StatusPunkt, useFeatureStatus } from "./Arbeitsplatz";
 import { usePunkte } from "../daten/punkte";
+import { Phasenleiste } from "./Phasen";
+import { EntwurfKarte } from "../Entwurf";
 
 // ---------------- Zentrale ----------------
 // nurGlobal: Ansicht „Globale Einstellungen“ (Anweisung Gerhard 2026-10-23 10:20) – Bereich, der in der App nie als eigener Bereich erscheint;
@@ -99,6 +101,7 @@ export function Zentrale({ d: alle, ich, toast, nurGlobal = false, onDesigner, s
   } : {};
   const globalGruppe = alle.gruppen.find((x) => alle.bereiche.find((b) => b.id === x.bereich_id)?.global);
   const fragen = d.auftraege.filter((a) => a.offeneFrage).length;
+  const entwuerfe = d.auftraege.filter((a) => a.stand === "entwurf").length;   // 0.19.0: Entwürfe warten auf kritische Prüfung bzw. „Bauen“
   if (!g) return <div className={`${card} p-8 text-slate-500`}>{nurGlobal ? "Für dieses Projekt gibt es noch keine globalen Einstellungen (Datenbank 0009 einspielen)." : "Noch keine Gruppen angelegt."}</div>;
   const platzF = platz ? d.features.find((x) => x.id === platz) : null;
   const platzG = platzF ? d.gruppen.find((x) => x.id === platzF.gruppe_id) : null;
@@ -108,11 +111,13 @@ export function Zentrale({ d: alle, ich, toast, nurGlobal = false, onDesigner, s
   return (
     <>
       {!nurGlobal && <AufbauBanner d={alle} ich={ich} offen={alle.aufbau || []} toast={toast} onFertig={() => alle.holen?.()} />}
+      {!nurGlobal && <Phasenleiste projekt={alle.projekte.find((p) => p.id === alle.projektId)} ich={ich} toast={toast} onGeaendert={() => alle.holen?.()} />}
       {nurGlobal && onKi && <div className={`${card} mb-4 px-3 py-2 flex flex-wrap items-center gap-2 text-sm`} role="note">
         <Globe className="w-4 h-4 text-emerald-700" /><span><b>KI-Anbieter</b> gelten global für alle Projekte (seit 0.18.0).</span>
         <button type="button" className={`${ghost} ml-auto`} onClick={onKi}>Globale Einstellungen › KI-Anbieter</button></div>}
       <div className="flex flex-wrap gap-1.5 mb-4" role="toolbar" aria-label="Weg eines Auftrags">
         {fragen > 0 && <button type="button" aria-pressed={station === "frage"} onClick={() => { setStation(station === "frage" ? null : "frage"); setPlatz(null); }} className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-sm font-semibold bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-200 ${station === "frage" ? "ring-2 ring-amber-500" : ""}`}><i className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />{fragen} Rückfrage{fragen > 1 ? "n" : ""} an dich</button>}
+        {entwuerfe > 0 && <button type="button" aria-pressed={station === "entwurf"} onClick={() => { setStation(station === "entwurf" ? null : "entwurf"); setPlatz(null); }} className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-sm font-semibold border border-dashed border-emerald-600 text-emerald-800 dark:text-emerald-300 ${station === "entwurf" ? "ring-2 ring-emerald-500" : ""}`}>{entwuerfe} Entwurf{entwuerfe > 1 ? "e" : ""} prüfen</button>}
         {STEPS.map(([s, t], i) => {
           const z = d.auftraege.filter((a) => STEP_IDX[a.stand] === i && (s !== "wissen" || a.stand === "wissen") && a.stand !== "frage").length;
           const handeln = ["freigabe", "zusammen"].includes(s) && z > 0;
@@ -123,7 +128,7 @@ export function Zentrale({ d: alle, ich, toast, nurGlobal = false, onDesigner, s
             </button>);
         })}
       </div>
-      {station ? <StationsUebersicht station={station} d={d} darf={darf} toast={toast} onSchliessen={() => setStation(null)} onOeffne={(fid) => { setStation(null); setPlatz(fid); }} onGruppe={(gid) => { setStation(null); setSel({ g: gid, f: null }); }} />
+      {station ? <StationsUebersicht station={station} d={d} ich={ich} darf={darf} toast={toast} onSchliessen={() => setStation(null)} onOeffne={(fid) => { setStation(null); setPlatz(fid); }} onGruppe={(gid) => { setStation(null); setSel({ g: gid, f: null }); }} />
       : platzF ? <FeatureArbeitsplatz key={platzF.id} f={platzF} g={platzG} d={d} ich={ich} darf={darf} toast={toast} onZurueck={() => setPlatz(null)} onLoeschen={() => setDlg({ art: "loeschen", f: platzF })}
           punkteDaten={punkteDaten} onFeature={(fid) => setPlatz(fid)} onCode={onCode} />
       : <div className="grid gap-5 grid-cols-[minmax(0,1fr)] lg:grid-cols-[280px_minmax(0,1fr)] xl:grid-cols-[280px_minmax(0,1fr)_400px] items-start">
@@ -193,7 +198,7 @@ export function Zentrale({ d: alle, ich, toast, nurGlobal = false, onDesigner, s
                   {x.beschreibung && <p className="text-[13px] text-slate-500 line-clamp-2">{x.beschreibung}</p>}
                   <div className="mt-auto text-xs text-slate-500 flex items-center gap-1.5">
                     {arbeitet ? <span className="inline-flex items-center gap-1.5 font-semibold text-blue-600"><i className="w-2 h-2 rounded-full bg-blue-600 animate-pulse" />Hier wird gerade gearbeitet</span>
-                      : js.length ? <span>Auftrag #{js[js.length - 1].id}: {STEPS[STEP_IDX[js[js.length - 1].stand]]?.[1]}</span> : <><MessageSquare className="w-3.5 h-3.5" />Auftrag geben</>}
+                      : js.length ? <span>Auftrag #{js[js.length - 1].id}: {js[js.length - 1].stand === "entwurf" ? "Entwurf" : STEPS[STEP_IDX[js[js.length - 1].stand]]?.[1]}</span> : <><MessageSquare className="w-3.5 h-3.5" />Auftrag geben</>}
                     {stundenGesamt(x) > 0 && <span className="ml-auto text-xs tabular-nums text-slate-500" title="Programmierstunden (geschätzt + gemessen)">{stundenGesamt(x).toLocaleString("de-AT")} h</span>}
                     <span className={`${stundenGesamt(x) > 0 ? "" : "ml-auto "}font-mono text-xs text-slate-400`}>{x.id}</span>
                   </div>
@@ -271,7 +276,7 @@ export function AuftragsChat({ g, f, d, ich, darf, toast, onLoeschen, kanal = "c
         const { data, error } = await supabase.from("ws_auftraege").insert({ gruppe_id: g.id, feature_id: f?.id || null, titel: t.length > 80 ? t.slice(0, 78) + "…" : t, art: istTexter ? "text" : "aendern", erstellt_von: ich.id, baustein: baustein || null }).select().single();
         if (error) throw error;
         const r = await supabase.from("ws_nachrichten").insert({ auftrag_id: data.id, von: ich.id, art: "text", text: bausteinText(t), kanal });
-        if (r.error) throw r.error; toast(`Auftrag #${data.id} an Werkstatt ${g.name} gestellt`);
+        if (r.error) throw r.error; toast(data.hand ? `Auftrag #${data.id} an Werkstatt ${g.name} gestellt` : `Entwurf #${data.id} angelegt – eine zweite KI prüft ihn, dann „Bauen“`);
       }
       // @Feature im Text = fester Bezug „Vorlage“ für dieses Feature (Entscheidung 2026-10-22 22:31)
       if (f) for (const x of erwaehnte(t, d.features).filter((x) => x.id !== f.id)) {
@@ -290,7 +295,7 @@ export function AuftragsChat({ g, f, d, ich, darf, toast, onLoeschen, kanal = "c
     try {
       const { data, error } = await supabase.rpc("ws_punkt_weiterarbeiten", { p_aufgabe: punkt.id, p_text: text.trim() || null });
       if (error) throw error;
-      setText(""); toast(`Auftrag #${data} zu „${punkt.titel}“ an Werkstatt ${g.name} gestellt`); await d.holen?.(); onPunktFertig?.(data);
+      setText(""); toast(`Entwurf #${data} zu „${punkt.titel}“ angelegt – kritische Prüfung folgt, dann „Bauen“`); await d.holen?.(); onPunktFertig?.(data);
     } catch (e) { toast(fehler(e)); } finally { setBusy(false); }
   };
   const freigeben = async (a) => { const { error } = await supabase.rpc("ws_freigeben", { p_auftrag: a.id }); toast(error ? fehler(error) : `Auftrag #${a.id} freigegeben – Sicherheitsprüfung startet`); };
@@ -328,6 +333,7 @@ export function AuftragsChat({ g, f, d, ich, darf, toast, onLoeschen, kanal = "c
             <React.Fragment key={a.id}>
               <div className="self-center text-xs text-slate-500 text-center flex items-center gap-2 flex-wrap justify-center">Auftrag #{a.id}: {a.titel}{ABGESCHLOSSEN.includes(a.stand) && <span className="inline-flex items-center gap-1 font-semibold text-green-700 dark:text-green-400"><CircleCheck className="w-3.5 h-3.5" />abgeschlossen</span>}
                 {ABBRECHBAR.includes(a.stand) && (ich.rolle === "admin" || a.erstellt_von === ich.id) && <AbbrechenKnopf a={a} toast={toast} />}</div>
+              {a.stand === "entwurf" && <EntwurfKarte a={a} ich={ich} kann={kannAuftrag && (a.erstellt_von === ich.id || ich.rolle === "admin")} toast={toast} onFertig={() => d.holen?.()} />}
               <Schritte a={a} />
               {nachrichten.filter((m) => m.auftrag_id === a.id && (alleFragen || !beantwortet(m))).map((m) => {
                 const zu = beantwortet(m);
@@ -484,8 +490,8 @@ export function FeatureKurzinfo({ f, g, d, ich, toast, darfAuftrag, onOeffnen, o
 }
 
 // ---------------- Stationen-Übersicht (Klick auf eine Station oben) ----------------
-export function StationsUebersicht({ station, d, darf, toast, onSchliessen, onOeffne, onGruppe }) {
-  const name = station === "frage" ? "Rückfragen an dich" : STEPS.find((s) => s[0] === station)?.[1];
+export function StationsUebersicht({ station, d, ich, darf, toast, onSchliessen, onOeffne, onGruppe }) {
+  const name = station === "frage" ? "Rückfragen an dich" : station === "entwurf" ? "Entwürfe" : STEPS.find((s) => s[0] === station)?.[1];
   const liste = d.auftraege.filter((a) => (station === "frage" ? a.offeneFrage : station === "laeuft" ? ["laeuft", "nacharbeit"].includes(a.stand) : a.stand === station));
   const [busy, setBusy] = useState(false);
   const gruppeVon = (a) => d.gruppen.find((x) => x.id === a.gruppe_id);
@@ -500,7 +506,7 @@ export function StationsUebersicht({ station, d, darf, toast, onSchliessen, onOe
   };
   const proFeature = {};
   liste.forEach((a) => { const k = a.feature_id || `gruppe:${a.gruppe_id}`; (proFeature[k] = proFeature[k] || []).push(a); });
-  const erklaerung = { frage: "Die Werkstatt wartet auf deine Antwort – Arbeitsplatz öffnen und antworten.", wartet: "Warten auf einen freien Werkstatt-PC.", laeuft: "Die Werkstatt arbeitet (inkl. Nacharbeit nach roter Prüfung).", freigabe: "Bauen & Tests am PC sind gelaufen – deine Freigabe startet die Sicherheitsprüfung.", sicherheit: "Läuft automatisch auf dem Admin-PC.", zusammen: "Sicherheitsprüfung grün – Zusammenführen startet die Prüfung des ganzen Features, danach live.", feature: "Testfassung mit neuestem Stand wird geprüft, bei Grün automatisch live.", wissen: "Live geschaltet und in der Wissensdatenbank." }[station];
+  const erklaerung = { entwurf: "Eine zweite KI prüft jeden Entwurf kritisch gegen die Regeln – danach entscheidest du „Bauen“ oder „Ändern“.", frage: "Die Werkstatt wartet auf deine Antwort – Arbeitsplatz öffnen und antworten.", wartet: "Warten auf einen freien Werkstatt-PC.", laeuft: "Die Werkstatt arbeitet (inkl. Nacharbeit nach roter Prüfung).", freigabe: "Bauen & Tests am PC sind gelaufen – deine Freigabe startet die Sicherheitsprüfung.", sicherheit: "Läuft automatisch auf dem Admin-PC.", zusammen: "Sicherheitsprüfung grün – Zusammenführen startet die Prüfung des ganzen Features, danach live.", feature: "Testfassung mit neuestem Stand wird geprüft, bei Grün automatisch live.", wissen: "Live geschaltet und in der Wissensdatenbank." }[station];
   return (
     <section className={`${card} p-4 flex flex-col gap-4`} aria-label={`Station ${name}`}>
       <div className="flex flex-wrap items-center gap-3">
@@ -525,6 +531,7 @@ export function StationsUebersicht({ station, d, darf, toast, onSchliessen, onOe
               return (
                 <div key={a.id} className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 items-center px-3 py-2.5 border-t border-slate-200 dark:border-slate-800">
                   <div className="min-w-0"><div className="font-semibold text-sm">#{a.id} {a.titel}</div>
+                    {station === "entwurf" && <div className="mt-1.5"><EntwurfKarte a={a} ich={ich} kann={darf(gruppeVon(a)?.bereich_id, "auftraege") && (a.erstellt_von === ich?.id || ich?.rolle === "admin")} toast={toast} onFertig={() => d.holen?.()} /></div>}
                     <div className="text-xs text-slate-500 flex gap-2 flex-wrap">{a.pr_nummer && <span className="inline-flex items-center gap-1"><GitPullRequest className="w-3 h-3" />PR #{a.pr_nummer}</span>}
                       {a.werkzeug && <span className="rounded-full border border-slate-300 dark:border-slate-700 px-2 font-semibold">Programmiert mit {werkzeugName(a.werkzeug)}</span>}
                       {a.stand === "wartet" && a.wartet_auf && <span className="rounded-full border border-amber-500 text-amber-700 dark:text-amber-300 px-2 font-semibold">{a.wartet_auf}</span>}

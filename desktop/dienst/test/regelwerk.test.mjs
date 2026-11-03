@@ -224,3 +224,20 @@ test("Einlesen: Phasen-Vorschlag der KI wird gelesen, die Gruppen bleiben auswer
   assert.equal(phaseAusAntwort('PHASE: {"phase":13}'), null); assert.equal(phaseAusAntwort('PHASE: {"phase":"2"}'), null); assert.equal(phaseAusAntwort("nichts"), null);
   assert.equal(phaseAusAntwort('PHASE: {"phase":3,"grund":"<script>\\u0007"}').grund.includes("<"), false);
 });
+
+test("Oberfläche: Phasen-Liste in web/src/daten/regelwerk.js ist dieselbe wie im Dienst; Entwurf, Phasenleiste und Lampen eingebunden", async () => {
+  const w = await readFile(new URL("../../../web/src/daten/regelwerk.js", import.meta.url), "utf8");
+  const roh = w.slice(w.indexOf("export const PHASEN = [") + "export const PHASEN = ".length, w.indexOf("];", w.indexOf("export const PHASEN = [")) + 1);
+  assert.deepEqual(Function(`return ${roh}`)(), PHASEN);
+  assert.ok(w.includes(BAU_GESPERRT));
+  const z = await readFile(new URL("../../../web/src/seiten/Zentrale.jsx", import.meta.url), "utf8");
+  assert.match(z, /<Phasenleiste projekt=/); assert.match(z, /a\.stand === "entwurf" && <EntwurfKarte/);
+  const p = await readFile(new URL("../../../web/src/seiten/Phasen.jsx", import.meta.url), "utf8");
+  for (const f of ["ws_phase_freigeben", "ws_phasen_kurzfassung", "ws_phase_vorschlag_bestaetigen", "ws_abweichung_bestaetigen", "ws_idee_anlegen"]) assert.ok(p.includes(f), f);
+  const e = await readFile(new URL("../../../web/src/Entwurf.jsx", import.meta.url), "utf8");
+  assert.match(e, /ws_entwurf_entscheiden/); assert.match(e, /Bauen trotz Einwänden entscheidet nur der Admin/);
+  const a = await readFile(new URL("../../../web/src/AnbindungenKacheln.jsx", import.meta.url), "utf8");
+  assert.match(a, /titel="Doku vollständig"/); assert.match(a, /titel="Kernpflichten"/);
+  const k = await readFile(new URL("../../../web/src/KiAnbieter.jsx", import.meta.url), "utf8");
+  assert.match(k, /\["kritik", "Kritische Prüfung der Entwürfe"/);
+});
