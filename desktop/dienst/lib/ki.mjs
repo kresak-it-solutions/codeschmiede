@@ -44,6 +44,20 @@ export function reiheFuer(aufgabe, eintrag) {
   if (!Array.isArray(eintrag?.reihe)) return reihe.length ? reihe : (STANDARD[aufgabe] || STANDARD.chat);
   return reihe;
 }
+/** Meldung, wenn die globalen Zuständigkeiten nicht lesbar sind (kein Ausweichen, auch nicht auf die alten Zeilen je Projekt). */
+export const GLOBAL_NICHT_LESBAR = "Globale KI-Zuständigkeit nicht lesbar (Datenbank 0062 eingespielt?), wartet";
+/**
+ * KI-Anbindungen global (0.18.0, Datenbank 0062): Für alle Projekte gilt EINE Zuständigkeit je Aufgabe (ws_ki_zustaendigkeit_global). Die Zeilen
+ * je Projekt (ws_ki_zustaendigkeit) haben für diese Aufgaben keine Wirkung mehr. Verpflichtend: Antwort mit Fehler → warten; keine Zeile → warten
+ * (fehltText). Programmieren ist hier fest Claude – das Werkzeug je Projekt löst werkzeugWahl (lib/werkzeuge.mjs) auf.
+ * antwort = { data, error } der Datenbank. Ergebnis: { reihe, ab, fehlt }.
+ */
+export function globaleReihe(aufgabe, antwort, fehltText = "KI-Zuständigkeit nicht eingestellt, wartet") {
+  if (aufgabe === "bauen") return { reihe: reiheFuer("bauen", null), ab: 90, fehlt: null };
+  if (!antwort || antwort.error) return { reihe: [], ab: 90, fehlt: GLOBAL_NICHT_LESBAR };
+  if (!antwort.data) return { reihe: [], ab: 90, fehlt: fehltText };
+  return { reihe: reiheFuer(aufgabe, antwort.data), ab: antwort.data.weitergeben_ab ?? 90, fehlt: null };
+}
 /** Meldung, wenn kein eingestellter Anbieter nutzbar ist: „wartet auf ChatGPT: Limit voll · Gemini: nicht gekoppelt“. */
 export function wartetText(gruende, namen = (a) => ANBIETER[a]?.name || a) {
   const l = gruende.filter((g) => g && g.anbieter);

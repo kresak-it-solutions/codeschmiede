@@ -446,9 +446,11 @@ test("Nachweis des Sperren-Tests (B4): Version, Sperre/Einstellungen, Programm u
   for (const k of ["version", "profil", "programm", "cs"]) assert.equal(nachweisGleich(n, { ...n, [k]: "anders" }), false, k);
   assert.equal(nachweisGleich(n, null), false); assert.equal(nachweisGleich({ ...n, programm: null }, { ...n, programm: null }), false);
 });
-test("Werkstatt (B9/B10): ohne Zeile „bauen“ wartet der Auftrag, Live-Log der Werkzeuge läuft durch den Geheimnis-Filter", async () => {
+test("Werkstatt (B9/B10): ohne Zeile „bauen“ (Projekt und global, seit 0.18.0) wartet der Auftrag, Live-Log der Werkzeuge läuft durch den Geheimnis-Filter", async () => {
   const s = await readFile(new URL("../index.mjs", import.meta.url), "utf8");
-  assert.match(s, /if \(!data\) return \{ fehlt:/);
+  const w = await readFile(new URL("../lib/werkzeuge.mjs", import.meta.url), "utf8");
+  assert.ok(s.includes("return werkzeugWahl(projekt, global);"));
+  assert.match(w, /if \(!z\) return \{ fehlt:/);
   const f = s.slice(s.indexOf("function werkzeugLogZeile"), s.indexOf("async function werkzeugBau"));
   assert.match(f, /ohneGeheimnisse\(t\)/); assert.ok(!/log\(auftragId, "info", `Führt aus/.test(f));
   assert.match(s, /nachweisGleich\(t\.nachweis, nachweis\)/);

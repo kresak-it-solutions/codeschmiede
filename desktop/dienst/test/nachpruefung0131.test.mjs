@@ -7,21 +7,26 @@ import { releaseWahl, tagImLive, vergleichsZweig } from "../lib/setup.mjs";
 const quelle = await readFile(new URL("../index.mjs", import.meta.url), "utf8");
 const teil = (von, bis) => quelle.slice(quelle.indexOf(von), quelle.indexOf(bis, quelle.indexOf(von)));
 
-test("1: Zuständigkeit nicht lesbar oder nicht eingestellt → warten, kein Standard (außer Programmieren)", async () => {
+test("1: Zuständigkeit nicht lesbar oder nicht eingestellt → warten, kein Standard (außer Programmieren) – seit 0.18.0 global", async () => {
   const k = teil("async function kiReihe", "// Projektwissen als TEXT");
   assert.ok(!k.includes("reiheFuer(aufgabe, null)"), "kein Ausweichen auf den Standard");
-  assert.ok(k.includes('if (error) return { reihe: [], ab: 90, fehlt: "KI-Zuständigkeit nicht lesbar, wartet" };'));
-  assert.ok(k.includes("if (!data) return { reihe: [], ab: 90, fehlt: zustaendigkeitFehlt(aufgabe) };"));
+  assert.ok(k.includes('db.from("ws_ki_zustaendigkeit_global")') && !k.includes('db.from("ws_ki_zustaendigkeit")'), "nur die globale Tabelle, nie die alten Projektzeilen");
+  assert.ok(k.includes("return globaleReihe(aufgabe, antwort, zustaendigkeitFehlt(aufgabe));"));
   assert.ok(k.includes('if (aufgabe === "bauen") return { reihe: reiheFuer("bauen", null)'), "Programmieren bleibt fest Claude Code");
   // Wirkung nachgebaut: kiReihe mit einer Datenbank-Attrappe ausführen
   const code = k.replace("async function kiReihe", "return async function kiReihe");
-  const { reiheFuer } = await import("../lib/ki.mjs");
+  const { reiheFuer, globaleReihe, GLOBAL_NICHT_LESBAR } = await import("../lib/ki.mjs");
   const zustaendigkeitFehlt = (a) => `fehlt ${a}`;
-  const mitDb = (antwort) => new Function("db", "reiheFuer", "zustaendigkeitFehlt", code)({ from: () => ({ select: () => ({ eq: () => ({ eq: () => ({ maybeSingle: async () => antwort }) }) }) }) }, reiheFuer, zustaendigkeitFehlt);
-  assert.deepEqual(await mitDb({ data: null, error: { message: "kaputt" } })("p", "chat"), { reihe: [], ab: 90, fehlt: "KI-Zuständigkeit nicht lesbar, wartet" });
+  const tabellen = [];
+  const mitDb = (antwort) => new Function("db", "reiheFuer", "globaleReihe", "GLOBAL_NICHT_LESBAR", "zustaendigkeitFehlt", code)(
+    { from: (t) => { tabellen.push(t); return { select: () => ({ eq: () => ({ maybeSingle: async () => { if (antwort === "wirft") throw new Error("Netz"); return antwort; } }) }) }; } },
+    reiheFuer, globaleReihe, GLOBAL_NICHT_LESBAR, zustaendigkeitFehlt);
+  assert.deepEqual(await mitDb({ data: null, error: { message: "kaputt" } })("p", "chat"), { reihe: [], ab: 90, fehlt: GLOBAL_NICHT_LESBAR });
+  assert.deepEqual(await mitDb("wirft")("p", "chat"), { reihe: [], ab: 90, fehlt: GLOBAL_NICHT_LESBAR });
   assert.deepEqual(await mitDb({ data: null, error: null })("p", "chat"), { reihe: [], ab: 90, fehlt: "fehlt chat" });
   assert.deepEqual((await mitDb({ data: { reihe: [{ anbieter: "gemini" }], weitergeben_ab: 80 }, error: null })("p", "chat")).reihe, [{ anbieter: "gemini" }]);
   assert.deepEqual((await mitDb({ data: null, error: { message: "x" } })("p", "bauen")).reihe, [{ anbieter: "claude" }]);
+  assert.ok(tabellen.length && tabellen.every((t) => t === "ws_ki_zustaendigkeit_global"));
   // Nutzer der Reihe melden „fehlt“ statt etwas anderes zu nehmen
   assert.ok(teil("async function kiAntwort", "// Anfragen heute").includes("if (fehlt) throw new Error(fehlt);"));
   assert.ok(teil("async function station(a)", "// ---------- KI-Anbieter").includes("const text = pFehlt || wartetText(warteGruende);"));

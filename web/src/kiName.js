@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "./supabase";
 
 // Welcher KI-Anbieter ist für eine Aufgabe eingestellt? (Gerhard 2026-10-23 21:45: „Es soll immer der KI-Anbieter drinstehen, der eingestellt ist“)
-// Erster Eintrag der Zuständigkeit (Seite KI-Anbieter); ohne Einstellung Claude. Übernimmt bei vollem Limit der nächste,
+// Erster Eintrag der Zuständigkeit (Globale Einstellungen › KI-Anbieter, für alle Projekte gleich); ohne Einstellung Claude. Übernimmt bei vollem Limit der nächste,
 // zeigt die Antwort ihren tatsächlichen Anbieter (Spalte ki, z. B. „chatgpt/gpt-5“).
 const EINGEBAUT = { claude: "Claude", chatgpt: "ChatGPT", gemini: "Gemini" };
 let eigene = null; let eigeneZeit = 0;
@@ -22,7 +22,7 @@ export function useKiName(projektId, aufgabe) {
     let aus = false;
     (async () => {
       const [{ data }, n] = await Promise.all([
-        supabase.from("ws_ki_zustaendigkeit").select("reihe").eq("projekt_id", projektId || "").eq("aufgabe", aufgabe).maybeSingle(),
+        supabase.from("ws_ki_zustaendigkeit_global").select("reihe").eq("aufgabe", aufgabe).maybeSingle(),   // seit 0.18.0 global (Datenbank 0062)
         eigeneNamen().catch(() => ({})),
       ]);
       if (aus) return;

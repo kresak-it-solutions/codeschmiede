@@ -247,12 +247,16 @@ revoke execute on function public.ws_ki_standard_reihen() from public, anon, aut
 
 insert into public.ws_ki_zustaendigkeit (projekt_id, aufgabe, reihe, weitergeben_ab, geaendert, geaendert_von)
 select p.id, s.aufgabe, s.reihe, 90, now(), null from public.ws_projekte p cross join public.ws_ki_standard_reihen() s
+ where to_regclass('public.ws_ki_zustaendigkeit_global') is null   -- seit 0062 (0.18.0) gelten die Zuständigkeiten global: nichts mehr je Projekt eintragen
 on conflict (projekt_id, aufgabe) do nothing;
 
 -- Neue Projekte: dieselben Zeilen gleich beim Anlegen (auf jedem Weg, auf dem ein Projekt entsteht)
 create or replace function public.ws_ki_standard_eintragen() returns trigger
 language plpgsql security definer set search_path = public as $$
 begin
+  -- Seit 0062 (0.18.0) gelten die Zuständigkeiten global; 0062 entfernt diesen Trigger. Wird 0056 danach erneut eingespielt, tut er nichts
+  -- (sonst bekäme ein neues Projekt eine eigene Zeile „bauen“ statt „wie global“).
+  if to_regclass('public.ws_ki_zustaendigkeit_global') is not null then return new; end if;
   insert into public.ws_ki_zustaendigkeit (projekt_id, aufgabe, reihe, weitergeben_ab, geaendert, geaendert_von)
   select new.id, s.aufgabe, s.reihe, 90, now(), null from public.ws_ki_standard_reihen() s
   on conflict (projekt_id, aufgabe) do nothing;
@@ -260,6 +264,10 @@ begin
 end $$;
 revoke execute on function public.ws_ki_standard_eintragen() from public, anon, authenticated;
 drop trigger if exists ws_projekte_ki_standard on public.ws_projekte;
-create trigger ws_projekte_ki_standard after insert on public.ws_projekte for each row execute function public.ws_ki_standard_eintragen();
+do $$ begin
+  if to_regclass('public.ws_ki_zustaendigkeit_global') is null then
+    create trigger ws_projekte_ki_standard after insert on public.ws_projekte for each row execute function public.ws_ki_standard_eintragen();
+  end if;
+end $$;
 
 commit;

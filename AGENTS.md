@@ -40,6 +40,11 @@ Zusammengeführt wird nur auf Gerhards Wort (in der Codeschmiede: Knopf „Freig
 - Werkstatt arbeitet nur im Arbeitsordner des Auftrags (eigener Zweig), nie direkt auf `main`; heikle Befehle brauchen Erlaubnis im Programm.
 
 ## Neue Anweisungen
+- **2026-11-03 – KI-Anbindungen sind global (0.18.0, Meldung und Freigabe Gerhard 03.11.2026):** Die KI-Zuständigkeiten (Chat, Konzept, Design, Prüfungen,
+  Doku, Texte, Bilder) gelten für **alle** Projekte gleich (`ws_ki_zustaendigkeit_global`, „Globale Einstellungen › KI-Anbieter“, nur Admin, alle eingebauten
+  und angelegten Anbieter wählbar). Startwerte aus Trainer to go. Je Projekt nur das Programmier-Werkzeug (Aufgabe „bauen“), voreingestellt „wie global“.
+  Neue Projekte haben sofort alle Zuständigkeiten. Verpflichtend bleibt: nicht lesbar → warten, kein Ausweichen. Die alten Zeilen je Projekt bleiben stehen,
+  wirken aber nicht mehr (außer „bauen“). Datenbank 0062, `docs/KONZEPT.md` › KI-Anbindungen global.
 - **2026-11-02 – Bestehendes Projekt einlesen (Entwurf frei, 0.16.0):** Ordner oder ZIP (z. B. aus einem anderen Claude-Chat) wird geprüft, ohne Code auszuführen,
   sortiert in einen neuen Projektordner kopiert (Original unverändert, vorhandener Zielordner → Abbruch) und als privates Repository angelegt; Geheimnisse nie übernommen,
   nie geloggt, nie an die KI (nur Name + Anzahl); Personendaten standardmäßig draußen; die KI bekommt nur eine Strukturliste; Prüfungen/Regelwerk als eigene Aufgabe.
@@ -56,7 +61,7 @@ Zusammengeführt wird nur auf Gerhards Wort (in der Codeschmiede: Knopf „Freig
   Sandbox-Fensters und erst nach Gerhards Bestätigung in den Chat, Werkzeug-Konsole (lauf.yml nur mit geprüften Eingaben, nie lokal), PDF-Seiten aus der Cloud als Bilder, QR-Code ohne fremden Dienst,
   .NET nur Stufe 2, „Auf diesen Stand zurück“ als Auftrag (nie direkt auf main); Ziele steuern Ampel und Abläufe.
 - **2026-11-02 – Programmier-Werkzeug je Projekt (0.14.0, Entwurf frei, `docs/KONZEPT-WERKZEUGE.md`):** Je Projekt wählt der Admin unter
-  KI-Anbieter › Programmieren das Werkzeug: Claude Code (Standard), OpenAI Codex CLI, Gemini CLI oder OpenCode (mit Modell). **Verpflichtend:** ist es
+  KI-Anbieter › Programmieren das Werkzeug (seit 0.18.0 zusätzlich global, Projekt voreingestellt „wie global“): Claude Code (Standard), OpenAI Codex CLI, Gemini CLI oder OpenCode (mit Modell). **Verpflichtend:** ist es
   auf einem PC nicht installiert, nicht angemeldet oder hat es den Sperren-Test nicht bestanden, wartet der Auftrag („wartet auf <Werkzeug>“) – kein anderes
   Werkzeug springt ein, auch nicht Claude; ein Auftrag macht mit seinem Werkzeug fertig. Keine Zugangsdaten in der Codeschmiede (Anmelden macht die Person im
   Werkzeug). Installieren nur auf Entwickler-PCs aus der offiziellen Quelle in fester Version (Lock-Datei, ohne Skripte). Fremde Werkzeuge nur in der

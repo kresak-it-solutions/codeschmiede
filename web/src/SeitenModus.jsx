@@ -73,12 +73,12 @@ export default function SeitenModus({ projekt, d, ich, werte, dunkel, darf, toas
   const [kcKi, setKcKi] = useState({ kis: [{ id: "claude", name: "Claude" }], standard: "claude", namen: {} });
   const kcListe = useRef([]);
   const anRahmen = useCallback((x) => { try { rahmen.current?.contentWindow?.postMessage(x, ziel); } catch { /* egal */ } }, [ziel]);
-  // KI-Auswahl: Zuständigkeit „design“ des Projekts, davon was die eigene Werkstatt nutzen kann (gekoppelt bzw. zugelassen)
+  // KI-Auswahl: Zuständigkeit „design“ (seit 0.18.0 global für alle Projekte, Datenbank 0062), davon was die eigene Werkstatt nutzen kann (gekoppelt bzw. zugelassen)
   useEffect(() => {
     let aus = false;
     (async () => {
       const [{ data: z }, { data: kopp }, { data: an }] = await Promise.all([
-        supabase.from("ws_ki_zustaendigkeit").select("reihe").eq("projekt_id", projekt.id).eq("aufgabe", "design").maybeSingle(),
+        supabase.from("ws_ki_zustaendigkeit_global").select("reihe").eq("aufgabe", "design").maybeSingle(),
         supabase.from("ws_ki_kopplung").select("anbieter, gekoppelt, zugelassen").eq("benutzer_id", ich?.id || ""),
         supabase.from("ws_ki_anbieter").select("id, name")]);
       if (aus) return;

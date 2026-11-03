@@ -32,9 +32,9 @@ import { liveAusfuehren, pruefPrompt, enthalten, cloudBauLaeufe, pruefLaeufe, pr
 import { stationNachFehler, stationFaellig, STATION_VERSUCHE } from "./lib/station.mjs";
 import { katalogFuer, einrichten, einrichtUmgebung, findeKatalogProgramm, angemeldet } from "./lib/einrichten.mjs";
 import { bildAusDataUrl, markePrompt, markeAntwort } from "./lib/marke.mjs";
-import { ANBIETER, reiheFuer, wartetText, istLimit, kiKennung, codexFrage, geminiFrage, kopplungPruefen, anmeldungStarten, sandboxArt, freiFrage, freiPruefen, codexLimits } from "./lib/ki.mjs";
+import { ANBIETER, reiheFuer, globaleReihe, GLOBAL_NICHT_LESBAR, wartetText, istLimit, kiKennung, codexFrage, geminiFrage, kopplungPruefen, anmeldungStarten, sandboxArt, freiFrage, freiPruefen, codexLimits } from "./lib/ki.mjs";
 import { prText } from "./lib/ersatz.mjs";
-import { WERKZEUGE, FREMDE, werkzeugOk, werkzeugName, sperrbar, dateiGesperrt, statusPfade, projektKonfigFunde, werkzeugVorspann } from "./lib/werkzeuge.mjs";
+import { WERKZEUGE, FREMDE, werkzeugOk, werkzeugWahl, werkzeugName, sperrbar, dateiGesperrt, statusPfade, projektKonfigFunde, werkzeugVorspann } from "./lib/werkzeuge.mjs";
 import { installieren as werkzeugInstallieren, installiertPruefen, installationUnveraendert, angemeldetPruefen, laufOrdner, werkzeugStarten, sperrenTest, sperrNachweis, nachweisGleich } from "./lib/werkzeugLauf.mjs";
 import { imFenster } from "./lib/einrichten.mjs";
 import { ampelPruefen, sandboxStarten, testlaufStarten, sandboxPfad } from "./lib/anbindungen.mjs";
@@ -1593,7 +1593,7 @@ async function codeArbeit() {
 const gitSicher = (ordner, ...args) => git(ordner, "-c", "core.fsmonitor=false", "-c", `core.hooksPath=${path.join(path.dirname(ordner), "keine-hooks")}`, "-c", "commit.gpgsign=false", ...args);
 
 // ---------- Programmier-Werkzeug je Projekt (0.14.0, docs/KONZEPT-WERKZEUGE.md) ----------
-// Je Projekt genau ein Werkzeug (ws_ki_zustaendigkeit, Aufgabe „bauen“, Spalten werkzeug/werkzeug_modell, Datenbank 0057). Verpflichtend: Ist das
+// Je Projekt genau ein Werkzeug (ws_ki_zustaendigkeit, Aufgabe „bauen“, Spalten werkzeug/werkzeug_modell, Datenbank 0057; ohne Projektzeile der globale Wert, 0062). Verpflichtend: Ist das
 // Werkzeug auf diesem PC nicht bereit, wartet der Auftrag („wartet auf <Werkzeug>“) – kein anderes springt ein, auch nicht Claude. Ein Auftrag
 // macht mit dem Werkzeug fertig, mit dem er gestartet wurde (ws_auftraege.werkzeug). Fremde Werkzeuge nie auf dem Admin-PC.
 const werkzeugTestDatei = () => path.join(cfg.daten_ordner, "werkzeuge", "tests.json");
@@ -1632,16 +1632,14 @@ async function werkzeugBereit(id, o) {
   if (kiLimitBis[id] && kiLimitBis[id] > Date.now()) return { ok: false, grund: `Limit voll (bis ${bisText(kiLimitBis[id])})` };
   return { ok: true };
 }
-/** Werkzeug des Projekts. Ohne Datenbank 0057 (Spalte fehlt) gilt Claude Code wie bisher. */
+/** Werkzeug des Projekts: Projektzeile „bauen“, sonst global (0.18.0, Datenbank 0062, lib/werkzeuge.mjs › werkzeugWahl). Ohne 0057 gilt Claude Code. */
 async function projektWerkzeug(projektId) {
   try {
-    const { data, error } = await db.from("ws_ki_zustaendigkeit").select("werkzeug, werkzeug_modell").eq("projekt_id", projektId).eq("aufgabe", "bauen").maybeSingle();
-    if (error) return /werkzeug/.test(error.message) && /column|does not exist|schema cache/i.test(error.message) ? { werkzeug: "claude-code", modell: null } : { fehlt: "Programmier-Werkzeug nicht lesbar, wartet" };
-    // Keine Zeile „bauen“ (B9): nicht auf Claude ausweichen – der Auftrag wartet
-    if (!data) return { fehlt: "Programmier-Werkzeug für dieses Projekt nicht eingestellt, wartet – bitte unter KI-Anbieter › Programmieren speichern" };
-    const w = data.werkzeug && werkzeugOk(data.werkzeug) ? data.werkzeug : null;
-    if (!w) return { fehlt: "Programmier-Werkzeug unbekannt, wartet" };
-    return { werkzeug: w, modell: w === "claude-code" ? null : data.werkzeug_modell || null };
+    const projekt = await db.from("ws_ki_zustaendigkeit").select("werkzeug, werkzeug_modell").eq("projekt_id", projektId).eq("aufgabe", "bauen").maybeSingle();
+    // Keine Projektzeile: „wie global“ – nicht auf Claude ausweichen; ist auch die globale Zeile nicht lesbar oder fehlt sie, wartet der Auftrag (B9)
+    const global = !projekt.error && !projekt.data
+      ? await db.from("ws_ki_zustaendigkeit_global").select("werkzeug, werkzeug_modell").eq("aufgabe", "bauen").maybeSingle() : null;
+    return werkzeugWahl(projekt, global);
   } catch { return { fehlt: "Programmier-Werkzeug nicht lesbar, wartet" }; }
 }
 /** „wartet auf …“ beim Auftrag vermerken (nur wenn sich der Text ändert). */
@@ -2097,7 +2095,7 @@ async function station(a) {
 
 
 // ---------- KI-Anbieter: wer was übernimmt (Entwurf 1.2, freigegeben 2026-10-23 15:00) ----------
-// Reihenfolge je Aufgabe aus ws_ki_zustaendigkeit (Admin), sonst Standard. Der nächste übernimmt bei vollem Limit, ohne Kopplung
+// Reihenfolge je Aufgabe aus ws_ki_zustaendigkeit_global (Admin, für alle Projekte, 0.18.0). Der nächste übernimmt bei vollem Limit, ohne Kopplung
 // oder bei einem Fehler. Fremde Anbieter: leerer Ordner, minimale Umgebung, Doku als Text (Restrisiko siehe lib/ki.mjs); Prüfen und Bauen nur Claude.
 const kiLimitBis = {};                       // anbieter -> Zeitpunkt, bis zu dem das Limit voll ist
 let freieAnbieter = {}; let freieZeit = 0;     // vom Admin angelegte Anbieter (ws_ki_anbieter), 60 s zwischengespeichert
@@ -2109,15 +2107,14 @@ async function holeFreieAnbieter() {
 let kiKopplung = {};                         // anbieter -> { gekoppelt }
 // Verpflichtende Anbieter (Nachprüfung 0.13.1, Punkt 1): Ist die Zuständigkeit nicht lesbar oder für diese Aufgabe nicht eingestellt, wird NICHT auf
 // den Standard (Claude) ausgewichen – die Reihe ist leer, die Aufgabe wartet mit „wartet“-Text. Ausnahme: Programmieren ist fest Claude Code (keine Einstellung).
-// Die Standardwerte (Claude) stehen seit Datenbank 0056 als echte Zeilen für jedes Projekt in ws_ki_zustaendigkeit (Entscheidung „Claude fest eintragen“).
-async function kiReihe(projektId, aufgabe) {
+// KI-Anbindungen global (0.18.0, Datenbank 0062): gelesen wird nur noch ws_ki_zustaendigkeit_global – für alle Projekte gleich. Die alten Zeilen je Projekt
+// (ws_ki_zustaendigkeit) haben für diese Aufgaben keine Wirkung mehr; auch bei einem Lesefehler wird nicht auf sie ausgewichen (lib/ki.mjs › globaleReihe).
+async function kiReihe(projektId, aufgabe) {   // projektId bleibt für die Aufrufer gleich; die Zuständigkeit ist global
   if (aufgabe === "bauen") return { reihe: reiheFuer("bauen", null), ab: 90, fehlt: null };
   try {
-    const { data, error } = await db.from("ws_ki_zustaendigkeit").select("reihe, weitergeben_ab").eq("projekt_id", projektId).eq("aufgabe", aufgabe).maybeSingle();
-    if (error) return { reihe: [], ab: 90, fehlt: "KI-Zuständigkeit nicht lesbar, wartet" };
-    if (!data) return { reihe: [], ab: 90, fehlt: zustaendigkeitFehlt(aufgabe) };
-    return { reihe: reiheFuer(aufgabe, data), ab: data.weitergeben_ab ?? 90, fehlt: null };
-  } catch { return { reihe: [], ab: 90, fehlt: "KI-Zuständigkeit nicht lesbar, wartet" }; }
+    const antwort = await db.from("ws_ki_zustaendigkeit_global").select("reihe, weitergeben_ab").eq("aufgabe", aufgabe).maybeSingle();
+    return globaleReihe(aufgabe, antwort, zustaendigkeitFehlt(aufgabe));
+  } catch { return { reihe: [], ab: 90, fehlt: GLOBAL_NICHT_LESBAR }; }
 }
 // Projektwissen als TEXT für fremde Anbieter (Prüfung H1): AGENTS.md, Wissen, passende Dokumente und die Dateiliste – bereinigt, gekürzt.
 // Fremde Anbieter bekommen keinen Ordner, nur diesen Text.
@@ -2182,7 +2179,7 @@ async function kiAntwort(projekt, aufgabe, prompt, { claudeLesenIn = null, dokuL
 }
 /** „wartet“-Text, wenn für eine Aufgabe keine Zuständigkeit gespeichert ist (kein Ausweichen auf den Standard, Nachprüfung 0.13.1). */
 const AUFGABE_NAME = { chat: "Chat", konzept: "Konzept", design: "Design-Chat", pruefung: "Unabhängige Prüfungen", doku: "Dokumentation", texte: "Texte", bilder: "Bilder & Grafiken" };
-const zustaendigkeitFehlt = (aufgabe) => `KI-Zuständigkeit „${AUFGABE_NAME[aufgabe] || aufgabe}“ ist für dieses Projekt nicht eingestellt, wartet – bitte unter „KI-Anbieter“ speichern (kein Ausweichen)`;
+const zustaendigkeitFehlt = (aufgabe) => `KI-Zuständigkeit „${AUFGABE_NAME[aufgabe] || aufgabe}“ ist nicht eingestellt, wartet – bitte unter „Globale Einstellungen › KI-Anbieter“ speichern (gilt für alle Projekte, kein Ausweichen)`;
 // Anfragen heute je Anbieter (für Anbieter ohne eigene Limit-Anzeige, Gerhard 23:38)
 const anfragen = {};
 function anfrageZaehlen(anbieter) {

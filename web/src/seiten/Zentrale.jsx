@@ -22,7 +22,7 @@ import { usePunkte } from "../daten/punkte";
 // ---------------- Zentrale ----------------
 // nurGlobal: Ansicht „Globale Einstellungen“ (Anweisung Gerhard 2026-10-23 10:20) – Bereich, der in der App nie als eigener Bereich erscheint;
 // seine Features gelten für die ganze App. In der Auftrags-Zentrale wird er ausgeblendet.
-export function Zentrale({ d: alle, ich, toast, nurGlobal = false, onDesigner, start, onCode }) {
+export function Zentrale({ d: alle, ich, toast, nurGlobal = false, onDesigner, start, onCode, onKi }) {
   const d = useMemo(() => {
     const bereiche = alle.bereiche.filter((b) => !!b.global === nurGlobal);
     const bids = new Set(bereiche.map((b) => b.id));
@@ -107,6 +107,9 @@ export function Zentrale({ d: alle, ich, toast, nurGlobal = false, onDesigner, s
   return (
     <>
       {!nurGlobal && <AufbauBanner d={alle} ich={ich} offen={alle.aufbau || []} toast={toast} onFertig={() => alle.holen?.()} />}
+      {nurGlobal && onKi && <div className={`${card} mb-4 px-3 py-2 flex flex-wrap items-center gap-2 text-sm`} role="note">
+        <Globe className="w-4 h-4 text-emerald-700" /><span><b>KI-Anbieter</b> gelten global für alle Projekte (seit 0.18.0).</span>
+        <button type="button" className={`${ghost} ml-auto`} onClick={onKi}>Globale Einstellungen › KI-Anbieter</button></div>}
       <div className="flex flex-wrap gap-1.5 mb-4" role="toolbar" aria-label="Weg eines Auftrags">
         {fragen > 0 && <button type="button" aria-pressed={station === "frage"} onClick={() => { setStation(station === "frage" ? null : "frage"); setPlatz(null); }} className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-sm font-semibold bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-200 ${station === "frage" ? "ring-2 ring-amber-500" : ""}`}><i className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />{fragen} Rückfrage{fragen > 1 ? "n" : ""} an dich</button>}
         {STEPS.map(([s, t], i) => {

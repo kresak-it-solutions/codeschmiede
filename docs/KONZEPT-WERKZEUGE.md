@@ -4,6 +4,9 @@
 **Datenbank:** 0057 (`supabase/migrations/0057_programmier_werkzeug.sql`, Test `supabase/tests/t46_programmier_werkzeug.sql`) – nach der Sicherheitsprüfung (GRÜN 02.11.2026) in `supabase/einspielen.txt`
 **Code:** `desktop/dienst/lib/werkzeuge.mjs` (Katalog, Einstellungen je Werkzeug, reine Regeln), `lib/werkzeugLauf.mjs` (Installieren, Programm finden, Anmelde-Stand, Lauf, Sperren-Test), `lib/sandbox.mjs` › `werkzeugSandbox` (Betriebssystem-Sperre), `index.mjs` › `werkzeugBau`, `werkzeugBereit`, `werkzeugAbgleich`; Oberfläche `web/src/seiten/ProgrammierWerkzeug.jsx`, `web/src/daten/werkzeuge.js`; Test `desktop/dienst/test/werkzeuge.test.mjs`
 
+> **Seit 0.18.0 (Datenbank 0062):** Es gibt zusätzlich ein **globales** Programmier-Werkzeug (Globale Einstellungen › KI-Anbieter › Programmieren). Ein Projekt
+> ohne eigene Zeile „bauen“ programmiert „wie global“; die Projekt-Wahl geht vor. Siehe `docs/KONZEPT.md` › KI-Anbindungen global.
+
 ## Entscheidungen (Gerhard, 02.11.2026)
 | Thema | Entscheidung |
 |---|---|

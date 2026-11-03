@@ -37,6 +37,23 @@ Jedes Projekt hat eigene Bereiche, Gruppen, Features, Mitglieder (Rolle je Proje
 Anmeldung & Rechte), Betrieb (Handbuch & Texte, Einstellungen & Datenschutz). Für jedes Projekt gilt das AI-Dev-OS-Regelwerk; die Werkstatt
 stellt beim ersten Auftrag eines neuen Projekts zuerst ihre Fragen (Pflicht-Start).
 
+### KI-Anbindungen global (seit 0.18.0, Meldung Gerhard 03.11.2026, Datenbank 0062) – Handbuch
+**Warum:** Bis 0.17.1 standen die KI-Zuständigkeiten je Projekt in `ws_ki_zustaendigkeit`. Neue Projekte bekamen über den Trigger aus 0056 nur die
+Standardzeilen (je Aufgabe nur Claude) – die in Trainer to go gespeicherten Reihen mit ChatGPT, Gemini und eigenen Anbietern fehlten dort.
+**Jetzt:** Eine Einstellung für alle Projekte (`ws_ki_zustaendigkeit_global`).
+- **Wo:** Verwaltung › KI-Anbieter › Reiter **„Globale Einstellungen › KI-Anbieter“**. Bearbeiten darf nur der Admin (Speichern über `ws_ki_global_setzen`,
+  mit Protokoll `ki_global`). Zur Auswahl stehen alle Anbieter: Claude, ChatGPT, Gemini und die angelegten eigenen (`ws_ki_anbieter`; nie für Prüfungen).
+- **Startwerte:** die Zeilen von Trainer to go (`trainer-to-go`); fehlt dort eine Aufgabe, die bisherigen Standardwerte (Claude). Ein erneutes Einspielen
+  von 0062 überschreibt nie.
+- **Im Projekt** (Reiter „Projekt <Name>“; Hinweis auch unter „Globale Einstellungen“ des Projekts): nur der Hinweis „KI-Anbindungen gelten global für alle Projekte“
+  mit Link und die **Projekt-Wahl des Programmier-Werkzeugs** – voreingestellt **„Wie global“** (keine Projektzeile; `ws_werkzeug_wie_global`).
+  Das globale Werkzeug steht in der Zeile „Programmieren“ der globalen Zuständigkeiten (fremdes Werkzeug nur mit bestandenem Sperren-Test auf einem Entwickler-PC).
+- **Neue Projekte** haben damit sofort alle Zuständigkeiten; der Trigger aus 0056 ist entfernt.
+- **Verpflichtend, kein Ausweichen:** Ist die globale Zeile nicht lesbar oder fehlt sie, wartet die Aufgabe („Globale KI-Zuständigkeit nicht lesbar … wartet“) –
+  es wird weder auf Claude noch auf alte Projektzeilen ausgewichen. Ohne Projektzeile „bauen“ und ohne lesbare globale Zeile wartet der Auftrag ebenso.
+- **Alte Projektzeilen:** bleiben in `ws_ki_zustaendigkeit` stehen, haben ab 0.18.0 für chat, konzept, design, pruefung, doku, texte und bilder **keine Wirkung**
+  mehr. Nur die Zeile „bauen“ (Werkzeug je Projekt) wirkt weiter.
+
 ### Projektordner, Regeln und Ein-Klick-Anbindungen (seit 0.13.0, Entwurf 1.0 frei von Gerhard 2026-11-02 07:04, Datenbank 0055)
 Jedes Projekt hat auf jedem Werkstatt-PC einen Projektordner auf der externen Festplatte (`<Projekte-Ordner>\<kennung>`: code, code-arbeit,
 regeln, konzept, doku, material, sicherungen), festgelegt im Programm (Pfade nur lokal, nie in der Datenbank). Festplatte fehlt → die Werkstatt
