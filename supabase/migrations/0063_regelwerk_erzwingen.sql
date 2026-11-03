@@ -439,22 +439,7 @@ revoke execute on function public.ws_auftraege_a_werkstatt() from public, anon;
 drop trigger if exists ws_auftraege_a_werkstatt on public.ws_auftraege;
 create trigger ws_auftraege_a_werkstatt before update on public.ws_auftraege for each row execute function public.ws_auftraege_a_werkstatt();
 
--- Altbestand (B2): Aufträge, die vor 0063 im Stand „wartet“ angelegt wurden (ohne Kritik), werden zu Entwürfen – außer Hand-Änderungen.
--- Ein zweites Einspielen findet nichts mehr (nach „Bauen“ tragen sie eine Kritik).
-do $$
-declare x record;
-begin
-  -- N5: alle offenen Stände; „laeuft“ erst nach dem Lauf (Merker neu_nach_lauf wie bei N2)
-  for x in select id, stand from public.ws_auftraege where stand in ('wartet','frage','nacharbeit','freigabe','laeuft') and kritik is null and zweck = 'bau' and not coalesce(hand, false) loop
-    perform public.ws_intern_setzen('zurueck:' || x.id);
-    if x.stand = 'laeuft' then
-      update public.ws_auftraege set kritik = jsonb_build_object('stand', 'wartet', 'runde', 1, 'grund', 'Altbestand vor 0.19.0', 'neu_nach_lauf', true) where id = x.id;
-    else
-      update public.ws_auftraege set stand = 'entwurf', werkstatt_pc = null, kritik = jsonb_build_object('stand', 'wartet', 'runde', 1, 'grund', 'Altbestand vor 0.19.0') where id = x.id;
-    end if;
-    perform public.ws_intern_weg('zurueck:' || x.id);
-  end loop;
-end $$;
+-- Altbestand (B2): siehe Abschnitt 14 am Ende (braucht alle Funktionen dieser Datei).
 
 -- ---------- 5. Kritische Prüfung (zweite KI, globale Aufgabe „kritik“) ----------
 create or replace function public.ws_ki_reihe_ok(p_aufgabe text, r jsonb) returns boolean
@@ -1260,6 +1245,25 @@ do $$ begin
   begin alter publication supabase_realtime add table public.ws_entscheidungen; exception when others then null; end;
   begin alter publication supabase_realtime add table public.ws_ideen; exception when others then null; end;
   begin alter publication supabase_realtime add table public.ws_kernpflicht_abweichungen; exception when others then null; end;
+end $$;
+
+
+-- ---------- 14. Altbestand umstellen (zuletzt: die Trigger brauchen alle Funktionen oben) ----------
+-- Altbestand (B2): Aufträge, die vor 0063 im Stand „wartet“ angelegt wurden (ohne Kritik), werden zu Entwürfen – außer Hand-Änderungen.
+-- Ein zweites Einspielen findet nichts mehr (nach „Bauen“ tragen sie eine Kritik).
+do $$
+declare x record;
+begin
+  -- N5: alle offenen Stände; „laeuft“ erst nach dem Lauf (Merker neu_nach_lauf wie bei N2)
+  for x in select id, stand from public.ws_auftraege where stand in ('wartet','frage','nacharbeit','freigabe','laeuft') and kritik is null and zweck = 'bau' and not coalesce(hand, false) loop
+    perform public.ws_intern_setzen('zurueck:' || x.id);
+    if x.stand = 'laeuft' then
+      update public.ws_auftraege set kritik = jsonb_build_object('stand', 'wartet', 'runde', 1, 'grund', 'Altbestand vor 0.19.0', 'neu_nach_lauf', true) where id = x.id;
+    else
+      update public.ws_auftraege set stand = 'entwurf', werkstatt_pc = null, kritik = jsonb_build_object('stand', 'wartet', 'runde', 1, 'grund', 'Altbestand vor 0.19.0') where id = x.id;
+    end if;
+    perform public.ws_intern_weg('zurueck:' || x.id);
+  end loop;
 end $$;
 
 commit;
