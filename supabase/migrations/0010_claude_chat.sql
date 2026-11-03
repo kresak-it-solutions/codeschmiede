@@ -34,6 +34,10 @@ revoke execute on function public.ws_darf_fragen(text) from public, anon;
 grant execute on function public.ws_darf_fragen(text) to authenticated;
 
 -- Auftragsvorschlag prüfen: Gruppe im Projekt, Feature (falls angegeben) in dieser Gruppe, Längen begrenzt
+-- Weiche (0.19.0): Liegt 0063 (Regelwerk erzwingen) schon vor, bleibt dessen Fassung von ws_vorschlag_ok stehen (Steckbrief-Pflicht, Entwurf).
+do $weiche$ begin
+  if to_regclass('public.ws_phasen_protokoll') is null then
+    execute $fassung$
 create or replace function public.ws_vorschlag_ok(p_projekt text, v jsonb) returns boolean
 language plpgsql stable security definer set search_path = public as $$
 begin
@@ -47,6 +51,9 @@ begin
   end if;
   return true;
 end $$;
+    $fassung$;
+  end if;
+end $weiche$;
 revoke execute on function public.ws_vorschlag_ok(text, jsonb) from public, anon;
 
 revoke all on public.ws_claude_chat from anon, authenticated;

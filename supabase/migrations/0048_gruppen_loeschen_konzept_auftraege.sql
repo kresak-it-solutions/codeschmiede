@@ -31,6 +31,10 @@ revoke all on function public.ws_gruppe_loeschen(text) from public, anon;
 grant execute on function public.ws_gruppe_loeschen(text) to authenticated;
 
 -- ---------- 2) Vorschläge im Konzept-Gespräch: FRAGEN und AUFTRAEGE ----------
+-- Weiche (0.19.0): Liegt 0063 (Regelwerk erzwingen) schon vor, bleibt dessen Fassung von ws_vorschlag_ok stehen (Steckbrief-Pflicht, Entwurf).
+do $weiche$ begin
+  if to_regclass('public.ws_phasen_protokoll') is null then
+    execute $fassung$
 create or replace function public.ws_vorschlag_ok(p_projekt text, v jsonb) returns boolean
 language plpgsql stable security definer set search_path = public as $$
 declare x jsonb; o jsonb;
@@ -97,11 +101,18 @@ begin
   if not public.ws_konzept_ok(v->'konzept') then return false; end if;
   return true;
 end $$;
+    $fassung$;
+  end if;
+end $weiche$;
 revoke execute on function public.ws_vorschlag_ok(text, jsonb) from public, anon, authenticated;
 
 -- Aufträge aus dem Konzept-Gespräch anlegen: nur aus dem gespeicherten (geprüften) Vorschlag, nur als die Person, die gefragt hat,
 -- mit denselben Regeln wie beim Anlegen von Hand (Recht „auftraege“ je Gruppe, Texter nur Text-Aufträge).
 -- Aufruf durch die Werkstatt direkt nach der Antwort (die KI „erledigt das“) oder per Knopf, falls das nicht ging.
+-- Weiche (0.19.0): Liegt 0063 (Regelwerk erzwingen) schon vor, bleibt dessen Fassung von ws_konzept_auftraege_anlegen stehen (Steckbrief-Pflicht, Entwurf).
+do $weiche$ begin
+  if to_regclass('public.ws_phasen_protokoll') is null then
+    execute $fassung$
 create or replace function public.ws_konzept_auftraege_anlegen(p_antwort bigint) returns bigint[]
 language plpgsql security definer set search_path = public as $$
 declare a public.ws_claude_chat; f public.ws_claude_chat; x jsonb; k jsonb; ids bigint[] := '{}'; neu bigint; t text; n int;
@@ -151,6 +162,9 @@ begin
   update ws_claude_chat set entscheidung = 'uebernommen', auftrag_id = ids[1], vorschlag = vorschlag || jsonb_build_object('angelegt', to_jsonb(ids)), geaendert = now() where id = a.id;
   return ids;
 end $$;
+    $fassung$;
+  end if;
+end $weiche$;
 revoke all on function public.ws_konzept_auftraege_anlegen(bigint) from public, anon;
 grant execute on function public.ws_konzept_auftraege_anlegen(bigint) to authenticated;
 

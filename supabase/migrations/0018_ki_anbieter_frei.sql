@@ -117,6 +117,10 @@ begin
 end $$;
 
 -- Zuständigkeiten: Anbieter = eingebaut oder angelegt (geprüft beim Speichern; die Tabellen-Prüfung kennt nur die Form)
+-- Weiche (0.19.0): Liegt 0063 (Regelwerk erzwingen) schon vor, bleibt dessen Fassung von ws_ki_reihe_ok stehen (mit Aufgabe „kritik“).
+do $weiche$ begin
+  if to_regclass('public.ws_phasen_protokoll') is null then
+    execute $fassung$
 create or replace function public.ws_ki_reihe_ok(p_aufgabe text, r jsonb) returns boolean
 language plpgsql immutable set search_path = public as $$
 declare e jsonb;
@@ -133,6 +137,9 @@ begin
   if p_aufgabe = 'pruefung' and not exists (select 1 from jsonb_array_elements(r) x where x->>'anbieter' = 'claude') then return false; end if;
   return true;
 end $$;
+    $fassung$;
+  end if;
+end $weiche$;
 create or replace function public.ws_ki_zustaendigkeit_setzen(p_projekt text, p_aufgabe text, p_reihe jsonb, p_ab int default 90)
 returns void language plpgsql security definer set search_path = public as $$
 begin

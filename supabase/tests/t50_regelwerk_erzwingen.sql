@@ -1,0 +1,288 @@
+-- Rechte-Test Datenbank 0063 (Regelwerk erzwingen, 0.19.0) – Claude, Entscheidungen und Freigabe von Gerhard 03.11.2026
+-- Voraussetzung: frische Datenbank mit mock2.sql, alle Migrationen bis 0063 (0063 zweimal). Läuft für sich allein (eigene Konten/PCs).
+-- Erwartung steht jeweils in der \echo-Zeile ("-> FEHLER" = Fehlermeldung). Nur erfundene Test-Konten.
+\set QUIET 1
+\pset footer off
+set role authenticated;
+\set ADM 'select set_config(''request.jwt.claim.sub'',''00000000-0000-0000-0000-00000000000a'',false) \\g /dev/null'
+\set DEV 'select set_config(''request.jwt.claim.sub'',''00000000-0000-0000-0000-00000000000e'',false) \\g /dev/null'
+\set FREMD 'select set_config(''request.jwt.claim.sub'',''00000000-0000-0000-0000-00000000000f'',false) \\g /dev/null'
+:ADM
+insert into ws_einladungen(email,rolle,eingeladen_von,projekt_id) values ('dev@x.at','entwickler',auth.uid(),'trainer-to-go');
+insert into ws_werkstatt_pcs(id,benutzer_id,name,an,admin_pc) values ('00000000-0000-0000-0000-0000000000a1',auth.uid(),'PC-Admin',true,true);
+:DEV
+select ws_einladung_annehmen('Dev') \g /dev/null
+insert into ws_werkstatt_pcs(id,benutzer_id,name,an) values ('00000000-0000-0000-0000-0000000000d1',auth.uid(),'PC-Dev',true);
+reset role;
+insert into ws_rechte (benutzer_id, bereich_id, auftraege, freigeben, loeschen)
+select '00000000-0000-0000-0000-00000000000e', g.bereich_id, true, true, false from ws_gruppen g where g.id = 'abstimmungen';
+-- Neues Projekt ohne Live-Stand (wie über „Neues Projekt“)
+insert into ws_projekte (id, name, phase_frei) values ('neu-app', 'Neue App', 7);   -- 7 wird beim Anlegen auf 0 gesetzt
+insert into ws_bereiche (id, projekt_id, name, reihenfolge) values ('neu-start', 'neu-app', 'Start', 1);
+insert into ws_gruppen (id, bereich_id, name) values ('neu-liste', 'neu-start', 'Liste');
+insert into ws_projekt_mitglieder (projekt_id, benutzer_id, rolle) values ('neu-app', '00000000-0000-0000-0000-00000000000e', 'entwickler');
+insert into ws_rechte (benutzer_id, bereich_id, auftraege, freigeben, loeschen) values ('00000000-0000-0000-0000-00000000000e', 'neu-start', true, true, false);
+
+\echo [1] Bestand: trainer-to-go Phase 10 (phase_frei 9), Protokoll „bestand“ mit Text, Entscheidung „Phase 10 – übernommen“, Entwurf „Doku-Gerüst anlegen“ (einrichtung, entfaellt)
+select id, phase_frei from ws_projekte order by id;
+select art, von_phase, bis_phase, begruendung from ws_phasen_protokoll where projekt_id = 'trainer-to-go';
+select art, text from ws_entscheidungen where projekt_id = 'trainer-to-go';
+select titel, stand, zweck, kritik ->> 'stand' kritik from ws_auftraege where zweck = 'einrichtung';
+
+\echo [2] Neues Projekt: Phase 0 frei (= Phase 1), Protokoll „start“ -> 0 · start
+select phase_frei from ws_projekte where id = 'neu-app';
+select art from ws_phasen_protokoll where projekt_id = 'neu-app';
+
+\echo [3] Phase-9-Sperre: Entwickler legt im neuen Projekt einen Auftrag an -> FEHLER „Bauen erst nach Freigabe von Phase 9 (Bauplan)“
+set role authenticated;
+:DEV
+insert into ws_auftraege (gruppe_id, titel, art, erstellt_von) values ('neu-liste', 'Liste sortieren', 'aendern', auth.uid());
+
+\echo [4] Phasen: Entwickler gibt frei -> FEHLER; Admin Phase 3 statt 1 -> FEHLER; direkt phase_frei ändern -> FEHLER (2x)
+select ws_phase_freigeben('neu-app', 1, null);
+:ADM
+select ws_phase_freigeben('neu-app', 3, null);
+update ws_projekte set phase_frei = 9 where id = 'neu-app';
+:DEV
+update ws_projekte set phase_frei = 9 where id = 'neu-app';
+
+\echo [5] Admin gibt Phase 1 frei (mit Begründung) -> phase_frei 1, Protokoll freigabe, Entscheidung „Phase 1 (Konzept) freigegeben“
+:ADM
+select ws_phase_freigeben('neu-app', 1, 'Interview fertig') \g /dev/null
+reset role;
+select phase_frei from ws_projekte where id = 'neu-app';
+select art, von_phase, begruendung from ws_phasen_protokoll where projekt_id = 'neu-app' order by id desc limit 1;
+select text from ws_entscheidungen where projekt_id = 'neu-app' order by id desc limit 1;
+
+\echo [6] Kurzfassung (§16): ohne/zu kurze Begründung -> FEHLER; nur eine Phase -> FEHLER; Entwickler -> FEHLER (3x)
+set role authenticated;
+:ADM
+select ws_phasen_kurzfassung('neu-app', 9, 'zu kurz');
+select ws_phasen_kurzfassung('neu-app', 2, 'Kleines Werkzeug, eine Phase reicht völlig aus');
+:DEV
+select ws_phasen_kurzfassung('neu-app', 9, 'Kleines Werkzeug ohne Datenmodell und Rollen');
+
+\echo [7] Einrichtung vor Phase 9: Entwickler -> FEHLER; direkt mit zweck einrichtung -> FEHLER; Admin legt an -> Entwurf, entfaellt; Admin „Bauen“ -> wartet (Ausnahme der Sperre)
+select ws_einrichtung_auftrag('neu-app', 'doku_geruest');
+:ADM
+insert into ws_auftraege (gruppe_id, titel, art, zweck, erstellt_von) values ('neu-liste', 'x', 'aendern', 'einrichtung', auth.uid());
+select ws_einrichtung_auftrag('neu-app', 'doku_geruest') as e \gset
+select stand, zweck, kritik ->> 'stand' kritik from ws_auftraege where id = :e;
+select ws_entwurf_entscheiden(:e, 'bauen', null, null) \g /dev/null
+select stand from ws_auftraege where id = :e;
+\echo [7b] zweiter offener Einrichtungs-Auftrag -> FEHLER
+select ws_einrichtung_auftrag('neu-app', 'doku_geruest');
+
+\echo [8] Kurzfassung 2–9 mit Begründung -> phase_frei 9, Protokoll kurzfassung 2–9; danach Auftrag des Entwicklers -> Entwurf mit kritik wartet
+select ws_phasen_kurzfassung('neu-app', 9, 'Kleines internes Werkzeug ohne Rollen und Datenmodell, Gerhard 03.11.') \g /dev/null
+reset role;
+select phase_frei from ws_projekte where id = 'neu-app';
+select art, von_phase, bis_phase from ws_phasen_protokoll where projekt_id = 'neu-app' order by id desc limit 1;
+set role authenticated;
+:DEV
+insert into ws_auftraege (gruppe_id, titel, art, erstellt_von) values ('neu-liste', 'Liste sortieren', 'aendern', auth.uid()) returning id as n \gset
+select stand, kritik from ws_auftraege where id = :n;
+
+\echo [9] Entwurf in TTG: Entwickler legt an (stand wartet geschickt) -> entwurf; direkt auf wartet (Entwickler, Admin), kritik setzen, zweck ändern -> FEHLER (4x)
+insert into ws_auftraege (gruppe_id, titel, art, erstellt_von, stand) values ('abstimmungen', 'Abstimmung mit Frist', 'aendern', auth.uid(), 'wartet') returning id as a \gset
+insert into ws_nachrichten (auftrag_id, von, art, text) values (:a, auth.uid(), 'text', 'Abstimmungen sollen eine Frist bekommen.');
+select stand, kritik ->> 'stand' kritik from ws_auftraege where id = :a;
+update ws_auftraege set stand = 'wartet' where id = :a;
+:ADM
+update ws_auftraege set stand = 'wartet' where id = :a;
+update ws_auftraege set kritik = '{"stand":"fertig","ergebnis":"ok","einwaende":[]}' where id = :a;
+update ws_auftraege set zweck = 'doku' where id = :a;
+
+\echo [10] Bauen vor der kritischen Prüfung -> FEHLER; Werkstatt setzt laeuft -> FEHLER (2x)
+:DEV
+select ws_entwurf_entscheiden(:a, 'bauen', null, null);
+update ws_auftraege set stand = 'laeuft', werkstatt_pc = '00000000-0000-0000-0000-0000000000d1' where id = :a;
+
+\echo [11] Kritik nehmen: fremder PC -> FEHLER; Fremder ohne Projekt -> leer (0); Entwickler -> sein Entwurf; zweites Nehmen -> leer (0)
+select * from ws_kritik_nehmen('00000000-0000-0000-0000-0000000000a1');
+:FREMD
+select count(*) fremd from ws_kritik_nehmen((select id from ws_werkstatt_pcs limit 0));
+:DEV
+select auftrag_id = :a as meiner, projekt_id from ws_kritik_nehmen('00000000-0000-0000-0000-0000000000d1') where auftrag_id = :a;
+select count(*) nochmal from ws_kritik_nehmen('00000000-0000-0000-0000-0000000000d1') where auftrag_id = :a;
+
+\echo [12] Kritik melden: anderer PC, ungültige Art, zu lang, ok mit „hoch“, einwaende leer, böse KI-Kennung -> FEHLER (6x)
+:ADM
+select ws_kritik_melden('00000000-0000-0000-0000-0000000000a1', :a, 'ok', '[]', 'claude/opus');
+:DEV
+select ws_kritik_melden('00000000-0000-0000-0000-0000000000d1', :a, 'einwaende', '[{"art":"boese","text":"xyz","schwere":"hoch"}]', 'claude/opus');
+select ws_kritik_melden('00000000-0000-0000-0000-0000000000d1', :a, 'einwaende', jsonb_build_array(jsonb_build_object('art','risiko','text',repeat('x',700),'schwere','hoch')), 'claude/opus');
+select ws_kritik_melden('00000000-0000-0000-0000-0000000000d1', :a, 'ok', '[{"art":"risiko","text":"Frist fehlt im Datenmodell","schwere":"hoch"}]', 'claude/opus');
+select ws_kritik_melden('00000000-0000-0000-0000-0000000000d1', :a, 'einwaende', '[]', 'claude/opus');
+select ws_kritik_melden('00000000-0000-0000-0000-0000000000d1', :a, 'einwaende', '[{"art":"risiko","text":"Frist fehlt","schwere":"hoch"}]', '--yolo');
+
+\echo [13] Kritik melden mit 2 Einwänden -> fertig, einwaende 2, ki chatgpt
+select ws_kritik_melden('00000000-0000-0000-0000-0000000000d1', :a, 'einwaende',
+  '[{"art":"fehlt","text":"Abnahme-Kriterien fehlen","schwere":"hoch"},{"art":"phase","text":"Datenmodell für Fristen nicht beschrieben","schwere":"mittel"}]', 'chatgpt', null, repeat('a', 64)) \g /dev/null
+select kritik ->> 'stand' stand, kritik ->> 'ergebnis' ergebnis, jsonb_array_length(kritik -> 'einwaende') einwaende, kritik ->> 'ki' ki from ws_auftraege where id = :a;
+
+\echo [14] Bauen trotz Einwänden: Entwickler -> FEHLER; Admin ohne Begründung -> FEHLER (2x); Admin mit Begründung -> wartet, Entscheidung bauen_trotz mit 2 Einwänden
+select ws_entwurf_entscheiden(:a, 'bauen', 'passt schon so', null);
+:ADM
+select ws_entwurf_entscheiden(:a, 'bauen', null, null);
+select ws_entwurf_entscheiden(:a, 'bauen', 'Abnahme steht im Gruppen-Konzept, Fristen kommen mit 0.2', null) \g /dev/null
+select stand, kritik ->> 'entscheidung' entscheidung from ws_auftraege where id = :a;
+select art, jsonb_array_length(einwaende) einwaende, begruendung is not null begruendet from ws_entscheidungen where auftrag_id = :a;
+
+\echo [15] Ändern: neuer Text -> bleibt entwurf, kritik wartet runde 2, Nachricht „Änderung am Entwurf“; zu kurz -> FEHLER; Verwerfen -> abgebrochen
+:DEV
+insert into ws_auftraege (gruppe_id, titel, art, erstellt_von) values ('abstimmungen', 'Zweiter Entwurf', 'aendern', auth.uid()) returning id as b \gset
+select ws_entwurf_entscheiden(:b, 'aendern', null, 'kurz');
+select ws_entwurf_entscheiden(:b, 'aendern', null, 'Bitte nur für Trainer sichtbar machen') \g /dev/null
+select stand, kritik ->> 'stand' kritik, kritik ->> 'runde' runde from ws_auftraege where id = :b;
+select left(text, 20) from ws_nachrichten where auftrag_id = :b order by id desc limit 1;
+select ws_entwurf_entscheiden(:b, 'verwerfen', null, null) \g /dev/null
+select stand from ws_auftraege where id = :b;
+select art from ws_entscheidungen where auftrag_id = :b order by id;
+
+\echo [16] Kritik „wartet“ (KI nicht verfügbar): Hinweis gespeichert, sofortiges neues Nehmen -> 0 (erst in 10 Min.)
+insert into ws_auftraege (gruppe_id, titel, art, erstellt_von) values ('abstimmungen', 'Dritter Entwurf', 'aendern', auth.uid()) returning id as c \gset
+insert into ws_nachrichten (auftrag_id, von, art, text) values (:c, auth.uid(), 'text', 'Text für die Prüfung');
+select count(*) genommen from ws_kritik_nehmen('00000000-0000-0000-0000-0000000000d1') where auftrag_id = :c;
+select ws_kritik_melden('00000000-0000-0000-0000-0000000000d1', :c, 'wartet', '[]', null, 'wartet auf ChatGPT: nicht gekoppelt') \g /dev/null
+select kritik ->> 'stand' stand, kritik ->> 'wartet_auf' wartet_auf from ws_auftraege where id = :c;
+select count(*) gleich_wieder from ws_kritik_nehmen('00000000-0000-0000-0000-0000000000d1') where auftrag_id = :c;
+
+\echo [17] Steckbrief-Pflicht: Auftrag ohne nicht/abhaengig -> f; vollständig -> t; mit offenen Fragen -> t; AUFTRAEGE ohne Steckbrief -> f; ohne Konzept -> f
+reset role;
+select ws_vorschlag_ok('trainer-to-go', '{"gruppe_id":"abstimmungen","titel":"Frist","text":"Abstimmung mit Frist bauen","konzept":{"ziel":"Frist","umfang":"Feld","abnahme":["Frist sichtbar"]}}') ohne,
+       ws_vorschlag_ok('trainer-to-go', '{"gruppe_id":"abstimmungen","titel":"Frist","text":"Abstimmung mit Frist bauen","konzept":{"ziel":"Frist","umfang":"Feld","nicht":["Erinnerung"],"abhaengig":["keine"],"abnahme":["Frist sichtbar, abgelaufene gesperrt"]}}') voll,
+       ws_vorschlag_ok('trainer-to-go', '{"gruppe_id":"abstimmungen","titel":"Frist","text":"Abstimmung mit Frist bauen","konzept":{"offen":["Wie lange?"]}}') offen,
+       ws_vorschlag_ok('trainer-to-go', '{"auftraege":[{"gruppe_id":"abstimmungen","titel":"Frist","text":"Abstimmung mit Frist bauen","konzept":{"ziel":"Frist"}}]}') mehrere,
+       ws_vorschlag_ok('trainer-to-go', '{"gruppe_id":"abstimmungen","titel":"Frist","text":"Abstimmung mit Frist bauen"}') ohne_konzept;
+
+\echo [18] Konzept-Aufträge aus dem Gespräch -> Entwurf mit Steckbrief im Text („Ausdrücklich nicht“, „Abhängigkeiten“)
+insert into ws_claude_chat (id, projekt_id, ort, von, text, stand) values (9001, 'trainer-to-go', 'konzept', '00000000-0000-0000-0000-00000000000e', 'Frist bauen', 'beantwortet');
+insert into ws_claude_chat (id, projekt_id, ort, frage_id, von, text, stand, vorschlag) values (9002, 'trainer-to-go', 'konzept', 9001, null, 'Ich lege an', 'beantwortet',
+  '{"auftraege":[{"gruppe_id":"abstimmungen","titel":"Frist für Abstimmungen","text":"Abstimmungen bekommen ein Ablaufdatum.","konzept":{"ziel":"Frist","umfang":"Feld und Anzeige","nicht":["Erinnerungen"],"abhaengig":["keine"],"abnahme":["Abgelaufene Abstimmung ist gesperrt"]}}]}');
+set role authenticated;
+:DEV
+select array_length(ws_konzept_auftraege_anlegen(9002), 1) angelegt;
+select a.stand, a.kritik ->> 'stand' kritik, n.text like '%Ausdrücklich nicht:%' and n.text like '%Abhängigkeiten:%' and n.text like '%als Entwurf angelegt%' steckbrief
+  from ws_auftraege a join ws_nachrichten n on n.auftrag_id = a.id where a.titel = 'Frist für Abstimmungen';
+
+\echo [19] Ideen: Aufgabe anlegen -> Idee (aufgabe, klein); Entwickler gibt frei -> FEHLER; Admin gibt frei -> Entscheidung „idee“; Wunsch per Funktion
+insert into ws_aufgaben (projekt_id, titel, beschreibung) values ('trainer-to-go', 'Kalender exportieren', 'als ICS') returning id as au \gset
+select herkunft, einstufung, stand from ws_ideen where aufgabe_id = :au;
+select ws_idee_aendern((select id from ws_ideen where aufgabe_id = :au), 'mittel', 'freigegeben', null);
+select ws_idee_anlegen('trainer-to-go', 'Dunkler Modus für Eltern', '', 'klein') > 0 wunsch;
+:ADM
+select ws_idee_aendern((select id from ws_ideen where aufgabe_id = :au), 'mittel', 'freigegeben', 'Braucht jeder Trainer') \g /dev/null
+select einstufung, stand from ws_ideen where aufgabe_id = :au;
+select count(*) idee_entscheidung from ws_entscheidungen where art = 'idee';
+\echo [19b] Feature aus dem Gespräch (quelle gespraech) -> Idee feature_neu, mittel
+:DEV
+insert into ws_features (id, gruppe_id, name, stand, quelle, erstellt_von) values ('N-G9002', 'abstimmungen', 'Fristen', 'geplant', 'gespraech', auth.uid());
+select herkunft, einstufung from ws_ideen where feature_id = 'N-G9002';
+
+\echo [20] Abweichung: Entwickler -> FEHLER; Admin zu kurz -> FEHLER; unbekannte Pflicht -> FEHLER (3x); Admin bestätigt, hebt auf -> Entscheidungen abweichung, abweichung_weg
+select ws_abweichung_bestaetigen('trainer-to-go', 'doku', 'Bei Trainer to go gilt AGENTS.md als Stand-Dokument');
+:ADM
+select ws_abweichung_bestaetigen('trainer-to-go', 'doku', 'kurz');
+select ws_abweichung_bestaetigen('trainer-to-go', 'sicherheit', 'Sicherheit ist keine abweichbare Kernpflicht hier');
+select ws_abweichung_bestaetigen('trainer-to-go', 'doku', 'Bei Trainer to go gilt AGENTS.md als Stand-Dokument') \g /dev/null
+select pflicht from ws_kernpflicht_abweichungen;
+select ws_abweichung_aufheben('trainer-to-go', 'doku') \g /dev/null
+select art from ws_entscheidungen where art like 'abweichung%' order by id;
+
+\echo [21] Phasen-Vorschlag nur für eingelesene Projekte -> FEHLER; Bestätigen ohne Vorschlag -> FEHLER
+select ws_phase_vorschlagen('00000000-0000-0000-0000-0000000000a1', 'neu-app', 4, 'Konzept liegt vor');
+select ws_phase_vorschlag_bestaetigen('neu-app', null, null);
+\echo [21b] eingelesenes Projekt (Vorgang vorhanden): Vorschlag Phase 4 -> Bestätigen mit Phase 3 -> phase_frei 2, Protokoll eingelesen 1–3
+reset role;
+insert into ws_projekte (id, name) values ('alt-app', 'Alte App');
+insert into ws_einlesen (quelle, quelle_art, quelle_name, projekt_id, stand) values (repeat('ab', 16), 'ordner', 'Alte App', 'alt-app', 'vorschlag');
+set role authenticated;
+:ADM
+select ws_phase_vorschlagen('00000000-0000-0000-0000-0000000000a1', 'alt-app', 4, 'Konzept und Design liegen als Dateien vor') \g /dev/null
+select phase_vorschlag ->> 'phase' vorschlag from ws_projekte where id = 'alt-app';
+:DEV
+select ws_phase_vorschlag_bestaetigen('alt-app', 3, null);
+:ADM
+select ws_phase_vorschlag_bestaetigen('alt-app', 3, null) \g /dev/null
+select phase_frei, phase_vorschlag is null leer from ws_projekte where id = 'alt-app';
+select art, von_phase, bis_phase from ws_phasen_protokoll where projekt_id = 'alt-app' order by id desc limit 1;
+
+\echo [22] Doku vormerken nur vom PC, auf dem der Auftrag läuft -> FEHLER; danach vorgemerkt und bei „wissen“ im Repository
+select ws_doku_vormerken('00000000-0000-0000-0000-0000000000a1', :a, array[(select min(id) from ws_entscheidungen)], '{}');
+reset role;
+update ws_auftraege set stand = 'laeuft', werkstatt_pc = '00000000-0000-0000-0000-0000000000d1' where id = :a;
+set role authenticated;
+:DEV
+select ws_doku_vormerken('00000000-0000-0000-0000-0000000000d1', :a, (select array_agg(id) from ws_entscheidungen where projekt_id = 'trainer-to-go'), (select array_agg(id) from ws_ideen)) \g /dev/null
+reset role;
+update ws_auftraege set stand = 'wissen' where id = :a;
+select bool_and(im_repo) alle_im_repo, count(*) from ws_entscheidungen where vorgemerkt_auftrag = :a;
+select bool_and(im_repo) ideen_im_repo from ws_ideen where vorgemerkt_auftrag = :a;
+
+\echo [23] Direkt schreiben in die neuen Tabellen -> FEHLER (4x); anon liest/ruft -> FEHLER (3x)
+set role authenticated;
+:ADM
+insert into ws_phasen_protokoll (projekt_id, art, von_phase, bis_phase) values ('neu-app', 'freigabe', 10, 10);
+insert into ws_entscheidungen (projekt_id, art, text) values ('neu-app', 'bauen', 'x');
+insert into ws_ideen (projekt_id, titel, herkunft) values ('neu-app', 'xxx', 'wunsch');
+insert into ws_kernpflicht_abweichungen (projekt_id, pflicht, begruendung) values ('neu-app', 'doku', repeat('x', 30));
+reset role;
+set role anon;
+select count(*) from ws_entscheidungen;
+select ws_phase_freigeben('neu-app', 10, null);
+select ws_bau_erlaubt('trainer-to-go');
+reset role;
+
+\echo [24] Fremder sieht nichts (0 0 0)
+set role authenticated;
+:FREMD
+select (select count(*) from ws_phasen_protokoll) p, (select count(*) from ws_entscheidungen) e, (select count(*) from ws_ideen) i;
+reset role;
+
+\echo [25] Alle neuen Funktionen: SECURITY DEFINER bzw. immutable mit search_path, kein Ausführrecht für public/anon -> 0 0
+select count(*) ohne_pfad from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+ where n.nspname = 'public' and p.proname in ('ws_cs_intern','ws_bau_erlaubt','ws_phase_freigeben','ws_phase_name','ws_phasen_kurzfassung','ws_phase_vorschlagen','ws_phase_vorschlag_bestaetigen',
+   'ws_projekt_phase_start','ws_projekt_phase_protokoll','ws_auftraege_regelwerk','ws_einwaende_ok','ws_kritik_nehmen','ws_kritik_melden','ws_entwurf_entscheiden','ws_doku_geruest_text',
+   'ws_einrichtung_gruppe','ws_einrichtung_auftrag','ws_steckbrief_ok','ws_idee_anlegen','ws_idee_aendern','ws_idee_aus_aufgabe','ws_idee_aus_feature','ws_doku_vormerken','ws_doku_im_repo',
+   'ws_abweichung_bestaetigen','ws_abweichung_aufheben')
+   and not exists (select 1 from unnest(p.proconfig) c where c like 'search_path=%');
+select count(*) offen_fuer_anon from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+ where n.nspname = 'public' and p.proname in ('ws_cs_intern','ws_bau_erlaubt','ws_phase_freigeben','ws_phasen_kurzfassung','ws_phase_vorschlagen','ws_phase_vorschlag_bestaetigen',
+   'ws_kritik_nehmen','ws_kritik_melden','ws_entwurf_entscheiden','ws_einrichtung_auftrag','ws_idee_anlegen','ws_idee_aendern','ws_doku_vormerken','ws_abweichung_bestaetigen','ws_abweichung_aufheben')
+   and (has_function_privilege('anon', p.oid, 'execute') or has_function_privilege('public', p.oid, 'execute'));
+select has_function_privilege('authenticated', 'public.ws_cs_intern()', 'execute') intern_aufrufbar;
+
+\echo [26] Weichen: 0010, 0012, 0015, 0020, 0048 erneut eingespielt (dazu 0014, 0018, 0026) -> Steckbrief-Pflicht bleibt (f), Konzept-Aufträge mit Steckbrief und Sperre (t), neue Felder (t), Aufgabe „kritik“ gültig (t)
+\ir ../migrations/0010_claude_chat.sql
+\ir ../migrations/0012_ki_anbieter.sql
+\ir ../migrations/0014_sandbox_pruefung.sql
+\ir ../migrations/0018_ki_anbieter_frei.sql
+\ir ../migrations/0026_logo_einlesen.sql
+\ir ../migrations/0015_feature_bezuege.sql
+\ir ../migrations/0020_konzept_wissen.sql
+\ir ../migrations/0048_gruppen_loeschen_konzept_auftraege.sql
+\set QUIET 1
+select ws_vorschlag_ok('trainer-to-go', '{"gruppe_id":"abstimmungen","titel":"Frist","text":"Abstimmung mit Frist bauen","konzept":{"ziel":"Frist","umfang":"Feld","abnahme":["Frist sichtbar"]}}') ohne_steckbrief;
+select prosrc like '%Ausdrücklich nicht%' and prosrc like '%ws_bau_erlaubt%' steckbrief from pg_proc where proname = 'ws_konzept_auftraege_anlegen';
+select ws_konzept_ok('{"nicht":["x"],"abhaengig":["y"]}') neue_felder, ws_ki_reihe_ok('kritik', '[{"anbieter":"chatgpt"}]') kritik_gueltig;
+
+\echo [27] Ampel: Lampen doku und kernpflichten erlaubt (t), unbekannte Lampe (f)
+select ws_anbindungen_ok('{"doku":{"stand":"gelb","text":"3 Dateien fehlen"},"kernpflichten":{"stand":"rot","text":"keine bestätigte Fassung"}}') ok,
+       ws_anbindungen_ok('{"boese":{"stand":"gruen","text":"x"}}') boese;
+
+\echo [28] KI-Zuständigkeit „kritik“ gespeichert, setzen nur Admin (Entwickler -> FEHLER), Admin -> OK
+set role authenticated;
+:DEV
+select ws_ki_global_setzen('kritik','[{"anbieter":"chatgpt"},{"anbieter":"claude","modell":"opus"}]'::jsonb, 90);
+:ADM
+select ws_ki_global_setzen('kritik','[{"anbieter":"chatgpt"},{"anbieter":"claude","modell":"opus"}]'::jsonb, 90) \g /dev/null
+select reihe -> 0 ->> 'anbieter' kritik from ws_ki_zustaendigkeit_global where aufgabe = 'kritik';
+reset role;
+
+\echo [29] Drittes Einspielen von 0063 ändert nichts: Phasen, Protokoll und Einrichtungs-Aufträge gleich
+create temp table vorher as select (select count(*) from ws_phasen_protokoll) p, (select count(*) from ws_auftraege where zweck = 'einrichtung') e, (select string_agg(id || ':' || phase_frei, ',' order by id) from ws_projekte) f;
+\ir ../migrations/0063_regelwerk_erzwingen.sql
+\set QUIET 1
+select v.p = (select count(*) from ws_phasen_protokoll) protokoll_gleich, v.e = (select count(*) from ws_auftraege where zweck = 'einrichtung') einrichtung_gleich,
+       v.f = (select string_agg(id || ':' || phase_frei, ',' order by id) from ws_projekte) phasen_gleich from vorher v;

@@ -3,6 +3,10 @@
 -- nur auf PCs mit Betriebssystem-Sandbox (macOS sandbox-exec, Linux bubblewrap); sonst prüft Claude. Bauen bleibt fest Claude.
 -- Mehrfach ausführbar. Reihenfolge 0001 → … → 0014.
 begin;
+-- Weiche (0.19.0): Liegt 0063 (Regelwerk erzwingen) schon vor, bleibt dessen Fassung von ws_ki_reihe_ok stehen (mit Aufgabe „kritik“).
+do $weiche$ begin
+  if to_regclass('public.ws_phasen_protokoll') is null then
+    execute $fassung$
 create or replace function public.ws_ki_reihe_ok(p_aufgabe text, r jsonb) returns boolean
 language plpgsql immutable set search_path = public as $$
 declare e jsonb;
@@ -21,5 +25,8 @@ begin
   if p_aufgabe = 'pruefung' and not exists (select 1 from jsonb_array_elements(r) x where x->>'anbieter' = 'claude') then return false; end if;
   return true;
 end $$;
+    $fassung$;
+  end if;
+end $weiche$;
 revoke execute on function public.ws_ki_reihe_ok(text, jsonb) from public, anon;
 commit;
