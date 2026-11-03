@@ -6,7 +6,7 @@ import { readFile } from "node:fs/promises";
 import {
   PHASEN, phasenStand, BAU_GESPERRT, DOKU_GERUEST, dokuGeruest, dokuLampe, dokuImDiff, KERNPFLICHTEN, kernpflichtKonflikte, kernpflichtLampe, kernpflichtBlock,
   namenStatus, neueZeilen, nurDoku, nachrichtenBisFreigabe, steckbriefOk, kritikPrompt, kritikAntwort, PRUEF_CHECKLISTE, checklisteText, checklisteAuswerten, regelStempel, mitNichtGetestet, dokuAuftragBlock,
-  phaseAusAntwort, ohnePhaseZeile, PHASE_FRAGE,
+  phaseAusAntwort, ohnePhaseZeile, PHASE_FRAGE, nacharbeitBefund, kritikZuGross, zuGrossEinwand, kritikAnhangBlock, KRITIK_MAX, ZU_GROSS,
 } from "../lib/regelwerk.mjs";
 import { regelBlock, regelBlockText } from "../lib/regeln.mjs";
 import { gruppenPrompt, gruppenAntwort } from "../lib/einlesen.mjs";
@@ -40,7 +40,7 @@ test("Phasensperre im Dienst: nichts läuft, wenn die Datenbank „laeuft“ abl
   assert.match(s, /!\(await bauErlaubt\(pidNeu\)\)\) \{ await wartetAufMelden\(a, BAU_GESPERRT\); continue; \}/);
   // Stationen: ohne Phase 9 bzw. ohne kritische Prüfung und „Bauen“ rot
   assert.match(s, /zweckBau && !\(await bauErlaubt\(projekt\.id\)\)\) \{ await rot\(BAU_GESPERRT/);
-  assert.match(s, /if \(!a\.hand && a\.kritik && !\(await freigabeOk\(a\.id\)\)\) \{ await rot\(FREIGABE_FEHLT/);
+  assert.match(s, /if \(!a\.hand && !\(await freigabeOk\(a\.id\)\)\) \{ await rot\(FREIGABE_FEHLT/);
 });
 
 test("Konzept-Chat: Prompt legt nur Entwürfe an, nicht mehr „sofort gebaut“; Steckbrief Pflicht", () => {
@@ -142,7 +142,7 @@ test("Doku-Prüfung im Dienst: nach dem Lauf Nacharbeit, Station hart, nur Gefun
   assert.match(s, /db\.rpc\("ws_doku_vormerken"/);
   // A2: Einrichtungs-Aufträge bekommen nur den festen Text
   assert.match(s, /db\.rpc\("ws_doku_geruest_text"\)/);
-  assert.match(s, /\.\.\.\(nachrichten \|\| \[\]\)\.filter\(\(n\) => !n\.von && n\.art !== "system"\)/);
+  assert.match(s, /nachrichten = \[\{ id: 0, von: "codeschmiede", art: "text", text: fest \}\];/);   // dritte Prüfung: keine Werkstatt-Nachrichten mehr
 });
 
 test("A4/A5/B3/B4: Sperre auch in Rückfrage- und Nacharbeitsschleife, zufällige Grenze, Abweichungen wirken, Zweck in der Prüfung", async () => {
@@ -157,7 +157,7 @@ test("A4/A5/B3/B4: Sperre auch in Rückfrage- und Nacharbeitsschleife, zufällig
   assert.match(s, /\["regeln", "phase"\]\.includes\(id\) && hatAbw\("regelpruefung"\)/);
   assert.match(s, /id === "phase" && \(a\.zweck \|\| "bau"\) !== "bau"/);
   assert.match(s, /db\.rpc\("ws_bau_erlaubt", \{ p_projekt: projektId \}\)/);
-  assert.match(s, /text: String\(k\.text \|\| ""\)/);   // A1: Kritik über genau den gemerkten Text
+  assert.match(s, /const text = String\(k\.text \|\| ""\);/);   // A1: Kritik über genau den gemerkten Text
 });
 
 test("Doku-Gerüst: alle Pfade nach §15, Inhalte ohne Platzhalter; Ampel „Doku vollständig“", () => {
@@ -249,11 +249,16 @@ test("N2: für den Lauf nur Nachrichten bis zur Freigabe, danach nur Antworten a
   const n = [{ id: 1, von: "g", text: "Auftrag" }, { id: 2, von: null, art: "system", text: "Entwurf freigegeben" }, { id: 3, von: "g", text: "heimlich nachgeschoben" },
     { id: 4, von: null, art: "frage", text: "Rückfrage" }, { id: 5, von: "g", text: "Antwort" }];
   assert.deepEqual(nachrichtenBisFreigabe(n, 2).map((x) => x.id), [1, 2, 4, 5]);
+  // dritte Prüfung (N6/N7): andere Werkstatt-Texte nach der Freigabe fallen weg, Personen-Text nur nach einer Rückfrage
+  const m = [{ id: 1, von: "g", text: "Auftrag" }, { id: 2, von: null, art: "system", text: "freigegeben" }, { id: 3, von: null, art: "text", text: "Station: …" },
+    { id: 4, von: "g", text: "nachgeschoben" }, { id: 5, von: null, art: "frage", text: "Rückfrage" }, { id: 6, von: "g", text: "Antwort" }, { id: 7, von: null, art: "text", text: "Doku-Hinweis" }];
+  assert.deepEqual(nachrichtenBisFreigabe(m, 2).map((x) => x.id), [1, 2, 5, 6]);
   assert.deepEqual(nachrichtenBisFreigabe(n, null).map((x) => x.id), [1, 2, 3, 4, 5]);   // Altbestand / Hand-Änderung
   const s = await quelle();
-  assert.match(s, /if \(!auftrag\.hand && auftrag\.kritik && !\(await freigabeOk\(auftrag\.id\)\)\) \{/);
+  assert.match(s, /if \(!auftrag\.hand && !\(await freigabeOk\(auftrag\.id\)\)\) \{/);   // auch Altbestand ohne kritik (N5)
+  assert.doesNotMatch(s, /\.kritik && !\(await freigabeOk/);
   assert.match(s, /nachrichten = nachrichtenBisFreigabe\(nachrichten \|\| \[\], auftrag\.kritik\?\.freigabe_nachricht\);/);
-  assert.match(s, /if \(!a\.hand && a\.kritik && !\(await freigabeOk\(a\.id\)\)\) \{ await wartetAufMelden\(a, FREIGABE_FEHLT\); continue; \}/);
+  assert.match(s, /if \(!a\.hand && !\(await freigabeOk\(a\.id\)\)\) \{ await wartetAufMelden\(a, FREIGABE_FEHLT\); continue; \}/);
   assert.match(s, /db\.rpc\("ws_auftrag_freigabe_ok", \{ p_auftrag: auftragId \}\)/);
   assert.match(dokuAuftragBlock({}), /docs\/stand\.md/);
 });
@@ -293,4 +298,30 @@ test("Oberfläche: Phasen-Liste in web/src/daten/regelwerk.js ist dieselbe wie i
   assert.match(a, /titel="Doku vollständig"/); assert.match(a, /titel="Kernpflichten"/);
   const k = await readFile(new URL("../../../web/src/KiAnbieter.jsx", import.meta.url), "utf8");
   assert.match(k, /\["kritik", "Kritische Prüfung der Entwürfe"/);
+});
+
+test("Dritte Prüfung: Nacharbeit nimmt den gespeicherten Befund, nicht die letzte Nachricht", async () => {
+  assert.equal(nacharbeitBefund({ lokal: { ergebnis: "rot", befund: "Test rot", zeit: "2026-11-03T09:00:00Z" }, sicherheit: { ergebnis: "rot", befund: "SQL offen", zeit: "2026-11-03T10:00:00Z" } }), "SQL offen");
+  assert.equal(nacharbeitBefund({ sicherheit: { ergebnis: "gruen", befund: "gut" }, lokal: { ergebnis: "rot", befund: "Build rot" } }), "Build rot");
+  assert.equal(nacharbeitBefund(null), ""); assert.equal(nacharbeitBefund({ feature: { ergebnis: "rot", befund: "x".repeat(9000) } }).length, 4000);
+  const s = await quelle();
+  assert.doesNotMatch(s, /Nacharbeit aus der Prüfung \(nichts ist live gegangen\):\\n\$\{nachrichten\.slice\(-1\)/);
+  assert.equal((s.match(/Nacharbeit aus der Prüfung \(nichts ist live gegangen\):\\n\$\{nacharbeitBefund\(auftrag\.pruefung\)\}/g) || []).length, 2);
+});
+
+test("Dritte Prüfung: Kritik sieht Text-Anhänge, lehnt zu große Entwürfe ab statt zu kürzen; Station kennzeichnet Rückfrage-Antworten", async () => {
+  const b = kritikAnhangBlock([{ dateiname: "liste.csv", mime: "text/csv", text: "Name;Position\nAli;Tor" }, { dateiname: "x.pdf", mime: "application/pdf", text: "pdf" },
+    { dateiname: "lang.txt", mime: "text/plain", text: "y".repeat(25000) }]);
+  assert.match(b, /Anhang „liste\.csv“ \(text\/csv\):\nName;Position\nAli;Tor/); assert.doesNotMatch(b, /x\.pdf/); assert.match(b, /gekürzt, 25000 Zeichen/);
+  assert.match(b, /PDF, DOCX und XLSX liest die Kritik nicht/);
+  assert.equal(kritikAnhangBlock([]), "");
+  assert.ok(!kritikZuGross("a".repeat(KRITIK_MAX))); assert.ok(kritikZuGross("a".repeat(KRITIK_MAX + 1)));
+  const e = zuGrossEinwand(300000); assert.equal(e[0].schwere, "hoch"); assert.ok(e[0].text.includes(ZU_GROSS) && e[0].text.length <= 600);
+  const lang = "z".repeat(90000);
+  assert.ok(kritikPrompt({ projektName: "x", phase: 9, titel: "t", text: lang }).includes(lang));   // keine Kürzung mehr im Prompt
+  const s = await quelle();
+  assert.match(s, /if \(kritikZuGross\(text\)\) \{/);
+  assert.match(s, /const anhaenge = await kritikAnhaengeLesen\(k\.auftrag_id, projekt\.id\);/);
+  assert.match(s, /`Rückfrage-Antwort \(nach Freigabe\): \$\{n\.text\}`/);
+  assert.match(s, /await auftragsTextVon\(a\.id, a\.kritik\?\.freigabe_nachricht\)/);
 });

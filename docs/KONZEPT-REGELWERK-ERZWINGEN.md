@@ -133,6 +133,36 @@ Jeder Bau-Auftrag bekommt `docs/stand.md` und `docs/entscheidungen.md` als Anhan
   Bilder nur als „Bild: name“), Baustein und Bild-Vorlagen (die Prüfsumme zusätzlich über den Bildinhalt); dazu frühere Werkstatt-Nachrichten gekürzt.
 - Doku-Kennungen: neben `E<id>` müssen mindestens 20 Zeichen Inhalt stehen; bei Nacharbeit wird die Gefunden-Meldung zurückgesetzt.
 
+## 7d. Dritte Prüfung (GELB, 03.11.2026) – behoben
+
+- **Hauptsperre in der Datenbank (Punkt 1, N9):** Der Trigger `ws_auftraege_regelwerk` lässt den Übergang nach „laeuft“ nur mit gültiger Freigabe zu
+  (`ws_freigabe_gueltig`: letzte Zeile „bauen…“ im Entscheidungsprotokoll, Prüfsumme passt zum Text bis zur Freigabe-Nachricht). Ausgenommen sind
+  Hand-Änderungen; Einrichtungs-Aufträge mit festem Text brauchen nur die Freigabe des Admins. Damit baut auch ein Werkstatt-PC mit altem Dienst (0.18.x)
+  nichts ohne Freigabe.
+- **Altbestand (N5):** Bau-Aufträge ohne Kritik in „wartet“, „frage“, „nacharbeit“ oder „freigabe“ werden beim Einspielen zum Entwurf, „laeuft“ nach dem Lauf.
+  Kommt ein solcher Auftrag später in einen offenen Stand oder bekommt er eine Nachricht, wird er ebenfalls Entwurf. Der Dienst baut ohne Freigabe nicht,
+  auch wenn `kritik` leer ist.
+- **Werkstatt-PC (N6):** `werkstatt_pc` lässt sich nur beim Übernehmen setzen (Wechsel nach „laeuft“), und nur auf einen eigenen, eingeschalteten PC.
+- **Rückfragen nach der Freigabe (N7):** Die 500 Zeichen gelten für die Summe aller Antworten von Personen seit der Freigabe-Nachricht, über mehrere Rückfragen
+  hinweg. Der Dienst nimmt nach der Freigabe nur Werkstatt-Rückfragen und die Antworten darauf. Andere Werkstatt-Texte (Station, Doku-Hinweise) gehen nicht mehr
+  in den Bau. Die Prüf-Station kennzeichnet solche Antworten als „Rückfrage-Antwort (nach Freigabe)“. Die Nacharbeit bekommt den gespeicherten roten Befund
+  der Prüfung (`pruefung.sicherheit/feature/lokal`) und nicht mehr die letzte Nachricht.
+  - **Abweichung vom Prüfvorschlag:** Werkstatt-Texte zählen nicht zu den 500 Zeichen. Jede Station und jeder Doku-Hinweis schreibt eine Werkstatt-Nachricht,
+    also würde jede Nacharbeit sonst zurück auf Entwurf springen. Dieselbe Sicherheit kommt auf anderem Weg: Werkstatt-Texte nach der Freigabe gehen nicht
+    in den Bau.
+- **Kritik sieht mehr (N8):** Der Text der Kritik und die Prüfsumme enthalten den Fehler-Text aus `daten.fehler` (Meldung, Stelle, Seite, Ablauf, Version,
+  Umgebung) und die Links und Anhänge der Aufgaben-Sendung. Die Prüfsumme nimmt zusätzlich die Speicher-Metadaten (`storage.objects`) jedes Anhangs auf, damit ein
+  neuer Inhalt die Freigabe ungültig macht. Den Inhalt von Text-Anhängen (txt, csv) lädt die Werkstatt für die Kritik herunter: je Datei höchstens 20.000 Zeichen,
+  insgesamt höchstens 60.000.
+  - **Bekannte Lücke:** PDF, DOCX und XLSX liest die Kritik nicht als Text, denn auch der Dienst liest sie nicht als Text. Er legt sie nur als Datei für den Bau ab.
+    Die Kritik sieht bei diesen Dateien nur Name, Art und Größe, die Prüfsumme deckt aber ihren Inhalt ab.
+  - **Konzept-Wissen und Vorlagen:** Sie stehen im Bau-Prompt, aber nicht vollständig in der Kritik. Sie gelten als Daten, die Gerhard schon bestätigt hat:
+    Wissen aus „Konzept bestätigen“, Vorlagen aus der Vorlagen-Verwaltung des Admins. Die Kritik bekommt den bestätigten Konzept-Stand als Wissen.
+- **Punkt 5:** Setzt jemand, auch der Admin, einen abgebrochenen oder erledigten Auftrag wieder auf einen offenen Stand, wird er Entwurf mit neuer Kritik, und
+  die alte Freigabe gilt nicht mehr. Einrichtungs-Aufträge bekommen im Dienst nur den festen Systemtext. `ws_entwurf_text` kürzt nichts mehr. Ist ein Entwurf größer
+  als 200.000 Zeichen, prüft die Werkstatt ihn nicht gekürzt, sondern meldet einen Einwand „hoch“ („Entwurf zu groß für die Kritik“). Bauen ist dann nur mit
+  Gerhards ausdrücklicher Entscheidung möglich.
+
 ## 8. Bewusst nicht in 0.19.0 (offen)
 
 - Live-Tor: Datenschutzerklärung, Impressum und aktiver Fehler-Melder als Vorbedingung für Live (§14).

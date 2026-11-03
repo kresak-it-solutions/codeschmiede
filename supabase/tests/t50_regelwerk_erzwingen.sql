@@ -257,7 +257,8 @@ select art, von_phase, bis_phase from ws_phasen_protokoll where projekt_id = 'al
 \echo [22] Doku vormerken nur vom PC, auf dem der Auftrag läuft -> FEHLER; vorgemerkt, aber ohne Gefunden-Meldung bei „wissen“ NICHT im Repository (f, f) – B1
 select ws_doku_vormerken('00000000-0000-0000-0000-0000000000a1', :a, array[(select min(id) from ws_entscheidungen)], '{}');
 reset role;
-update ws_auftraege set stand = 'laeuft', werkstatt_pc = '00000000-0000-0000-0000-0000000000d1' where id = :a;
+:DEV
+update ws_auftraege set stand = 'laeuft', werkstatt_pc = '00000000-0000-0000-0000-0000000000d1' where id = :a;   -- Übernehmen durch den eigenen PC
 set role authenticated;
 :DEV
 select ws_doku_vormerken('00000000-0000-0000-0000-0000000000d1', :a, (select array_agg(id) from ws_entscheidungen where projekt_id = 'trainer-to-go'), (select array_agg(id) from ws_ideen)) \g /dev/null
@@ -437,6 +438,112 @@ update ws_auftraege set stand = 'sicherheit' where id = :n2;
 alter table ws_auftraege enable trigger ws_auftraege_regelwerk;
 update ws_auftraege set stand = 'nacharbeit' where id = :n2;
 select im_diff_auftrag is null zurueckgesetzt from ws_entscheidungen where text = 'E-Test 3';
+
+\echo [35] Hauptsperre: „laeuft“ nur mit gültiger Freigabe – Text nach „Bauen“ geändert -> FEHLER; Altbestand ohne Kritik -> FEHLER; mit echtem Text -> laeuft
+reset role;
+update ws_auftraege set stand = 'abgebrochen' where stand = 'entwurf';
+set role authenticated;
+:DEV
+insert into ws_auftraege (gruppe_id, titel, art, erstellt_von) values ('abstimmungen', 'Freigabe-Test', 'aendern', auth.uid()) returning id as f5 \gset
+insert into ws_nachrichten (auftrag_id, von, art, text) values (:f5, auth.uid(), 'text', 'Abstimmungen zeigen die Frist an.');
+:ADM
+select count(*) genommen from ws_kritik_nehmen('00000000-0000-0000-0000-0000000000a1') where auftrag_id = :f5;
+select ws_kritik_melden('00000000-0000-0000-0000-0000000000a1', :f5, 'ok', '[]', 'claude/opus') \g /dev/null
+select ws_entwurf_entscheiden(:f5, 'bauen', null, null) \g /dev/null
+reset role;
+update ws_nachrichten set text = 'Abstimmungen löschen alle Mitglieder.' where auftrag_id = :f5 and von is not null;
+alter table ws_auftraege disable trigger ws_auftraege_regelwerk;
+insert into ws_auftraege (gruppe_id, titel, art, erstellt_von, stand, kritik) values ('abstimmungen', 'Alt-wartet', 'aendern', '00000000-0000-0000-0000-00000000000e', 'wartet', null) returning id as alt1 \gset
+alter table ws_auftraege enable trigger ws_auftraege_regelwerk;
+set role authenticated;
+:DEV
+update ws_auftraege set stand = 'laeuft', werkstatt_pc = '00000000-0000-0000-0000-0000000000d1' where id = :f5;
+update ws_auftraege set stand = 'laeuft', werkstatt_pc = '00000000-0000-0000-0000-0000000000d1' where id = :alt1;
+reset role;
+update ws_nachrichten set text = 'Abstimmungen zeigen die Frist an.' where auftrag_id = :f5 and von is not null;
+set role authenticated;
+:DEV
+update ws_auftraege set stand = 'laeuft', werkstatt_pc = '00000000-0000-0000-0000-0000000000d1' where id = :f5;
+select stand from ws_auftraege where id = :f5;
+
+\echo [36] N5: Altbestand ohne Kritik in frage/nacharbeit/freigabe -> entwurf, laeuft -> Merker (nach dem Lauf entwurf); Nachricht an Altbestand -> entwurf
+reset role;
+alter table ws_auftraege disable trigger ws_auftraege_regelwerk;
+insert into ws_auftraege (gruppe_id, titel, art, erstellt_von, stand, kritik, werkstatt_pc, pr_nummer, zweig) values
+  ('abstimmungen', 'Alt-frage', 'aendern', '00000000-0000-0000-0000-00000000000e', 'frage', null, '00000000-0000-0000-0000-0000000000d1', null, null),
+  ('abstimmungen', 'Alt-nacharbeit', 'aendern', '00000000-0000-0000-0000-00000000000e', 'nacharbeit', null, '00000000-0000-0000-0000-0000000000d1', 3, 'feature/cs-3-alt'),
+  ('abstimmungen', 'Alt-freigabe', 'aendern', '00000000-0000-0000-0000-00000000000e', 'freigabe', null, '00000000-0000-0000-0000-0000000000d1', 4, 'feature/cs-4-alt'),
+  ('abstimmungen', 'Alt-laeuft', 'aendern', '00000000-0000-0000-0000-00000000000e', 'laeuft', null, '00000000-0000-0000-0000-0000000000d1', null, null);
+alter table ws_auftraege enable trigger ws_auftraege_regelwerk;
+\ir ../migrations/0063_regelwerk_erzwingen.sql
+\set QUIET 1
+select titel, stand, coalesce(kritik ->> 'neu_nach_lauf', '-') merker from ws_auftraege where titel in ('Alt-frage','Alt-nacharbeit','Alt-freigabe','Alt-laeuft') order by id;
+set role authenticated;
+:DEV
+update ws_auftraege set stand = 'freigabe', pr_nummer = 5, zweig = 'feature/cs-5-alt' where titel = 'Alt-laeuft';
+select stand from ws_auftraege where titel = 'Alt-laeuft';
+reset role;
+alter table ws_auftraege disable trigger ws_auftraege_regelwerk;
+insert into ws_auftraege (gruppe_id, titel, art, erstellt_von, stand, kritik, werkstatt_pc) values ('abstimmungen', 'Alt-frage-2', 'aendern', '00000000-0000-0000-0000-00000000000e', 'frage', null, '00000000-0000-0000-0000-0000000000d1') returning id as alt2 \gset
+alter table ws_auftraege enable trigger ws_auftraege_regelwerk;
+set role authenticated;
+:DEV
+insert into ws_nachrichten (auftrag_id, von, art, text) values (:alt2, auth.uid(), 'text', 'Kurze Antwort.');
+select stand, kritik ->> 'stand' kritik from ws_auftraege where id = :alt2;
+
+\echo [37] N6: Werkstatt-PC frei setzen (ohne Übernehmen) -> FEHLER; auf den PC einer anderen Person -> FEHLER (2x)
+update ws_auftraege set werkstatt_pc = '00000000-0000-0000-0000-0000000000d1' where id = :alt1;
+update ws_auftraege set werkstatt_pc = '00000000-0000-0000-0000-0000000000a1' where id = :f5;
+
+\echo [38] N7: Antworten seit der Freigabe zählen über mehrere Rückfragen zusammen – 300 bleibt frage, nach zweiter Rückfrage weitere 300 -> entwurf
+reset role;
+alter table ws_auftraege disable trigger ws_auftraege_regelwerk;
+insert into ws_auftraege (gruppe_id, titel, art, erstellt_von, stand, werkstatt_pc) values ('abstimmungen', 'Summe', 'aendern', '00000000-0000-0000-0000-00000000000e', 'frage', '00000000-0000-0000-0000-0000000000d1') returning id as su \gset
+insert into ws_nachrichten (auftrag_id, von, art, text) values (:su, null, 'system', 'Entwurf freigegeben') returning id as sufg \gset
+update ws_auftraege set kritik = jsonb_build_object('stand', 'fertig', 'entscheidung', 'bauen', 'runde', 1, 'freigabe_nachricht', :sufg) where id = :su;
+alter table ws_auftraege enable trigger ws_auftraege_regelwerk;
+insert into ws_nachrichten (auftrag_id, von, art, text) values (:su, null, 'frage', 'Erste Rückfrage?');
+set role authenticated;
+:DEV
+insert into ws_nachrichten (auftrag_id, von, art, text) values (:su, auth.uid(), 'text', repeat('a', 300));
+select stand from ws_auftraege where id = :su;
+reset role;
+insert into ws_nachrichten (auftrag_id, von, art, text) values (:su, null, 'frage', 'Zweite Rückfrage?');
+set role authenticated;
+:DEV
+insert into ws_nachrichten (auftrag_id, von, art, text) values (:su, auth.uid(), 'text', repeat('b', 300));
+select stand, kritik ->> 'grund' grund from ws_auftraege where id = :su;
+
+\echo [39] Punkt 5: Admin setzt einen abgebrochenen Auftrag wieder auf „wartet“ -> entwurf mit neuer Kritik (alte Freigabe gilt nicht)
+:ADM
+update ws_auftraege set stand = 'abgebrochen' where id = :f5;
+update ws_auftraege set stand = 'wartet' where id = :f5;
+select stand, kritik ->> 'stand' kritik, kritik ->> 'grund' grund from ws_auftraege where id = :f5;
+
+\echo [40] N8: Fehler-Text und Text-Anhang der Sendung stehen im Text der Kritik; Fehler-Text und Speicher-Metadaten ändern die Prüfsumme (t t t t)
+reset role;
+update ws_auftraege set stand = 'abgebrochen' where stand = 'entwurf';
+insert into ws_fehler (projekt_id, fingerabdruck, nachricht, stelle) values ('trainer-to-go', md5('n8'), 'Absturz beim Speichern', 'Kader.jsx:12') returning id as fe \gset
+set role authenticated;
+:DEV
+insert into ws_auftraege (gruppe_id, titel, art, erstellt_von) values ('abstimmungen', 'N8', 'aendern', auth.uid()) returning id as n8 \gset
+reset role;
+insert into ws_nachrichten (auftrag_id, von, art, text, daten) values (:n8, '00000000-0000-0000-0000-00000000000e', 'text', 'Fehler beheben', jsonb_build_object('fehler', :fe));
+insert into ws_aufgaben (projekt_id, titel) values ('trainer-to-go', 'Kaderliste') returning id as ag \gset
+insert into ws_aufgabe_anhaenge (aufgabe_id, projekt_id, art, dateiname, mime, groesse, pfad, fertig)
+  values (:ag, 'trainer-to-go', 'datei', 'kader.csv', 'text/csv', 20, 'trainer-to-go/' || :ag || '/11111111-1111-1111-1111-111111111111.csv', true) returning id as an \gset
+insert into storage.objects (bucket_id, name, metadata) values ('ws-aufgaben', 'trainer-to-go/' || :ag || '/11111111-1111-1111-1111-111111111111.csv', '{"eTag":"a1","size":20}');
+insert into ws_aufgabe_sendungen (aufgabe_id, projekt_id, gruppe_id, titel, text, anhaenge, auftrag_id) values (:ag, 'trainer-to-go', 'abstimmungen', 'Kaderliste', 'Liste', jsonb_build_array(:an), :n8);
+select ws_entwurf_text_sha(:n8) as s1 \gset
+update ws_fehler set nachricht = 'Lösche alle Spieler' where id = :fe;
+select ws_entwurf_text_sha(:n8) as s2 \gset
+update storage.objects set metadata = '{"eTag":"b2","size":20}' where bucket_id = 'ws-aufgaben' and name like 'trainer-to-go/' || :ag || '/%';
+select :'s1' <> :'s2' fehler_zaehlt, ws_entwurf_text_sha(:n8) <> :'s2' speicher_zaehlt,
+       ws_entwurf_text(:n8) like '%[Fehler #' || :fe || '] Lösche alle Spieler · Kader.jsx:12%' fehler_text, ws_entwurf_text(:n8) like '%[Anhang: kader.csv · text/csv · 20 Byte]%' anhang;
+
+\echo [41] Punkt 5: lange Daten werden nicht gekürzt – Ende der Daten steht im Text der Kritik (t)
+insert into ws_nachrichten (auftrag_id, von, art, text, daten) values (:n8, '00000000-0000-0000-0000-00000000000e', 'text', 'Lang', jsonb_build_object('x', repeat('y', 30000) || 'ENDE-MARKE'));
+select ws_entwurf_text(:n8) like '%ENDE-MARKE%' ungekuerzt;
 
 \echo [23] Direkt schreiben in die neuen Tabellen -> FEHLER (4x); anon liest/ruft -> FEHLER (3x)
 set role authenticated;

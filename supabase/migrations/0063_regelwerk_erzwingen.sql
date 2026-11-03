@@ -18,6 +18,9 @@
 --   7 Nachschärfung (unabhängige Prüfung GELB, 03.11.2026): neue Nachrichten an Entwürfe → neue Kritik, „Bauen“ nur auf dem geprüften Text (Prüfsumme)
 --     und nur durch den Admin; Kritik nie vom PC des Erstellers, KI nur aus der Zuständigkeit „kritik“; Einrichtungs-Aufträge ohne Nachrichten;
 --     lange Antworten auf Rückfragen und Altbestand „wartet“ → Entwurf; Doku-Kennungen „E<id>“ nur bei Treffer im Repository; Abweichungen wirken.
+--   8 Dritte Prüfung (GELB, 03.11.2026): „laeuft“ nur mit gültiger Freigabe (ws_freigabe_gueltig, auch gegen alte Dienste); Altbestand ohne Kritik
+--     in allen offenen Ständen → Entwurf; werkstatt_pc nur beim Übernehmen; 500 Zeichen als Summe seit der Freigabe; Fehler-Text, Sendungs-Anhänge
+--     und Speicher-Metadaten in Kritik und Prüfsumme, keine Kürzung; abgebrochen/erledigt → wieder offen nur als Entwurf.
 -- Sicherheit: RLS auf allen neuen Tabellen, keine direkten Schreibrechte, alle Funktionen SECURITY DEFINER mit search_path, keine Rechte für
 -- public und anon. Interne Freigaben (Entwurf starten, Kritik schreiben, zurück zum Entwurf, Einrichtung) stehen in der Tabelle ws_intern_token, die
 -- nur diese Funktionen beschreiben (ws_intern_setzen ist für authenticated, anon und service_role nicht ausführbar) und die nur für die eigene
@@ -296,16 +299,33 @@ begin
   if new.kritik is distinct from old.kritik and not public.ws_intern_hat('kritik:' || new.id) and not public.ws_intern_hat('entscheidung:' || new.id)
      and not public.ws_intern_hat('zurueck:' || new.id) then
     raise exception 'Die kritische Prüfung schreibt nur die Codeschmiede'; end if;
+  -- Werkstatt-PC (Punkt 3): setzen nur beim Übernehmen (Wechsel nach „laeuft“) und nur auf einen eigenen, eingeschalteten PC
+  if new.werkstatt_pc is distinct from old.werkstatt_pc and new.werkstatt_pc is not null
+     and not (new.stand = 'laeuft' and exists (select 1 from public.ws_werkstatt_pcs w where w.id = new.werkstatt_pc and w.benutzer_id = auth.uid() and w.an)) then
+    raise exception 'Den Werkstatt-PC setzt nur der PC, der den Auftrag gerade übernimmt'; end if;
   if new.stand is distinct from old.stand then
     if new.stand = 'entwurf' and not public.ws_intern_hat('zurueck:' || new.id) then raise exception 'Ein Auftrag wird nicht wieder zum Entwurf'; end if;
     if old.stand = 'entwurf' and new.stand <> 'abgebrochen' and not public.ws_intern_hat('entscheidung:' || new.id) then
       raise exception 'Ein Entwurf startet erst nach der kritischen Prüfung mit dem Klick „Bauen“'; end if;
     if new.zweck = 'bau' and (new.stand = 'laeuft' or old.stand = 'entwurf' and new.stand = 'wartet') and not public.ws_bau_erlaubt(pj) then
       raise exception 'Bauen erst nach Freigabe von Phase 9 (Bauplan)'; end if;
-    -- N2: Kam während des Laufs eine neue Nachricht einer Person, geht der Auftrag nach dem Lauf zurück auf Entwurf (neue Kritik)
+    -- Hauptsperre (dritte Prüfung, Punkt 1): nach „laeuft“ nur mit gültiger Freigabe (Zeile „bauen…“ mit passender Prüfsumme) – auch für alte
+    -- Dienst-Versionen. Ausgenommen Hand-Änderungen und Einrichtungs-Aufträge mit festem Text (dort genügt die Freigabe des Admins, siehe ws_freigabe_gueltig).
+    if new.stand = 'laeuft' and not coalesce(new.hand, false) and not public.ws_freigabe_gueltig(new.id) then
+      raise exception 'Keine gültige Freigabe („Bauen“ mit Prüfsumme des Textes) – nichts wird gebaut'; end if;
+    -- N2/N5: Kam während des Laufs neuer Text (bzw. Altbestand ohne Kritik), geht der Auftrag nach dem Lauf zurück auf Entwurf (neue Kritik)
     if old.stand = 'laeuft' and new.stand not in ('laeuft','abgebrochen') and coalesce((old.kritik ->> 'neu_nach_lauf')::boolean, false) then
       new.stand := 'entwurf'; new.werkstatt_pc := null;
       new.kritik := jsonb_build_object('stand', 'wartet', 'runde', coalesce((old.kritik ->> 'runde')::int, 1) + 1, 'grund', 'neuer Text während des Laufs');
+    -- N5: Bau-Auftrag ohne Kritik (Altbestand) kommt in einen offenen Stand → Entwurf
+    elsif new.kritik is null and not coalesce(new.hand, false) and new.zweck = 'bau' and new.stand in ('wartet','frage','nacharbeit','freigabe') then
+      new.stand := 'entwurf'; new.werkstatt_pc := null;
+      new.kritik := jsonb_build_object('stand', 'wartet', 'runde', 1, 'grund', 'Altbestand vor 0.19.0');
+    -- Punkt 5: ein abgebrochener oder erledigter Auftrag läuft nie mit der alten Freigabe wieder an – neue Kritik, neues „Bauen“
+    elsif old.stand in ('abgebrochen','erledigt') and not coalesce(new.hand, false) and new.stand not in ('abgebrochen','erledigt') then
+      new.stand := 'entwurf'; new.werkstatt_pc := null;
+      new.kritik := case when new.zweck = 'bau' then jsonb_build_object('stand', 'wartet', 'runde', coalesce((old.kritik ->> 'runde')::int, 1) + 1, 'grund', 'wieder aufgenommen')
+                         else jsonb_build_object('stand', 'entfaellt', 'grund', 'Einrichtungs-Auftrag der Codeschmiede mit festem Text') end;
     end if;
   end if;
   return new;
@@ -319,9 +339,14 @@ create trigger ws_auftraege_regelwerk before insert or update on public.ws_auftr
 do $$
 declare x record;
 begin
-  for x in select id from public.ws_auftraege where stand = 'wartet' and kritik is null and zweck = 'bau' and not coalesce(hand, false) loop
+  -- N5: alle offenen Stände; „laeuft“ erst nach dem Lauf (Merker neu_nach_lauf wie bei N2)
+  for x in select id, stand from public.ws_auftraege where stand in ('wartet','frage','nacharbeit','freigabe','laeuft') and kritik is null and zweck = 'bau' and not coalesce(hand, false) loop
     perform public.ws_intern_setzen('zurueck:' || x.id);
-    update public.ws_auftraege set stand = 'entwurf', kritik = jsonb_build_object('stand', 'wartet', 'runde', 1, 'grund', 'Altbestand vor 0.19.0') where id = x.id;
+    if x.stand = 'laeuft' then
+      update public.ws_auftraege set kritik = jsonb_build_object('stand', 'wartet', 'runde', 1, 'grund', 'Altbestand vor 0.19.0', 'neu_nach_lauf', true) where id = x.id;
+    else
+      update public.ws_auftraege set stand = 'entwurf', werkstatt_pc = null, kritik = jsonb_build_object('stand', 'wartet', 'runde', 1, 'grund', 'Altbestand vor 0.19.0') where id = x.id;
+    end if;
     perform public.ws_intern_weg('zurueck:' || x.id);
   end loop;
 end $$;
@@ -380,24 +405,36 @@ drop function if exists public.ws_entwurf_text(bigint);
 drop function if exists public.ws_entwurf_text_sha(bigint);
 create or replace function public.ws_entwurf_text(p_auftrag bigint, p_bis bigint default null) returns text
 language sql stable security definer set search_path = public as $$
+  -- Nichts wird gekürzt (dritte Prüfung, Punkt 5): zu große Entwürfe lehnt die Werkstatt ab („zu groß für die Kritik“), die Prüfsumme deckt alles ab.
   select concat_ws(E'\n\n',
     (select string_agg(n.text
-        || case when n.daten is not null then E'\n[Daten der Nachricht] ' || left(n.daten::text, 20000) else '' end
-        || coalesce((select string_agg(case when x.art = 'bild' then E'\n[Bild: ' else E'\n[Anhang: ' end || x.dateiname || ' · ' || x.mime || ']', '' order by x.id)
-             from public.ws_aufgabe_anhaenge x
-            where jsonb_typeof(n.daten -> 'aufgabe' -> 'anhaenge') = 'array'
-              and x.id in (select e::bigint from jsonb_array_elements_text(n.daten -> 'aufgabe' -> 'anhaenge') e where e ~ '^[0-9]{1,18}$')), ''),
+        || case when n.daten is not null then E'\n[Daten der Nachricht] ' || n.daten::text else '' end
+        || coalesce((select E'\n[Fehler #' || f.id || '] ' || concat_ws(' · ', f.nachricht, f.stelle, f.seite, f.ablauf, f.version, f.umgebung)
+             from public.ws_fehler f where coalesce(n.daten ->> 'fehler', '') ~ '^[0-9]{1,18}$' and f.id = (n.daten ->> 'fehler')::bigint), ''),
         E'\n\n' order by n.id)
        from public.ws_nachrichten n where n.auftrag_id = p_auftrag and n.von is not null and (p_bis is null or n.id < p_bis)),
-    (select '[Baustein] ' || left(a.baustein::text, 4000) from public.ws_auftraege a where a.id = p_auftrag and a.baustein is not null),
+    -- Anhänge und Links aus der Sendung der Aufgabe (genau die Quelle, aus der die Werkstatt sie holt); Bilder nur als „Bild: name“
+    (select string_agg('[Aufgabe #' || s.aufgabe_id || '] Links: ' || s.links::text
+        || coalesce((select string_agg(case when x.art = 'bild' then E'\n[Bild: ' else E'\n[Anhang: ' end || x.dateiname || ' · ' || x.mime || ' · ' || x.groesse || ' Byte]', '' order by x.id)
+             from public.ws_aufgabe_anhaenge x
+            where x.id in (select e::bigint from jsonb_array_elements_text(case when jsonb_typeof(s.anhaenge) = 'array' then s.anhaenge else '[]' end) e where e ~ '^[0-9]{1,18}$')), ''),
+        E'\n' order by s.id)
+       from public.ws_aufgabe_sendungen s where s.auftrag_id = p_auftrag),
+    (select '[Baustein] ' || a.baustein::text from public.ws_auftraege a where a.id = p_auftrag and a.baustein is not null),
     (select string_agg('[Bild: ' || coalesce(b.dateiname, 'ohne Namen') || ']', E'\n' order by b.id) from public.ws_auftrag_bilder b where b.auftrag_id = p_auftrag))
 $$;
 revoke execute on function public.ws_entwurf_text(bigint, bigint) from public, anon, authenticated;
 -- Prüfsumme über Text, Daten, Anhang-Liste und den Inhalt der Bild-Vorlagen
 create or replace function public.ws_entwurf_text_sha(p_auftrag bigint, p_bis bigint default null) returns text
 language sql stable security definer set search_path = public as $$
+  -- Inhalt der Bild-Vorlagen und der Dateien im Speicher (Kennwert eTag/Größe/Zeit aus storage.objects – ändert sich mit jedem neuen Inhalt) gehören dazu (N8)
   select encode(sha256(convert_to(public.ws_entwurf_text(p_auftrag, p_bis) || E'\u0001'
-    || coalesce((select string_agg(encode(sha256(convert_to(b.bild, 'UTF8')), 'hex'), ',' order by b.id) from public.ws_auftrag_bilder b where b.auftrag_id = p_auftrag), ''), 'UTF8')), 'hex')
+    || coalesce((select string_agg(encode(sha256(convert_to(b.bild, 'UTF8')), 'hex'), ',' order by b.id) from public.ws_auftrag_bilder b where b.auftrag_id = p_auftrag), '') || E'\u0001'
+    || coalesce((select string_agg(x.id || ':' || coalesce(o.metadata::text, '-') || ':' || coalesce(o.id::text, '-'), ',' order by x.id)
+         from public.ws_aufgabe_sendungen s
+         join public.ws_aufgabe_anhaenge x on x.id in (select e::bigint from jsonb_array_elements_text(case when jsonb_typeof(s.anhaenge) = 'array' then s.anhaenge else '[]' end) e where e ~ '^[0-9]{1,18}$')
+         left join storage.objects o on o.bucket_id = 'ws-aufgaben' and o.name = x.pfad
+        where s.auftrag_id = p_auftrag), ''), 'UTF8')), 'hex')
 $$;
 revoke execute on function public.ws_entwurf_text_sha(bigint, bigint) from public, anon, authenticated;
 
@@ -487,8 +524,21 @@ begin
     if not public.ws_intern_hat('einrichtung') then raise exception 'Einrichtungs-Aufträge haben einen festen Text – keine Nachrichten'; end if;
     return new;
   end if;
-  if coalesce(a.hand, false) or a.kritik is null then return new; end if;
+  if coalesce(a.hand, false) then return new; end if;
   neu := jsonb_build_object('stand', 'wartet', 'runde', coalesce((a.kritik ->> 'runde')::int, 1) + 1);
+  -- N5: Altbestand ohne Kritik – jede neue Nachricht macht daraus einen Entwurf (laeuft: nach dem Lauf)
+  if a.kritik is null then
+    if a.stand = 'laeuft' then
+      perform public.ws_intern_setzen('kritik:' || a.id);
+      update public.ws_auftraege set kritik = jsonb_build_object('stand', 'wartet', 'runde', 1, 'grund', 'Altbestand vor 0.19.0', 'neu_nach_lauf', true) where id = a.id;
+      perform public.ws_intern_weg('kritik:' || a.id);
+    elsif a.stand in ('wartet','frage','nacharbeit','freigabe') then
+      perform public.ws_intern_setzen('zurueck:' || a.id);
+      update public.ws_auftraege set stand = 'entwurf', werkstatt_pc = null, kritik = jsonb_build_object('stand', 'wartet', 'runde', 1, 'grund', 'Altbestand vor 0.19.0') where id = a.id;
+      perform public.ws_intern_weg('zurueck:' || a.id);
+    end if;
+    return new;
+  end if;
   if a.stand = 'entwurf' then
     if a.kritik ->> 'stand' <> 'wartet' then
       perform public.ws_intern_setzen('kritik:' || a.id);
@@ -504,12 +554,14 @@ begin
     update public.ws_auftraege set kritik = kritik || '{"neu_nach_lauf":true}' where id = a.id;
     perform public.ws_intern_weg('kritik:' || a.id);
   elsif a.stand = 'frage' then
+    -- Punkt 3: Summe aller Antworten von Personen SEIT DER FREIGABE (nicht seit der letzten Rückfrage); ohne Freigabe-Kennung seit der letzten Rückfrage
     select coalesce(sum(char_length(n.text)), 0) into summe from public.ws_nachrichten n
      where n.auftrag_id = a.id and n.von is not null
-       and n.id > coalesce((select max(f.id) from public.ws_nachrichten f where f.auftrag_id = a.id and f.von is null and f.art = 'frage'), 0);
+       and n.id > coalesce((a.kritik ->> 'freigabe_nachricht')::bigint,
+                           (select max(f.id) from public.ws_nachrichten f where f.auftrag_id = a.id and f.von is null and f.art = 'frage'), 0);
     if summe > 500 then
       perform public.ws_intern_setzen('zurueck:' || a.id);
-      update public.ws_auftraege set stand = 'entwurf', werkstatt_pc = null, kritik = neu || '{"grund":"Antworten auf die Rückfrage über 500 Zeichen (neuer Umfang?)"}' where id = a.id;
+      update public.ws_auftraege set stand = 'entwurf', werkstatt_pc = null, kritik = neu || '{"grund":"Antworten seit der Freigabe über 500 Zeichen (neuer Umfang?)"}' where id = a.id;
       perform public.ws_intern_weg('zurueck:' || a.id);
     end if;
   end if;
@@ -583,18 +635,25 @@ grant execute on function public.ws_entwurf_entscheiden(bigint, text, text, text
 
 -- Gibt es zu diesem Auftrag eine echte Freigabe? (Dienst vor dem Start, Prüf-Station): Zeile „bauen…“ im Entscheidungsprotokoll, deren Prüfsumme
 -- dem Text bis zur Freigabe-Nachricht entspricht. Hand-Änderungen: immer; Einrichtung: Zeile „bauen“ vorhanden.
-create or replace function public.ws_auftrag_freigabe_ok(p_auftrag bigint) returns boolean
+create or replace function public.ws_freigabe_gueltig(p_auftrag bigint) returns boolean
 language plpgsql stable security definer set search_path = public as $$
 declare a public.ws_auftraege; e public.ws_entscheidungen;
 begin
   select * into a from ws_auftraege where id = p_auftrag;
-  if a.id is null or not public.ws_sieht_projekt(public.ws_projekt_von_gruppe(a.gruppe_id)) then return false; end if;
+  if a.id is null then return false; end if;
   if coalesce(a.hand, false) then return true; end if;
   select * into e from ws_entscheidungen x where x.auftrag_id = a.id and x.art in ('bauen','bauen_trotz','bauen_ohne_kritik') order by x.id desc limit 1;
   if e.id is null or a.kritik is null or a.kritik ->> 'entscheidung' is null then return false; end if;
   if a.zweck <> 'bau' then return true; end if;
-  return e.text_sha is not null and e.text_sha = a.kritik ->> 'freigabe_sha'
+  return e.text_sha is not null and e.text_sha = a.kritik ->> 'freigabe_sha' and e.id = (select max(y.id) from ws_entscheidungen y where y.auftrag_id = a.id)
      and e.text_sha = public.ws_entwurf_text_sha(a.id, (a.kritik ->> 'freigabe_nachricht')::bigint);
+end $$;
+revoke execute on function public.ws_freigabe_gueltig(bigint) from public, anon, authenticated;
+create or replace function public.ws_auftrag_freigabe_ok(p_auftrag bigint) returns boolean
+language plpgsql stable security definer set search_path = public as $$
+begin
+  if not exists (select 1 from ws_auftraege a where a.id = p_auftrag and public.ws_sieht_projekt(public.ws_projekt_von_gruppe(a.gruppe_id))) then return false; end if;
+  return public.ws_freigabe_gueltig(p_auftrag);
 end $$;
 revoke execute on function public.ws_auftrag_freigabe_ok(bigint) from public, anon;
 grant execute on function public.ws_auftrag_freigabe_ok(bigint) to authenticated;
