@@ -60,7 +60,7 @@ test("Alle Chats und Prüfungen stellen die Regeln vor alles andere (auch als Te
 
 test("Werkstatt: Chats, Prüfung per Knopf und Stationen holen die Regeln (nur die bestätigte Fassung)", async () => {
   const s = await readFile(new URL("../index.mjs", import.meta.url), "utf8");
-  assert.equal((s.match(/regelnFuerText\(/g) || []).length, 1 + 5);   // Definition + Kachel, Design, Claude-Chat, Prüfung per Knopf, Stationen
+  assert.equal((s.match(/regelnFuerText\(/g) || []).length, 1 + 8);   // Definition + Kachel, Design, Claude-Chat, Prüfung per Knopf, Stationen; seit 0.19.0 auch Kritik, Einlesen, Logo
   assert.ok(s.includes('verlauf: verlauf.reverse(), regeln: await regelnFuerText(f.projekt_id, { art: "kachel"'));
   assert.ok(s.includes('pruefPrompt({ projekt, umfang: p.umfang, feature, gruppe, features, regeln: await regelnFuerText(projekt.id, { art: "pruefung"'));
   assert.equal((s.match(/regelnPruef, "",/g) || []).length, 2);   // Sicherheits- und Feature-Prüfung

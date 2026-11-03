@@ -7,6 +7,7 @@ import { Markdown } from "./Markdown";
 import { MitErwaehnung } from "./Bezuege";
 import { ChatRahmen, ChatKopf, ChatVerlauf, ChatNachricht, ChatWartet, ChatEingabe, LangesTextfeld } from "./bausteine/chat";
 import { TEXT_MAX } from "./textGrenze";
+import { EntwurfKarte } from "./Entwurf";
 
 // Chat mit Claude – seit 2026-10-23 18:06 (Entwurf „Konzept zuerst“) im Konzept-Arbeitsplatz statt als Spalte auf jeder Seite.
 // Persönliches Gespräch; die eingestellte KI antwortet über die eigene Werkstatt und liest das Projekt nur (nichts ändern, nichts ausführen).
@@ -175,7 +176,7 @@ function FragenVorschlag({ m, kann, toast, onAntwort, sperre }) {
 }
 
 // Aufträge, die die KI im Konzept-Gespräch selbst anlegt (0.9.14): Stand je Auftrag, Freigeben und Zusammenführen gleich hier
-const STAND_TEXT = { wartet: "Wartet auf die Werkstatt", laeuft: "In Arbeit", frage: "Rückfrage an dich", nacharbeit: "Nacharbeit", freigabe: "Bereit zur Freigabe", sicherheit: "Sicherheitsprüfung",
+const STAND_TEXT = { entwurf: "Entwurf – kritische Prüfung, dann „Bauen“", wartet: "Wartet auf die Werkstatt", laeuft: "In Arbeit", frage: "Rückfrage an dich", nacharbeit: "Nacharbeit", freigabe: "Bereit zur Freigabe", sicherheit: "Sicherheitsprüfung",
   zusammen: "Bereit zum Zusammenführen", feature: "Feature-Prüfung", wissen: "Live", erledigt: "Erledigt", abgebrochen: "Abgebrochen" };
 function AuftraegeVorschlag({ m, d, ich, kann, toast }) {
   const v = m.vorschlag; const ids = Array.isArray(v.angelegt) ? v.angelegt : []; const [busy, setBusy] = useState(false); const [offen, setOffen] = useState(true);   // Auftragstexte immer sichtbar (Prüfung M4/G1)
@@ -183,7 +184,7 @@ function AuftraegeVorschlag({ m, d, ich, kann, toast }) {
     setBusy(true);
     const { data, error } = await supabase.rpc("ws_konzept_auftraege_anlegen", { p_antwort: m.id });
     setBusy(false);
-    if (error) toast(fehler(error)); else toast(`${data?.length || 0} Auftrag/Aufträge angelegt`);
+    if (error) toast(fehler(error)); else toast(`${data?.length || 0} Entwurf/Entwürfe angelegt – kritische Prüfung folgt`);
   };
   const verwerfen = async () => { const { error } = await supabase.rpc("ws_claude_chat_entscheiden", { p_antwort: m.id, p_entscheidung: "abgelehnt" }); if (error) toast(fehler(error)); };
   const rpc = async (fn, a, ok) => { const { error } = await supabase.rpc(fn, { p_auftrag: a.id }); toast(error ? fehler(error) : ok); };
@@ -191,7 +192,7 @@ function AuftraegeVorschlag({ m, d, ich, kann, toast }) {
   return (
     <div className="mt-2 rounded-lg border border-emerald-300 dark:border-emerald-800 bg-white dark:bg-slate-900 p-2 grid gap-2">
       <div className="text-xs font-bold text-emerald-800 dark:text-emerald-300 flex items-center gap-1"><Hammer className="w-3.5 h-3.5" />
-        {ids.length ? `${ids.length} Auftrag${ids.length > 1 ? "e" : ""} angelegt` : m.entscheidung === "abgelehnt" ? "Verworfen" : `${v.auftraege.length} Auftrag${v.auftraege.length > 1 ? "e" : ""} – noch nicht angelegt`}</div>
+        {ids.length ? `${ids.length} Entwurf${ids.length > 1 ? "e" : ""} angelegt` : m.entscheidung === "abgelehnt" ? "Verworfen" : `${v.auftraege.length} Auftrag${v.auftraege.length > 1 ? "e" : ""} – noch nicht als Entwurf angelegt`}</div>
       {v.auftraege.map((x, i) => {
         const g = d.gruppen.find((y) => y.id === x.gruppe_id); const f = x.feature_id ? d.features.find((y) => y.id === x.feature_id) : null;
         const a = ids[i] ? d.auftraege.find((y) => y.id === Number(ids[i])) : null;
@@ -201,13 +202,14 @@ function AuftraegeVorschlag({ m, d, ich, kann, toast }) {
               <p className="text-xs text-slate-500">{g?.name || x.gruppe_id}{f ? ` › ${f.name}` : ""}</p></div>
               {a && <span className={`ml-auto shrink-0 text-xs font-semibold rounded-full px-2 py-0.5 ${["freigabe", "zusammen", "frage"].includes(a.stand) ? "bg-amber-50 text-amber-800 dark:bg-amber-950 dark:text-amber-200" : ["wissen", "erledigt"].includes(a.stand) ? "bg-green-50 text-green-700 dark:bg-green-950 dark:text-green-300" : a.stand === "nacharbeit" ? "bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300" : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"}`}>{STAND_TEXT[a.stand] || a.stand}</span>}</div>
             {offen && <p className="whitespace-pre-wrap text-xs bg-slate-50 dark:bg-slate-950 rounded p-2 max-h-40 overflow-auto">{x.text}</p>}
+            {a && a.stand === "entwurf" && <EntwurfKarte a={a} ich={ich} kann={kann && (a.erstellt_von === ich.id || admin)} toast={toast} onFertig={() => d.holen?.()} />}
             {a && admin && a.stand === "freigabe" && <FreigabeKnopf a={a} onJa={() => rpc("ws_freigeben", a, `Auftrag #${a.id} freigegeben – Sicherheitsprüfung startet`)} />}
             {a && admin && a.stand === "zusammen" && <ZusammenKnopf a={a} onJa={() => rpc("ws_zusammenfuehren", a, `Auftrag #${a.id}: Zusammenführen gestartet`)} />}
             {a && a.stand === "frage" && <p className="text-xs text-amber-700 dark:text-amber-300">Die Werkstatt hat eine Rückfrage – zu finden in der Gruppe „{g?.name || x.gruppe_id}“.</p>}
           </div>);
       })}
       <button type="button" onClick={() => setOffen(!offen)} className="text-xs text-slate-500 inline-flex items-center gap-1 justify-self-start">{offen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}Auftragstexte {offen ? "ausblenden" : "anzeigen"}</button>
-      {!ids.length && !m.entscheidung && kann && <div className="flex gap-1.5"><button type="button" className={btn} disabled={busy} onClick={anlegen}>{busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}Aufträge anlegen</button><button type="button" className={ghost} onClick={verwerfen}><X className="w-4 h-4" />Verwerfen</button></div>}
+      {!ids.length && !m.entscheidung && kann && <div className="flex gap-1.5"><button type="button" className={btn} disabled={busy} onClick={anlegen}>{busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}Als Entwürfe anlegen</button><button type="button" className={ghost} onClick={verwerfen}><X className="w-4 h-4" />Verwerfen</button></div>}
     </div>);
 }
 
@@ -221,6 +223,8 @@ function AuftragVorschlag({ m, d, ich, kann, toast }) {
   const auftragsText = !k ? v.text : [
     v.text, "", `## Freigegebenes Konzept (${new Date().toLocaleDateString("de-AT")})`,
     k.ziel && `**Ziel:** ${k.ziel}`, k.umfang && `**Umfang:** ${k.umfang}`, k.datenschutz && `**Datenschutz:** ${k.datenschutz}`,
+    k.nicht?.length && `**Ausdrücklich nicht:**\n${k.nicht.map((x) => `- ${x}`).join("\n")}`,
+    k.abhaengig?.length && `**Abhängigkeiten:**\n${k.abhaengig.map((x) => `- ${x}`).join("\n")}`,
     k.entscheidungen?.length && `**Entscheidungen:**\n${k.entscheidungen.map((x) => `- ${x}`).join("\n")}`,
     k.abnahme?.length && `**Abnahme:**\n${k.abnahme.map((x) => `- ${x}`).join("\n")}`, "",
     `Lege dieses Konzept zusätzlich als docs/konzepte/${new Date().toISOString().slice(0, 10)}-${slug}.md im Projekt ab (mit dem Bau-PR).`,
@@ -235,7 +239,7 @@ function AuftragVorschlag({ m, d, ich, kann, toast }) {
       if (r.error) throw r.error;
       const { error: e2 } = await supabase.rpc("ws_claude_chat_entscheiden", { p_antwort: m.id, p_entscheidung: "uebernommen", p_auftrag: data.id });
       if (e2) toast(fehler(e2));
-      toast(`Auftrag #${data.id} angelegt – ${g?.name || v.gruppe_id}`);
+      toast(`Entwurf #${data.id} angelegt – ${g?.name || v.gruppe_id}; kritische Prüfung folgt, dann „Bauen“`);
     } catch (e) { toast(fehler(e)); } finally { setBusy(false); }
   };
   const ablehnen = async () => { const { error } = await supabase.rpc("ws_claude_chat_entscheiden", { p_antwort: m.id, p_entscheidung: "abgelehnt" }); if (error) toast(fehler(error)); };
@@ -247,11 +251,11 @@ function AuftragVorschlag({ m, d, ich, kann, toast }) {
       <p className="text-xs text-slate-500">{g?.name || v.gruppe_id}{f ? ` › ${f.name}` : ""}</p>
       {k && <dl className="mt-1.5 grid grid-cols-[84px_minmax(0,1fr)] gap-x-2 gap-y-1 text-xs">
         {[["Ziel", k.ziel], ["Umfang", k.umfang], ["Datenschutz", k.datenschutz]].filter(([, x]) => x).map(([t, x]) => <React.Fragment key={t}><dt className="text-slate-500 font-semibold">{t}</dt><dd className="whitespace-pre-wrap">{x}</dd></React.Fragment>)}
-        {[["Entschieden", k.entscheidungen], ["Abnahme", k.abnahme], ["Offen", k.offen]].filter(([, x]) => x?.length).map(([t, x]) => <React.Fragment key={t}><dt className={`font-semibold ${t === "Offen" ? "text-amber-700 dark:text-amber-300" : "text-slate-500"}`}>{t}</dt><dd><ul className="list-disc pl-4">{x.map((y, i) => <li key={i}>{y}</li>)}</ul></dd></React.Fragment>)}
+        {[["Nicht", k.nicht], ["Abhängig", k.abhaengig], ["Entschieden", k.entscheidungen], ["Abnahme", k.abnahme], ["Offen", k.offen]].filter(([, x]) => x?.length).map(([t, x]) => <React.Fragment key={t}><dt className={`font-semibold ${t === "Offen" ? "text-amber-700 dark:text-amber-300" : "text-slate-500"}`}>{t}</dt><dd><ul className="list-disc pl-4">{x.map((y, i) => <li key={i}>{y}</li>)}</ul></dd></React.Fragment>)}
       </dl>}
       <button type="button" onClick={() => setOffen(!offen)} className="text-xs text-slate-500 inline-flex items-center gap-1 mt-1">{offen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}Auftragstext {offen ? "ausblenden" : "anzeigen"}</button>
       {offen && <p className="whitespace-pre-wrap text-xs mt-1 bg-slate-50 dark:bg-slate-950 rounded p-2 max-h-48 overflow-auto">{auftragsText}</p>}
       {m.entscheidung ? <p className="text-xs mt-1.5 font-semibold text-slate-500">{m.entscheidung === "uebernommen" ? `Angelegt${m.auftrag_id ? ` als Auftrag #${m.auftrag_id}` : ""}` : "Abgelehnt"}</p>
-        : kann && <div className="flex flex-wrap gap-1.5 mt-2"><button type="button" className={btn} disabled={busy || nochOffen > 0} title={nochOffen ? "Erst die offenen Punkte im Chat klären" : undefined} onClick={anlegen}>{busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}{k ? "Konzept freigeben & bauen" : "Als Auftrag anlegen"}</button><button type="button" className={ghost} onClick={ablehnen}><X className="w-4 h-4" />{k ? "Verwerfen" : "Nein"}</button></div>}
+        : kann && <div className="flex flex-wrap gap-1.5 mt-2"><button type="button" className={btn} disabled={busy || nochOffen > 0} title={nochOffen ? "Erst die offenen Punkte im Chat klären" : undefined} onClick={anlegen}>{busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}{k ? "Konzept als Entwurf anlegen" : "Als Entwurf anlegen"}</button><button type="button" className={ghost} onClick={ablehnen}><X className="w-4 h-4" />{k ? "Verwerfen" : "Nein"}</button></div>}
     </div>);
 }

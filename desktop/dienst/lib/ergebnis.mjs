@@ -21,9 +21,11 @@ function werteAusOhneFeature(s) {
   return { art: "ohne-pr", text: s };
 }
 
-export function zweigName(id, titel) {
+// Sechste Prüfung (N13): je Runde ein eigener Zweig – feature/cs-<id>-r<runde>-<titel> (passt zu ws_auftraege_zweig_check)
+export function zweigName(id, titel, runde = 0) {
   const kurz = String(titel || "").toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 30) || "auftrag";
-  return `feature/cs-${id}-${kurz}`;
+  const r = Number.isSafeInteger(Number(runde)) && Number(runde) > 0 ? `r${Math.min(Number(runde), 9999)}-` : "";
+  return `feature/cs-${id}-${r}${kurz}`;
 }
 
 // „Immer erlauben“: gleiche Werkzeug-Art und bei Befehlen gleicher Anfang (erste zwei Wörter)

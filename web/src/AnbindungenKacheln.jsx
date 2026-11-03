@@ -205,6 +205,13 @@ export default function AnbindungenKacheln({ projekt, d, admin, toast }) {
       <ul className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
         <Lampe stand={po[0]} titel="Projektordner" text={po[1]} />
         <RegelwerkKarte projekt={projekt} admin={admin} toast={toast} />
+        {/* Regelwerk erzwingen (0.19.0): Doku-Gerüst nach §15 und Kernpflichten – Sicht des Admin-PCs */}
+        <Lampe stand={ampel.doku?.stand || "grau"} titel="Doku vollständig" text={ampel.doku?.text || "Prüft die Werkstatt des Admins: docs/01–09, docs/08-design/, entscheidungen, ideen, fehler, versionen, stand (Regeldatei §15). Fehlt etwas: Einrichtungs-Auftrag „Doku-Gerüst anlegen“."}>
+          {admin && ampel.doku?.stand && ampel.doku.stand !== "gruen" && <button type="button" className={`${ghost} h-8 text-xs self-start`} disabled={!!busy} onClick={async () => {
+            setBusy("doku"); const { data, error } = await supabase.rpc("ws_einrichtung_auftrag", { p_projekt: projekt.id, p_art: "doku_geruest" }); setBusy("");
+            toast(error ? fehler(error) : `Entwurf #${data} „Doku-Gerüst anlegen“ – startet mit „Bauen“`); d.holen?.(); }}>Doku-Gerüst anlegen (Entwurf)</button>}
+        </Lampe>
+        <Lampe stand={ampel.kernpflichten?.stand || "grau"} titel="Kernpflichten" text={ampel.kernpflichten?.text || "Phasen, Doku-Pflicht, kritische Prüfung und Regel-Prüfung gelten fest. Rot, wenn REGELN.md eine davon ohne bestätigte Abweichung aufhebt oder keine bestätigte Fassung der globalen Regeln existiert."} />
         <Lampe stand={ampel.sicherungen?.stand || "grau"} titel="Sicherungen"
           text={ampel.sicherungen?.text || "Beim Live-Schalten legt die Werkstatt des Admins den eben live geschalteten Repo-Stand (git bundle) und – mit Datenbank und privatem Repository – ihren gefilterten Aufbau in sicherungen ab. Nichts wird überschrieben oder automatisch gelöscht."} />
         <Lampe stand={ampel.github?.stand || (projekt.repo ? "grau" : "rot")} titel="GitHub" text={ampel.github?.text ? `${projekt.repo || ""} · ${ampel.github.text}` : projekt.repo || "Noch kein Repository – unter „Projekte verwalten“ anlegen"} />

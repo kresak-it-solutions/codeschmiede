@@ -377,7 +377,7 @@ function Bezuege({ msgs, d, features, gruppen, onFeature }) {
   const auftragIds = [...new Set(msgs.flatMap((m) => [m.auftrag_id, ...(Array.isArray(m.vorschlag?.angelegt) ? m.vorschlag.angelegt : [])]).filter(Boolean).map(Number))];
   const auftraege = auftragIds.map((id) => d.auftraege.find((a) => a.id === id) || { id, titel: `Auftrag #${id}`, stand: null });
   const wissen = msgs.filter((m) => m.vorschlag?.wissen && m.entscheidung === "uebernommen").map((m) => m.vorschlag.wissen.text);
-  const STAND = { wartet: "wartet", laeuft: "in Arbeit", frage: "Rückfrage", freigabe: "Freigabe", sicherheit: "Prüfung", zusammen: "Zusammenführen", feature: "Prüfung", wissen: "live", erledigt: "erledigt" };
+  const STAND = { entwurf: "Entwurf", wartet: "wartet", laeuft: "in Arbeit", frage: "Rückfrage", freigabe: "Freigabe", sicherheit: "Prüfung", zusammen: "Zusammenführen", feature: "Prüfung", wissen: "live", erledigt: "erledigt" };
   return (
     <aside aria-label="Bezüge" className="hidden xl:block border-l border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-y-auto">
       <div className="p-4 flex flex-col gap-5 text-sm">

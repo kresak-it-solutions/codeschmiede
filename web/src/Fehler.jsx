@@ -41,7 +41,7 @@ export default function Fehler({ d, ich, toast, onAuftrag, onAnbindungen }) {
   };
   const alsAuftrag = async () => {
     setBusy(wahl.id); const { data, error } = await supabase.rpc("ws_fehler_als_auftrag", { p_id: wahl.id, p_gruppe: gid }); setBusy(0);
-    if (error) toast(fehler(error)); else { toast(`Auftrag #${data} angelegt – mit Fehlertext, Code-Stelle und Ablauf`); setWahl(null); laden(); }
+    if (error) toast(fehler(error)); else { toast(`Entwurf #${data} angelegt – wird geprüft (mit Fehlertext, Code-Stelle und Ablauf)`); setWahl(null); laden(); }
   };
   const zahl = (s) => (liste || []).filter((f) => (s === "erledigt" ? ["erledigt", "ignoriert"].includes(f.stand) : f.stand === s)).length;
   return (

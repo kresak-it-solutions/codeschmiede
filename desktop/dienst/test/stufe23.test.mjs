@@ -434,14 +434,15 @@ test("QR-Code: von einem unabhängigen Leser gelesen (OpenCV, falls vorhanden)",
   const py = spawnSync("python3", ["-c", "import cv2; print(hasattr(cv2, 'QRCodeDetectorAruco'))"], { encoding: "utf8" });
   if (py.status !== 0) { t.skip("python3 mit OpenCV nicht vorhanden"); return; }
   const o = await tmp("qr"); const texte = ["https://feature-cs-14-massstab.thermax-planer.pages.dev/plaene/auslesen?cs=1", "https://stopp.pages.dev/timer", "Grüße äöü – €", "x".repeat(300)];
-  const liste = [];
+  const liste = []; const schreiben = [];
+  // Wackel-Test (Prüfung 0.19.0): die Bilder wurden ohne await geschrieben und nur 50 ms gewartet – jetzt auf jedes Schreiben warten
   texte.forEach((text, k) => ["M", "L"].forEach((ecl) => {
     const q = qrCode(text, { ecl }); const s = 6; const r = 4; const n = (q.groesse + 2 * r) * s; const buf = Buffer.alloc(n * n, 255);
     q.module.forEach((z, y) => z.forEach((c, x) => { if (c) for (let dy = 0; dy < s; dy++) buf.fill(0, ((y + r) * s + dy) * n + (x + r) * s, ((y + r) * s + dy) * n + (x + r) * s + s); }));
     const f = path.join(o, `q${k}${ecl}.pgm`); liste.push({ f, text });
-    return writeFile(f, Buffer.concat([Buffer.from(`P5\n${n} ${n}\n255\n`), buf]));
+    schreiben.push(writeFile(f, Buffer.concat([Buffer.from(`P5\n${n} ${n}\n255\n`), buf])));
   }));
-  await new Promise((r) => setTimeout(r, 50));
+  await Promise.all(schreiben);
   await writeFile(path.join(o, "liste.json"), JSON.stringify(liste));
   const leser = `import json,sys,cv2\nl=json.load(open(sys.argv[1]))\nfor e in l:\n  i=cv2.imread(e["f"],0)\n  t=cv2.QRCodeDetector().detectAndDecode(i)[0]\n  if t!=e["text"] and hasattr(cv2,"QRCodeDetectorAruco"): t=cv2.QRCodeDetectorAruco().detectAndDecode(i)[0]\n  print("ok" if t==e["text"] else "FALSCH "+e["f"])\n`;
   await writeFile(path.join(o, "lies.py"), leser);

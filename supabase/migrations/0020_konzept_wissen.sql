@@ -173,6 +173,10 @@ drop trigger if exists ws_wissen_grenze on public.ws_wissen;
 create trigger ws_wissen_grenze before insert on public.ws_wissen for each row execute function public.ws_wissen_grenze();
 
 -- Vorschlag {"wissen":{"kapitel","text"}} zusätzlich erlauben (Rest wie 0015, ohne Konzept-Gruppe als Ziel)
+-- Weiche (0.19.0): Liegt 0063 (Regelwerk erzwingen) schon vor, bleibt dessen Fassung von ws_vorschlag_ok stehen (Steckbrief-Pflicht, Entwurf).
+do $weiche$ begin
+  if to_regclass('public.ws_phasen_protokoll') is null then
+    execute $fassung$
 create or replace function public.ws_vorschlag_ok(p_projekt text, v jsonb) returns boolean
 language plpgsql stable security definer set search_path = public as $$
 begin
@@ -213,6 +217,9 @@ begin
   if not public.ws_konzept_ok(v->'konzept') then return false; end if;
   return true;
 end $$;
+    $fassung$;
+  end if;
+end $weiche$;
 revoke execute on function public.ws_vorschlag_ok(text, jsonb) from public, anon, authenticated;
 
 do $$ begin

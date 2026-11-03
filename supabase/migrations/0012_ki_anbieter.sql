@@ -8,6 +8,10 @@
 begin;
 
 -- ---------- Zuständigkeiten (nur Admin) ----------
+-- Weiche (0.19.0): Liegt 0063 (Regelwerk erzwingen) schon vor, bleibt dessen Fassung von ws_ki_reihe_ok stehen (mit Aufgabe „kritik“).
+do $weiche$ begin
+  if to_regclass('public.ws_phasen_protokoll') is null then
+    execute $fassung$
 create or replace function public.ws_ki_reihe_ok(p_aufgabe text, r jsonb) returns boolean
 language plpgsql immutable set search_path = public as $$
 declare e jsonb;
@@ -27,6 +31,9 @@ begin
   if p_aufgabe = 'pruefung' and exists (select 1 from jsonb_array_elements(r) x where x->>'anbieter' <> 'claude') then return false; end if;
   return true;
 end $$;
+    $fassung$;
+  end if;
+end $weiche$;
 
 create table if not exists public.ws_ki_zustaendigkeit (
   projekt_id text not null references public.ws_projekte(id) on delete cascade,
@@ -110,6 +117,10 @@ grant execute on function public.ws_ki_vermerken(text, bigint, text) to authenti
 
 -- ---------- Konzept-Karte im Chat-Vorschlag ----------
 -- Vorschlag darf zusätzlich „konzept“ enthalten: {ziel, umfang, datenschutz: Text; entscheidungen, offen, abnahme: Listen von Texten}
+-- Weiche (0.19.0): Liegt 0063 (Regelwerk erzwingen) schon vor, bleibt dessen Fassung von ws_konzept_ok stehen (Steckbrief-Pflicht, Entwurf).
+do $weiche$ begin
+  if to_regclass('public.ws_phasen_protokoll') is null then
+    execute $fassung$
 create or replace function public.ws_konzept_ok(k jsonb) returns boolean
 language plpgsql immutable set search_path = public as $$
 declare key text;
@@ -126,7 +137,14 @@ begin
   end loop;
   return true;
 end $$;
+    $fassung$;
+  end if;
+end $weiche$;
 
+-- Weiche (0.19.0): Liegt 0063 (Regelwerk erzwingen) schon vor, bleibt dessen Fassung von ws_vorschlag_ok stehen (Steckbrief-Pflicht, Entwurf).
+do $weiche$ begin
+  if to_regclass('public.ws_phasen_protokoll') is null then
+    execute $fassung$
 create or replace function public.ws_vorschlag_ok(p_projekt text, v jsonb) returns boolean
 language plpgsql stable security definer set search_path = public as $$
 begin
@@ -141,6 +159,9 @@ begin
   if not public.ws_konzept_ok(v->'konzept') then return false; end if;
   return true;
 end $$;
+    $fassung$;
+  end if;
+end $weiche$;
 revoke execute on function public.ws_vorschlag_ok(text, jsonb) from public, anon, authenticated;   -- Prüfung N6
 revoke execute on function public.ws_konzept_ok(jsonb), public.ws_ki_reihe_ok(text, jsonb) from public, anon;
 

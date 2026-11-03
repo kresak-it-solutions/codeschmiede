@@ -18,6 +18,9 @@ test("Grundgerüst aus dem Regelwerk (falls Vorlage vorhanden) plus README/Konze
   const vorlage = existsSync("/home/claude/ai-dev-os/project-template") ? "/home/claude/ai-dev-os/project-template" : null;
   const d = await geruestSchreiben(ziel, vorlage, { name: "Kassenbuch", repo: "kresak-it-solutions/kassenbuch", beschreibung: "Für Vereine", inhaber: "Gerhard", konzeptMd: "# Konzept – Kassenbuch\n" });
   assert.ok(d.includes("README.md") && d.includes("docs/KONZEPT.md") && d.includes("docs/WISSEN.md"));
+  // Doku-Gerüst nach §15 (0.19.0)
+  for (const f of ["docs/01-konzept.md", "docs/09-bauplan.md", "docs/08-design/LIESMICH.md", "docs/entscheidungen.md", "docs/ideen.md", "docs/fehler.md", "docs/versionen.md", "docs/stand.md"]) assert.ok(d.includes(f), f);
+  assert.match(await readFile(path.join(ziel, "docs/stand.md"), "utf8"), /Phase 1 \(Konzept\)/);
   assert.match(await readFile(path.join(ziel, "README.md"), "utf8"), /Für Vereine/);
   if (vorlage) {
     assert.ok(d.includes("AGENTS.md") && d.includes(".github/pull_request_template.md") && !d.some((x) => x.startsWith("github/")));

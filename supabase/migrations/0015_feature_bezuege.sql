@@ -107,6 +107,10 @@ drop trigger if exists ws_vorlage_geaendert on public.ws_auftraege;
 create trigger ws_vorlage_geaendert after update of stand on public.ws_auftraege for each row execute function public.ws_vorlage_geaendert();
 
 -- Chat-Vorschlag darf zusätzlich ein neues Feature oder einen Bezug vorschlagen (angelegt wird nur per Klick mit den eigenen Rechten)
+-- Weiche (0.19.0): Liegt 0063 (Regelwerk erzwingen) schon vor, bleibt dessen Fassung von ws_vorschlag_ok stehen (Steckbrief-Pflicht, Entwurf).
+do $weiche$ begin
+  if to_regclass('public.ws_phasen_protokoll') is null then
+    execute $fassung$
 create or replace function public.ws_vorschlag_ok(p_projekt text, v jsonb) returns boolean
 language plpgsql stable security definer set search_path = public as $$
 begin
@@ -139,6 +143,9 @@ begin
   if not public.ws_konzept_ok(v->'konzept') then return false; end if;
   return true;
 end $$;
+    $fassung$;
+  end if;
+end $weiche$;
 revoke execute on function public.ws_vorschlag_ok(text, jsonb) from public, anon, authenticated;
 
 do $$ begin

@@ -142,12 +142,15 @@ function eineKette(kette, cwd) {
     let i = 1; while (a[i] === "-c" && /^user\.(name|email)=/.test(a[i + 1] || "")) i += 2;
     const gw = w.slice(i); const g = gw.map((x) => x.w);
     if (!g.length || gw[0].zitat) return frage("Git-Befehl");
+    // N16 (siebte Prüfung): fremde Stände holen ist gesperrt – den Zweig bereitet nur die Codeschmiede vor (wie VERBOTEN in index.mjs)
+    if (/^(fetch|pull|merge|rebase|cherry-pick|reset|am)$/.test(g[0])) return sperre("Fremde Git-Stände holen oder Zweig zurücksetzen ist gesperrt");
+    if (/^(checkout|switch)$/.test(g[0]) && g.slice(1).some((x) => /^origin\//.test(x))) return sperre("Fremde Git-Stände holen ist gesperrt");
     if (gw.some((x) => !x.zitat && /^--(output|exec|upload-pack|receive-pack|ext-diff|textconv|config-env|git-dir|work-tree|namespace|super-prefix|no-index|follow-symlinks)/.test(x.w))) return frage("Git-Option");
     // Nachprüfung 2: kein Argument mit Pfad außerhalb (absolut, Laufwerk, ..); Zitate nur als Commit-Nachricht
     const istCommit = g[0] === "commit";
     if (gw.slice(1).some((x) => (x.zitat && !istCommit) || (!x.zitat && /^[\/~]|^[A-Za-z]:|(^|[\/])\.\.([\/]|$)/.test(x.w.replace(/^--[\w-]+=/, ""))))) return frage("Git mit Pfad außerhalb");
     const nachTrenner = g.indexOf("--"); if (nachTrenner > 0 && !allePfade(g.slice(nachTrenner + 1), cwd)) return frage("Git mit Pfad außerhalb");
-    if (/^(status|fetch|rev-parse|ls-files|ls-remote|merge-base|shortlog|describe|diff|log|show)$/.test(g[0])) return ok("Git lesen");
+    if (/^(status|rev-parse|ls-files|ls-remote|merge-base|shortlog|describe|diff|log|show)$/.test(g[0])) return ok("Git lesen");
     if (g[0] === "branch" && (g.length === 1 || (g.length === 2 && /^(-a|-r|-vv|--show-current|--list)$/.test(g[1])))) return ok("Git lesen");
     if (g[0] === "remote" && g[1] === "-v" && g.length === 2) return ok("Git lesen");
     if (g[0] === "add") {
@@ -165,7 +168,6 @@ function eineKette(kette, cwd) {
       return mOk ? ok("Git: Commit") : frage("Commit ohne Nachricht");
     }
     if (g[0] === "push") return /^push( -u| -q| --set-upstream)* origin (HEAD|feature\/cs-[0-9]+-[a-z0-9-]+)$/.test(g.join(" ")) ? ok("Push auf den eigenen Zweig") : frage("Push");
-    if ((g[0] === "merge" || g[0] === "rebase") && g.slice(1).filter((x) => !/^(--no-edit|-q)$/.test(x)).join(" ") === "origin/main" && gw.every((x) => !x.zitat)) return ok("Stand von main übernehmen");
     if (/^(switch -c|checkout -b) feature\/cs-[0-9]+-[a-z0-9-]+$/.test(g.join(" "))) return ok("Eigener Zweig");
     if (g[0] === "restore" || (g[0] === "checkout" && g[1] === "--")) {
       const p = g.slice(g[0] === "restore" ? 1 : 2).filter((x) => !x.startsWith("-"));
