@@ -342,25 +342,38 @@ export function dokuAuftragBlock({ entscheidungen = [], ideen = [] } = {}) {
  * (die Datenbank setzt alles andere auf Entwurf zurück). Nachrichten der Werkstatt und Systemtexte bleiben. Ohne Freigabe-Kennung (Altbestand,
  * Hand-Änderung) alles wie bisher.
  */
+export const FRAGEN_NACH_FREIGABE_MAX = 2000;
 export function nachrichtenBisFreigabe(nachrichten = [], freigabeId = null) {
   const f = Number(freigabeId);
   if (!Number.isSafeInteger(f) || f <= 0) return nachrichten;
-  // Dritte Prüfung (N6/N7): nach der Freigabe nur Paare aus Werkstatt-Rückfrage und Antwort darauf.
-  // Andere Werkstatt-Texte (Station, Doku, Hinweise) gehen nicht mehr in den Bau – sie sind nicht von der Kritik gesehen.
-  let frageOffen = false;
-  return nachrichten.filter((n) => {
-    if (!(n.id > f)) return true;
-    if (!n.von) { if (n.art === "frage") { frageOffen = true; return true; } return false; }
-    return frageOffen;
-  });
+  // Vierte Prüfung (Punkt 3): gebaut wird nur, was die Kritik gesehen hat –
+  //  (a) bis zur Freigabe nur Nachrichten von Personen (und die Systemtexte der Codeschmiede); Werkstatt-Texte früherer Runden nicht,
+  //  (b) danach nur Paare aus Werkstatt-Rückfrage und EINER Antwort (frageOffen wird nach jeder Antwort zurückgesetzt), Rückfragen zusammen
+  //      höchstens 2.000 Zeichen, Antworten ohne Daten (Daten nach der Freigabe zählen nicht, D1; die Datenbank macht daraus ohnehin einen Entwurf).
+  let frageOffen = false; let fragen = 0;
+  const raus = [];
+  for (const n of nachrichten) {
+    if (!(n.id > f)) { if (n.von || n.art === "system") raus.push(n); continue; }
+    if (!n.von) {
+      if (n.art !== "frage" || fragen >= FRAGEN_NACH_FREIGABE_MAX) continue;
+      const text = String(n.text || "").slice(0, FRAGEN_NACH_FREIGABE_MAX - fragen);
+      fragen += text.length; frageOffen = true; raus.push({ ...n, text, daten: null });
+      continue;
+    }
+    if (frageOffen) { raus.push({ ...n, daten: null }); frageOffen = false; }
+  }
+  return raus;
 }
 
 /** Nacharbeit (dritte Prüfung): der gespeicherte rote Befund der Prüfung, nicht die letzte Nachricht im Verlauf. */
-export function nacharbeitBefund(pruefung) {
-  const rot = ["sicherheit", "feature", "lokal"].map((k) => ({ k, p: pruefung?.[k] }))
-    .filter(({ p }) => p && p.ergebnis === "rot" && typeof p.befund === "string" && p.befund.trim())
-    .sort((a, b) => String(b.p.zeit || "").localeCompare(String(a.p.zeit || "")));
-  return rot.length ? rot[0].p.befund.slice(0, 4000) : "";
+export function nacharbeitBefund(pruefung, jetzt = Date.now()) {
+  // Vierte Prüfung (P1): den lokalen Befund schreibt nur noch der haltende PC im Lauf (Datenbank), die Stationen nur der Admin-PC.
+  // Der neueste rote Befund gilt; Zeiten in der Zukunft zählen nicht als „neuer“, bei gleicher Zeit gehen die Stationen vor.
+  const zeit = (p) => { const t = Date.parse(p?.zeit || ""); return Number.isFinite(t) && t <= jetzt + 60000 ? t : 0; };
+  const rot = ["sicherheit", "feature", "lokal"].map((k, rang) => ({ k, rang, p: pruefung?.[k] }))
+    .filter(({ p }) => p && p.ergebnis === "rot" && typeof p.befund === "string" && p.befund.trim());
+  const wahl = rot.sort((a, b) => zeit(b.p) - zeit(a.p) || a.rang - b.rang)[0];
+  return wahl ? wahl.p.befund.slice(0, 4000) : "";
 }
 
 // ---------- Einlesen: Phasen-Vorschlag des Assistenten ----------

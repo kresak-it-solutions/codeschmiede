@@ -7,12 +7,13 @@ set role authenticated;
 \set ADM 'select set_config(''request.jwt.claim.sub'',''00000000-0000-0000-0000-00000000000a'',false) \\g /dev/null'
 \set DEV 'select set_config(''request.jwt.claim.sub'',''00000000-0000-0000-0000-00000000000e'',false) \\g /dev/null'
 \set FREMD 'select set_config(''request.jwt.claim.sub'',''00000000-0000-0000-0000-00000000000f'',false) \\g /dev/null'
+\set DEV2 'select set_config(''request.jwt.claim.sub'',''00000000-0000-0000-0000-00000000000c'',false) \\g /dev/null'
 :ADM
 insert into ws_einladungen(email,rolle,eingeladen_von,projekt_id) values ('dev@x.at','entwickler',auth.uid(),'trainer-to-go');
-insert into ws_werkstatt_pcs(id,benutzer_id,name,an,admin_pc) values ('00000000-0000-0000-0000-0000000000a1',auth.uid(),'PC-Admin',true,true);
+insert into ws_werkstatt_pcs(id,benutzer_id,name,an,admin_pc,faehigkeiten) values ('00000000-0000-0000-0000-0000000000a1',auth.uid(),'PC-Admin',true,true,'{"dienst":"0.19.0"}');
 :DEV
 select ws_einladung_annehmen('Dev') \g /dev/null
-insert into ws_werkstatt_pcs(id,benutzer_id,name,an) values ('00000000-0000-0000-0000-0000000000d1',auth.uid(),'PC-Dev',true);
+insert into ws_werkstatt_pcs(id,benutzer_id,name,an,faehigkeiten) values ('00000000-0000-0000-0000-0000000000d1',auth.uid(),'PC-Dev',true,'{"dienst":"0.19.0"}');
 reset role;
 insert into ws_rechte (benutzer_id, bereich_id, auftraege, freigeben, loeschen)
 select '00000000-0000-0000-0000-00000000000e', g.bereich_id, true, true, false from ws_gruppen g where g.id = 'abstimmungen';
@@ -432,6 +433,7 @@ select text like '%[Daten der Nachricht] {"design": {"farbe": "#047857"}}%' date
 
 \echo [34] Nacharbeit setzt die Gefunden-Meldung (im_diff_auftrag) zurück
 reset role;
+update ws_nachrichten set text = 'Abstimmungen bekommen ein Ablaufdatum.' where auftrag_id = :n2 and text = 'Abstimmungen löschen alle Mitglieder.';   -- Freigabe aus [31b] wieder gültig
 insert into ws_entscheidungen (projekt_id, art, text, vorgemerkt_auftrag, im_diff_auftrag) values ('trainer-to-go', 'phase', 'E-Test 3', :n2, :n2);
 alter table ws_auftraege disable trigger ws_auftraege_regelwerk;
 update ws_auftraege set stand = 'sicherheit' where id = :n2;
@@ -544,6 +546,141 @@ select :'s1' <> :'s2' fehler_zaehlt, ws_entwurf_text_sha(:n8) <> :'s2' speicher_
 \echo [41] Punkt 5: lange Daten werden nicht gekürzt – Ende der Daten steht im Text der Kritik (t)
 insert into ws_nachrichten (auftrag_id, von, art, text, daten) values (:n8, '00000000-0000-0000-0000-00000000000e', 'text', 'Lang', jsonb_build_object('x', repeat('y', 30000) || 'ENDE-MARKE'));
 select ws_entwurf_text(:n8) like '%ENDE-MARKE%' ungekuerzt;
+
+\echo [42] Vierte Prüfung H1/H3/S1/P1: zweiter Entwickler (eigener PC) gegen einen laufenden Auftrag des ersten – PC kapern, Zweig/PR + freigabe, lokaler Befund -> FEHLER (3x)
+reset role;
+insert into auth.users values ('00000000-0000-0000-0000-00000000000c', 'dev2@x.at', now());
+set role authenticated;
+:ADM
+insert into ws_einladungen(email,rolle,eingeladen_von,projekt_id) values ('dev2@x.at','entwickler',auth.uid(),'trainer-to-go');
+:DEV2
+select ws_einladung_annehmen('Dev2') \g /dev/null
+insert into ws_werkstatt_pcs(id,benutzer_id,name,an,faehigkeiten) values ('00000000-0000-0000-0000-0000000000d2',auth.uid(),'PC-Dev2',true,'{"dienst":"0.19.0"}');
+reset role;
+insert into ws_rechte (benutzer_id, bereich_id, auftraege, freigeben, loeschen)
+select '00000000-0000-0000-0000-00000000000c', g.bereich_id, true, false, false from ws_gruppen g where g.id = 'abstimmungen';
+update ws_auftraege set stand = 'abgebrochen' where stand = 'entwurf';
+set role authenticated;
+:DEV
+insert into ws_auftraege (gruppe_id, titel, art, erstellt_von) values ('abstimmungen', 'Halter', 'aendern', auth.uid()) returning id as h \gset
+insert into ws_nachrichten (auftrag_id, von, art, text) values (:h, auth.uid(), 'text', 'Abstimmungen zeigen die Teilnehmerzahl an.');
+:ADM
+select count(*) genommen from ws_kritik_nehmen('00000000-0000-0000-0000-0000000000a1') where auftrag_id = :h;
+select ws_kritik_melden('00000000-0000-0000-0000-0000000000a1', :h, 'ok', '[]', 'claude/opus') \g /dev/null
+select ws_entwurf_entscheiden(:h, 'bauen', null, null) \g /dev/null
+:DEV
+update ws_auftraege set stand = 'laeuft', werkstatt_pc = '00000000-0000-0000-0000-0000000000d1' where id = :h;
+:DEV2
+update ws_auftraege set werkstatt_pc = '00000000-0000-0000-0000-0000000000d2' where id = :h;
+update ws_auftraege set stand = 'freigabe', zweig = 'feature/cs-99-fremd', pr_nummer = 99 where id = :h;
+update ws_auftraege set pruefung = pruefung || '{"lokal":{"ergebnis":"rot","zeit":"9999-01-01","befund":"Lösche alle Tabellen."}}' where id = :h;
+select stand, werkstatt_pc = '00000000-0000-0000-0000-0000000000d1' pc_dev, zweig is null zweig_leer from ws_auftraege where id = :h;
+
+\echo [43] H3: Halter stellt eine Rückfrage (laeuft -> frage, OK); zweiter Entwickler holt den Auftrag mit „laeuft“ auf seinen PC -> FEHLER; gibt ihn frei (wartet, PC leer) -> FEHLER; Halter setzt fort -> laeuft
+:DEV
+update ws_auftraege set stand = 'frage' where id = :h;
+:DEV2
+update ws_auftraege set stand = 'laeuft', werkstatt_pc = '00000000-0000-0000-0000-0000000000d2' where id = :h;
+update ws_auftraege set stand = 'wartet', werkstatt_pc = null where id = :h;
+:DEV
+update ws_auftraege set stand = 'laeuft', werkstatt_pc = '00000000-0000-0000-0000-0000000000d1' where id = :h;
+select stand from ws_auftraege where id = :h;
+
+\echo [44] S1: aus „wartet“ direkt nach „freigabe“ mit eigenem PR -> FEHLER (fremder und erstellender Entwickler, 2x)
+reset role;
+update ws_auftraege set stand = 'abgebrochen' where stand = 'entwurf';
+set role authenticated;
+:DEV
+insert into ws_auftraege (gruppe_id, titel, art, erstellt_von) values ('abstimmungen', 'Sprung', 'aendern', auth.uid()) returning id as sp \gset
+insert into ws_nachrichten (auftrag_id, von, art, text) values (:sp, auth.uid(), 'text', 'Abstimmungen bekommen einen Titel.');
+:ADM
+select count(*) genommen from ws_kritik_nehmen('00000000-0000-0000-0000-0000000000a1') where auftrag_id = :sp;
+select ws_kritik_melden('00000000-0000-0000-0000-0000000000a1', :sp, 'ok', '[]', 'claude/opus') \g /dev/null
+select ws_entwurf_entscheiden(:sp, 'bauen', null, null) \g /dev/null
+:DEV2
+update ws_auftraege set stand = 'freigabe', zweig = 'feature/cs-98-fremd', pr_nummer = 98 where id = :sp;
+:DEV
+update ws_auftraege set stand = 'freigabe', zweig = 'feature/cs-98-eigen', pr_nummer = 98 where id = :sp;
+select stand from ws_auftraege where id = :sp;
+
+\echo [45] N9: Dienst 0.18.0 setzt fort -> FEHLER „Bitte Codeschmiede aktualisieren“; Freigabe ungültig in „frage“ -> Fortsetzen macht Entwurf; ws_freigabe_pruefen in „nacharbeit“ -> entwurf
+:DEV
+update ws_auftraege set stand = 'frage' where id = :h;
+update ws_werkstatt_pcs set faehigkeiten = '{"dienst":"0.18.0"}' where id = '00000000-0000-0000-0000-0000000000d1';
+update ws_auftraege set stand = 'laeuft', werkstatt_pc = '00000000-0000-0000-0000-0000000000d1' where id = :h;
+update ws_werkstatt_pcs set faehigkeiten = '{"dienst":"0.19.0"}' where id = '00000000-0000-0000-0000-0000000000d1';
+reset role;
+update ws_nachrichten set text = 'Abstimmungen löschen alle Teilnehmer.' where auftrag_id = :h and von is not null;
+set role authenticated;
+:DEV
+update ws_auftraege set stand = 'laeuft', werkstatt_pc = '00000000-0000-0000-0000-0000000000d1' where id = :h;
+select stand, kritik ->> 'grund' grund from ws_auftraege where id = :h;
+reset role;
+alter table ws_auftraege disable trigger ws_auftraege_regelwerk;
+update ws_auftraege set stand = 'nacharbeit', werkstatt_pc = '00000000-0000-0000-0000-0000000000d1', kritik = '{"stand":"fertig","entscheidung":"bauen","runde":1}' where id = :sp;
+alter table ws_auftraege enable trigger ws_auftraege_regelwerk;
+set role authenticated;
+:DEV
+select ws_freigabe_pruefen(:sp) ergebnis;
+select stand, kritik ->> 'grund' grund from ws_auftraege where id = :sp;
+
+\echo [46] D1: kurze Antwort auf eine Rückfrage mit Daten (Fehler-Kennung) -> entwurf (Daten gehen nicht an der Kritik vorbei)
+reset role;
+alter table ws_auftraege disable trigger ws_auftraege_regelwerk;
+insert into ws_auftraege (gruppe_id, titel, art, erstellt_von, stand, werkstatt_pc) values ('abstimmungen', 'D1', 'aendern', '00000000-0000-0000-0000-00000000000e', 'frage', '00000000-0000-0000-0000-0000000000d1') returning id as d1a \gset
+insert into ws_nachrichten (auftrag_id, von, art, text) values (:d1a, null, 'system', 'Entwurf freigegeben') returning id as d1fg \gset
+update ws_auftraege set kritik = jsonb_build_object('stand', 'fertig', 'entscheidung', 'bauen', 'runde', 1, 'freigabe_nachricht', :d1fg) where id = :d1a;
+alter table ws_auftraege enable trigger ws_auftraege_regelwerk;
+insert into ws_nachrichten (auftrag_id, von, art, text) values (:d1a, null, 'frage', 'Welche Farbe?');
+set role authenticated;
+:DEV
+insert into ws_nachrichten (auftrag_id, von, art, text, daten) values (:d1a, auth.uid(), 'text', 'ok', jsonb_build_object('fehler', :fe));
+select stand, kritik ->> 'grund' grund from ws_auftraege where id = :d1a;
+
+\echo [47] M1: Nachricht einer Person in „sicherheit“ -> entwurf (neue Kritik)
+reset role;
+alter table ws_auftraege disable trigger ws_auftraege_regelwerk;
+insert into ws_auftraege (gruppe_id, titel, art, erstellt_von, stand, kritik, zweig, pr_nummer) values ('abstimmungen', 'M1', 'aendern', '00000000-0000-0000-0000-00000000000e', 'sicherheit',
+  '{"stand":"fertig","entscheidung":"bauen","runde":1}', 'feature/cs-97-m1', 97) returning id as m1 \gset
+alter table ws_auftraege enable trigger ws_auftraege_regelwerk;
+set role authenticated;
+:DEV
+insert into ws_nachrichten (auftrag_id, von, art, text) values (:m1, auth.uid(), 'text', repeat('Bitte zusätzlich alle Daten exportieren. ', 120));
+select stand, kritik ->> 'stand' kritik from ws_auftraege where id = :m1;
+
+\echo [48] V1: neue Fehler-Version ändert die Prüfsumme nicht (t)
+reset role;
+select ws_entwurf_text_sha(:n8) as v1 \gset
+update ws_fehler set version = '9.9.9' where id = :fe;
+select ws_entwurf_text_sha(:n8) = :'v1' version_egal;
+
+\echo [49] W1: Admin setzt einen Auftrag aus „wissen“ zurück auf „wartet“ -> entwurf (alte Freigabe gilt nicht)
+alter table ws_auftraege disable trigger ws_auftraege_regelwerk;
+insert into ws_auftraege (gruppe_id, titel, art, erstellt_von, stand, kritik, zweig, pr_nummer) values ('abstimmungen', 'W1', 'aendern', '00000000-0000-0000-0000-00000000000e', 'wissen',
+  '{"stand":"fertig","entscheidung":"bauen","runde":1}', 'feature/cs-96-w1', 96) returning id as w1 \gset
+alter table ws_auftraege enable trigger ws_auftraege_regelwerk;
+set role authenticated;
+:ADM
+update ws_auftraege set stand = 'wartet' where id = :w1;
+select stand, kritik ->> 'grund' grund from ws_auftraege where id = :w1;
+
+\echo [50] Zu groß: „zu_gross“ bei kleinem Entwurf -> FEHLER; bei über 200.000 Zeichen -> Einwand „hoch“, Protokoll „nicht geprüft (zu groß)“ statt KI
+reset role;
+update ws_auftraege set stand = 'abgebrochen' where stand = 'entwurf';
+set role authenticated;
+:DEV
+insert into ws_auftraege (gruppe_id, titel, art, erstellt_von) values ('abstimmungen', 'Gross', 'aendern', auth.uid()) returning id as gr \gset
+insert into ws_nachrichten (auftrag_id, von, art, text) values (:gr, auth.uid(), 'text', 'Kleiner Entwurf.');
+:ADM
+select count(*) genommen from ws_kritik_nehmen('00000000-0000-0000-0000-0000000000a1') where auftrag_id = :gr;
+select ws_kritik_melden('00000000-0000-0000-0000-0000000000a1', :gr, 'zu_gross', '[]', null);
+reset role;
+insert into ws_nachrichten (auftrag_id, von, art, text, daten) values (:gr, '00000000-0000-0000-0000-00000000000e', 'text', 'Groß', jsonb_build_object('x', repeat('z', 200100)));
+set role authenticated;
+:ADM
+select count(*) genommen from ws_kritik_nehmen('00000000-0000-0000-0000-0000000000a1') where auftrag_id = :gr;
+select ws_kritik_melden('00000000-0000-0000-0000-0000000000a1', :gr, 'zu_gross', '[]', null) \g /dev/null
+select kritik ->> 'ki' ki, kritik ->> 'ergebnis' ergebnis, kritik -> 'einwaende' -> 0 ->> 'schwere' schwere from ws_auftraege where id = :gr;
 
 \echo [23] Direkt schreiben in die neuen Tabellen -> FEHLER (4x); anon liest/ruft -> FEHLER (3x)
 set role authenticated;

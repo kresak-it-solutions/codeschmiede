@@ -21,6 +21,9 @@
 --   8 Dritte Prüfung (GELB, 03.11.2026): „laeuft“ nur mit gültiger Freigabe (ws_freigabe_gueltig, auch gegen alte Dienste); Altbestand ohne Kritik
 --     in allen offenen Ständen → Entwurf; werkstatt_pc nur beim Übernehmen; 500 Zeichen als Summe seit der Freigabe; Fehler-Text, Sendungs-Anhänge
 --     und Speicher-Metadaten in Kritik und Prüfsumme, keine Kürzung; abgebrochen/erledigt → wieder offen nur als Entwurf.
+--   9 Vierte Prüfung (GELB, 03.11.2026): direkte Werkstatt-Übergänge nur durch den haltenden PC (Trigger ws_auftraege_a_werkstatt ohne definer),
+--     Mindestversion 0.19.0 beim Übernehmen, ungültige Freigabe in frage/nacharbeit → Entwurf (ws_freigabe_pruefen), Antworten mit Daten und Nachrichten
+--     in den Stationen → Entwurf, Fehler-Version nicht in der Prüfsumme, Wiedereröffnung auch aus wissen/Stationen, „zu groß“ ohne KI-Namen.
 -- Sicherheit: RLS auf allen neuen Tabellen, keine direkten Schreibrechte, alle Funktionen SECURITY DEFINER mit search_path, keine Rechte für
 -- public und anon. Interne Freigaben (Entwurf starten, Kritik schreiben, zurück zum Entwurf, Einrichtung) stehen in der Tabelle ws_intern_token, die
 -- nur diese Funktionen beschreiben (ws_intern_setzen ist für authenticated, anon und service_role nicht ausführbar) und die nur für die eigene
@@ -276,9 +279,20 @@ create policy ws_auftraege_neu on public.ws_auftraege for insert to authenticate
               and (ws_auftraege.feature_id is null
                    or public.ws_projekt_von_feature(ws_auftraege.feature_id) = public.ws_projekt_von_gruppe(ws_auftraege.gruppe_id)));
 
+-- Vierte Prüfung (Punkt 2): Programmversion des Werkstatt-Dienstes (Meldung faehigkeiten.dienst seit 0040, selbst gemeldet – Schutz gegen veraltete
+-- Programme, nicht gegen Angreifer; die gelten über die Regeln für den haltenden PC). Übernehmen und Fortsetzen nur ab 0.19.0.
+create or replace function public.ws_dienst_version_ok(p_pc uuid) returns boolean
+language sql stable security definer set search_path = public as $$
+  select coalesce((select case when w.faehigkeiten ->> 'dienst' ~ '^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$'
+                               then string_to_array(w.faehigkeiten ->> 'dienst', '.')::int[] >= array[0,19,0] else false end
+                     from public.ws_werkstatt_pcs w where w.id = p_pc), false)
+$$;
+revoke execute on function public.ws_dienst_version_ok(uuid) from public, anon, authenticated;
+
 create or replace function public.ws_auftraege_regelwerk() returns trigger
 language plpgsql security definer set search_path = public as $$
 declare pj text := public.ws_projekt_von_gruppe(new.gruppe_id);
+        uebernahme boolean;
 begin
   if tg_op = 'INSERT' then
     if new.zweck <> 'bau' and not public.ws_intern_hat('einrichtung') then
@@ -299,9 +313,10 @@ begin
   if new.kritik is distinct from old.kritik and not public.ws_intern_hat('kritik:' || new.id) and not public.ws_intern_hat('entscheidung:' || new.id)
      and not public.ws_intern_hat('zurueck:' || new.id) then
     raise exception 'Die kritische Prüfung schreibt nur die Codeschmiede'; end if;
-  -- Werkstatt-PC (Punkt 3): setzen nur beim Übernehmen (Wechsel nach „laeuft“) und nur auf einen eigenen, eingeschalteten PC
+  uebernahme := new.stand = 'laeuft' and old.stand is distinct from 'laeuft';
+  -- Werkstatt-PC: setzen nur beim Übernehmen (Wechsel NACH „laeuft“) auf einen eigenen, eingeschalteten PC; leeren nur der haltende PC beim Verlassen von „laeuft“
   if new.werkstatt_pc is distinct from old.werkstatt_pc and new.werkstatt_pc is not null
-     and not (new.stand = 'laeuft' and exists (select 1 from public.ws_werkstatt_pcs w where w.id = new.werkstatt_pc and w.benutzer_id = auth.uid() and w.an)) then
+     and not (uebernahme and exists (select 1 from public.ws_werkstatt_pcs w where w.id = new.werkstatt_pc and w.benutzer_id = auth.uid() and w.an)) then
     raise exception 'Den Werkstatt-PC setzt nur der PC, der den Auftrag gerade übernimmt'; end if;
   if new.stand is distinct from old.stand then
     if new.stand = 'entwurf' and not public.ws_intern_hat('zurueck:' || new.id) then raise exception 'Ein Auftrag wird nicht wieder zum Entwurf'; end if;
@@ -309,8 +324,17 @@ begin
       raise exception 'Ein Entwurf startet erst nach der kritischen Prüfung mit dem Klick „Bauen“'; end if;
     if new.zweck = 'bau' and (new.stand = 'laeuft' or old.stand = 'entwurf' and new.stand = 'wartet') and not public.ws_bau_erlaubt(pj) then
       raise exception 'Bauen erst nach Freigabe von Phase 9 (Bauplan)'; end if;
+    -- Mindestversion (vierte Prüfung, Punkt 2): Übernehmen und Fortsetzen nur mit Dienst ab 0.19.0
+    if uebernahme and not coalesce(new.hand, false) and not public.ws_dienst_version_ok(new.werkstatt_pc) then
+      raise exception 'Bitte Codeschmiede aktualisieren – die Werkstatt braucht mindestens Version 0.19.0'; end if;
     -- Hauptsperre (dritte Prüfung, Punkt 1): nach „laeuft“ nur mit gültiger Freigabe (Zeile „bauen…“ mit passender Prüfsumme) – auch für alte
     -- Dienst-Versionen. Ausgenommen Hand-Änderungen und Einrichtungs-Aufträge mit festem Text (dort genügt die Freigabe des Admins, siehe ws_freigabe_gueltig).
+    -- Aus „frage“/„nacharbeit“ mit ungültiger Freigabe (vierte Prüfung, Punkt 2): automatisch Entwurf statt Fehler.
+    if new.stand = 'laeuft' and not coalesce(new.hand, false) and new.kritik is not null and old.stand in ('frage','nacharbeit') and not public.ws_freigabe_gueltig(new.id) then
+      new.stand := 'entwurf'; new.werkstatt_pc := null;
+      new.kritik := jsonb_build_object('stand', 'wartet', 'runde', coalesce((old.kritik ->> 'runde')::int, 1) + 1, 'grund', 'Freigabe nicht mehr gültig');
+      return new;
+    end if;
     if new.stand = 'laeuft' and not coalesce(new.hand, false) and not public.ws_freigabe_gueltig(new.id) then
       raise exception 'Keine gültige Freigabe („Bauen“ mit Prüfsumme des Textes) – nichts wird gebaut'; end if;
     -- N2/N5: Kam während des Laufs neuer Text (bzw. Altbestand ohne Kritik), geht der Auftrag nach dem Lauf zurück auf Entwurf (neue Kritik)
@@ -322,10 +346,17 @@ begin
       new.stand := 'entwurf'; new.werkstatt_pc := null;
       new.kritik := jsonb_build_object('stand', 'wartet', 'runde', 1, 'grund', 'Altbestand vor 0.19.0');
     -- Punkt 5: ein abgebrochener oder erledigter Auftrag läuft nie mit der alten Freigabe wieder an – neue Kritik, neues „Bauen“
-    elsif old.stand in ('abgebrochen','erledigt') and not coalesce(new.hand, false) and new.stand not in ('abgebrochen','erledigt') then
+    -- W1: auch „wissen“ und jeder Stand nach der Freigabe zurück nach wartet/frage/laeuft ist eine Wiedereröffnung
+    elsif not coalesce(new.hand, false) and ((old.stand in ('abgebrochen','erledigt') and new.stand not in ('abgebrochen','erledigt'))
+          or (old.stand in ('freigabe','sicherheit','zusammen','feature','wissen') and new.stand in ('wartet','frage','laeuft'))) then
       new.stand := 'entwurf'; new.werkstatt_pc := null;
       new.kritik := case when new.zweck = 'bau' then jsonb_build_object('stand', 'wartet', 'runde', coalesce((old.kritik ->> 'runde')::int, 1) + 1, 'grund', 'wieder aufgenommen')
                          else jsonb_build_object('stand', 'entfaellt', 'grund', 'Einrichtungs-Auftrag der Codeschmiede mit festem Text') end;
+    -- Punkt 2: kommt ein Auftrag mit ungültiger Freigabe nach „frage“ oder „nacharbeit“, wird er Entwurf (z. B. Anhang gelöscht)
+    elsif new.stand in ('frage','nacharbeit') and new.zweck = 'bau' and not coalesce(new.hand, false) and new.kritik is not null
+          and new.kritik = old.kritik and not public.ws_freigabe_gueltig(new.id) then
+      new.stand := 'entwurf'; new.werkstatt_pc := null;
+      new.kritik := jsonb_build_object('stand', 'wartet', 'runde', coalesce((old.kritik ->> 'runde')::int, 1) + 1, 'grund', 'Freigabe nicht mehr gültig');
     end if;
   end if;
   return new;
@@ -333,6 +364,34 @@ end $$;
 revoke execute on function public.ws_auftraege_regelwerk() from public, anon, authenticated;
 drop trigger if exists ws_auftraege_regelwerk on public.ws_auftraege;
 create trigger ws_auftraege_regelwerk before insert or update on public.ws_auftraege for each row execute function public.ws_auftraege_regelwerk();
+
+-- Werkstatt-Übergänge (vierte Prüfung, Punkt 1 – H1, H3, S1, P1): eigene Trigger-Funktion OHNE security definer, damit current_user zeigt, ob direkt
+-- geschrieben wird ('authenticated') oder über eine Funktion der Codeschmiede (dann deren Eigentümer). Läuft vor ws_auftraege_regelwerk (Name „…_a_…“)
+-- und prüft die Anfrage, wie sie gestellt wurde. Haltender PC = old.werkstatt_pc ist ein eigener PC (eigene PCs sind per RLS lesbar).
+create or replace function public.ws_auftraege_a_werkstatt() returns trigger
+language plpgsql set search_path = public as $$
+declare halter boolean; uebernahme boolean;
+begin
+  if current_user <> 'authenticated' or public.ws_ist_admin() then return new; end if;
+  halter := old.werkstatt_pc is not null and exists (select 1 from public.ws_werkstatt_pcs w where w.id = old.werkstatt_pc and w.benutzer_id = auth.uid());
+  uebernahme := new.stand = 'laeuft' and old.stand is distinct from 'laeuft';
+  if uebernahme then
+    if old.stand not in ('wartet','frage','nacharbeit') then raise exception 'Nach „laeuft“ nur aus „wartet“, „frage“ oder „nacharbeit“'; end if;
+    if old.werkstatt_pc is not null and not halter then raise exception 'Der Auftrag gehört einem anderen Werkstatt-PC'; end if;
+  elsif new.stand is distinct from old.stand
+        and not (old.stand = 'laeuft' and halter and new.stand in ('frage','freigabe','nacharbeit','wartet','abgebrochen','erledigt')) then
+    raise exception 'Diesen Wechsel macht nur der Werkstatt-PC, der den Auftrag hält (aus „laeuft“)'; end if;
+  if new.werkstatt_pc is null and old.werkstatt_pc is not null and not (halter and old.stand = 'laeuft') then
+    raise exception 'Den Werkstatt-PC gibt nur der PC frei, der den Auftrag hält'; end if;
+  -- Zweig, Pull Request, Commit, Modell und der lokale Befund (P1): nur der haltende PC im Lauf bzw. beim Übernehmen
+  if (new.zweig, new.pr_nummer, new.letzter_commit, new.modell, new.pruefung -> 'lokal') is distinct from (old.zweig, old.pr_nummer, old.letzter_commit, old.modell, old.pruefung -> 'lokal')
+     and not ((old.stand = 'laeuft' and halter) or uebernahme) then
+    raise exception 'Zweig, Pull Request und lokale Prüfung schreibt nur der Werkstatt-PC, der den Auftrag hält'; end if;
+  return new;
+end $$;
+revoke execute on function public.ws_auftraege_a_werkstatt() from public, anon;
+drop trigger if exists ws_auftraege_a_werkstatt on public.ws_auftraege;
+create trigger ws_auftraege_a_werkstatt before update on public.ws_auftraege for each row execute function public.ws_auftraege_a_werkstatt();
 
 -- Altbestand (B2): Aufträge, die vor 0063 im Stand „wartet“ angelegt wurden (ohne Kritik), werden zu Entwürfen – außer Hand-Änderungen.
 -- Ein zweites Einspielen findet nichts mehr (nach „Bauen“ tragen sie eine Kritik).
@@ -409,7 +468,7 @@ language sql stable security definer set search_path = public as $$
   select concat_ws(E'\n\n',
     (select string_agg(n.text
         || case when n.daten is not null then E'\n[Daten der Nachricht] ' || n.daten::text else '' end
-        || coalesce((select E'\n[Fehler #' || f.id || '] ' || concat_ws(' · ', f.nachricht, f.stelle, f.seite, f.ablauf, f.version, f.umgebung)
+        || coalesce((select E'\n[Fehler #' || f.id || '] ' || concat_ws(' · ', f.nachricht, f.stelle, f.seite, f.ablauf, f.umgebung)
              from public.ws_fehler f where coalesce(n.daten ->> 'fehler', '') ~ '^[0-9]{1,18}$' and f.id = (n.daten ->> 'fehler')::bigint), ''),
         E'\n\n' order by n.id)
        from public.ws_nachrichten n where n.auftrag_id = p_auftrag and n.von is not null and (p_bis is null or n.id < p_bis)),
@@ -484,9 +543,16 @@ begin
   select * into a from ws_auftraege where id = p_auftrag for update;
   if a.id is null or a.stand <> 'entwurf' or a.kritik ->> 'stand' <> 'laeuft' or a.kritik ->> 'pc' is distinct from p_pc::text then
     raise exception 'Diese kritische Prüfung läuft nicht auf diesem PC'; end if;
-  if p_ergebnis not in ('ok','einwaende','wartet') then raise exception 'Ungültiges Ergebnis'; end if;
+  if p_ergebnis not in ('ok','einwaende','wartet','zu_gross') then raise exception 'Ungültiges Ergebnis'; end if;
+  -- Vierte Prüfung, Abweichung (b): „zu groß“ nur, wenn der Text wirklich über 200.000 Zeichen hat – im Protokoll ohne KI-Namen
+  if p_ergebnis = 'zu_gross' and char_length(public.ws_entwurf_text(a.id)) <= 200000 then raise exception 'Der Entwurf ist nicht zu groß für die Kritik'; end if;
   perform public.ws_intern_setzen('kritik:' || a.id);
-  if p_ergebnis = 'wartet' then
+  if p_ergebnis = 'zu_gross' then
+    update ws_auftraege set kritik = jsonb_build_object('stand', 'fertig', 'ergebnis', 'einwaende', 'ki', 'nicht geprüft (zu groß)', 'zeit', now(),
+      'einwaende', jsonb_build_array(jsonb_build_object('art', 'risiko', 'schwere', 'hoch',
+        'text', format('Entwurf zu groß für die Kritik (%s Zeichen, höchstens 200000) – nicht geprüft, bitte kürzen oder teilen.', char_length(public.ws_entwurf_text(a.id))))),
+      'runde', coalesce((a.kritik ->> 'runde')::int, 1), 'regeln', null, 'text_sha', a.kritik ->> 'text_sha') where id = a.id;
+  elsif p_ergebnis = 'wartet' then
     update ws_auftraege set kritik = jsonb_build_object('stand', 'wartet', 'runde', coalesce((a.kritik ->> 'runde')::int, 1), 'wartet_auf', nullif(h, ''),
       'naechster_s', round(extract(epoch from now())) + 600) where id = a.id;
   else
@@ -532,7 +598,7 @@ begin
       perform public.ws_intern_setzen('kritik:' || a.id);
       update public.ws_auftraege set kritik = jsonb_build_object('stand', 'wartet', 'runde', 1, 'grund', 'Altbestand vor 0.19.0', 'neu_nach_lauf', true) where id = a.id;
       perform public.ws_intern_weg('kritik:' || a.id);
-    elsif a.stand in ('wartet','frage','nacharbeit','freigabe') then
+    elsif a.stand in ('wartet','frage','nacharbeit','freigabe','sicherheit','zusammen','feature') then
       perform public.ws_intern_setzen('zurueck:' || a.id);
       update public.ws_auftraege set stand = 'entwurf', werkstatt_pc = null, kritik = jsonb_build_object('stand', 'wartet', 'runde', 1, 'grund', 'Altbestand vor 0.19.0') where id = a.id;
       perform public.ws_intern_weg('zurueck:' || a.id);
@@ -545,7 +611,8 @@ begin
       update public.ws_auftraege set kritik = neu || '{"grund":"neuer Text"}' where id = a.id;
       perform public.ws_intern_weg('kritik:' || a.id);
     end if;
-  elsif a.stand in ('wartet','nacharbeit','freigabe') then
+  -- M1 (vierte Prüfung): auch in den Stationen (sicherheit, zusammen, feature) – neuer Text braucht neue Kritik
+  elsif a.stand in ('wartet','nacharbeit','freigabe','sicherheit','zusammen','feature') then
     perform public.ws_intern_setzen('zurueck:' || a.id);
     update public.ws_auftraege set stand = 'entwurf', werkstatt_pc = null, kritik = neu || jsonb_build_object('grund', format('neuer Text im Stand „%s“', a.stand)) where id = a.id;
     perform public.ws_intern_weg('zurueck:' || a.id);
@@ -559,9 +626,11 @@ begin
      where n.auftrag_id = a.id and n.von is not null
        and n.id > coalesce((a.kritik ->> 'freigabe_nachricht')::bigint,
                            (select max(f.id) from public.ws_nachrichten f where f.auftrag_id = a.id and f.von is null and f.art = 'frage'), 0);
-    if summe > 500 then
+    -- D1 (vierte Prüfung): Antworten mit Daten (z. B. eine Fehler-Kennung) gehen nicht an der Kritik vorbei – zurück auf Entwurf
+    if summe > 500 or new.daten is not null then
       perform public.ws_intern_setzen('zurueck:' || a.id);
-      update public.ws_auftraege set stand = 'entwurf', werkstatt_pc = null, kritik = neu || '{"grund":"Antworten seit der Freigabe über 500 Zeichen (neuer Umfang?)"}' where id = a.id;
+      update public.ws_auftraege set stand = 'entwurf', werkstatt_pc = null, kritik = neu || jsonb_build_object('grund',
+        case when new.daten is not null then 'Antwort mit Daten (neue Prüfung)' else 'Antworten seit der Freigabe über 500 Zeichen (neuer Umfang?)' end) where id = a.id;
       perform public.ws_intern_weg('zurueck:' || a.id);
     end if;
   end if;
@@ -657,6 +726,23 @@ begin
 end $$;
 revoke execute on function public.ws_auftrag_freigabe_ok(bigint) from public, anon;
 grant execute on function public.ws_auftrag_freigabe_ok(bigint) to authenticated;
+-- Vierte Prüfung, Punkt 2: ein Auftrag in „frage“ oder „nacharbeit“ mit ungültiger Freigabe wird Entwurf (der Dienst ruft das, statt zu warten).
+-- Ändert nur dann etwas, wenn die Freigabe wirklich ungültig ist – deshalb für jede Person mit Werkstatt-Recht in der Gruppe aufrufbar.
+create or replace function public.ws_freigabe_pruefen(p_auftrag bigint) returns text
+language plpgsql security definer set search_path = public as $$
+declare a public.ws_auftraege;
+begin
+  select * into a from ws_auftraege where id = p_auftrag for update;
+  if a.id is null or not public.ws_ist_werkstatt_fuer(a.gruppe_id) then raise exception 'Keine Werkstatt für diesen Auftrag'; end if;
+  if a.stand not in ('frage','nacharbeit') or coalesce(a.hand, false) or a.zweck <> 'bau' or public.ws_freigabe_gueltig(a.id) then return a.stand; end if;
+  perform public.ws_intern_setzen('zurueck:' || a.id);
+  update ws_auftraege set stand = 'entwurf', werkstatt_pc = null, kritik = jsonb_build_object('stand', 'wartet', 'runde', coalesce((a.kritik ->> 'runde')::int, 1) + 1,
+    'grund', 'Freigabe nicht mehr gültig') where id = a.id;
+  perform public.ws_intern_weg('zurueck:' || a.id);
+  return 'entwurf';
+end $$;
+revoke execute on function public.ws_freigabe_pruefen(bigint) from public, anon;
+grant execute on function public.ws_freigabe_pruefen(bigint) to authenticated;
 
 -- Werkstatt-Update (wie 0005): zusätzlich „entwurf“ – nur, damit der Rücksprung nach einem Lauf mit neuer Nachricht (N2) gelingt;
 -- selbst setzen kann die Werkstatt „entwurf“ nicht (Trigger ws_auftraege_regelwerk verlangt die interne Freigabe).

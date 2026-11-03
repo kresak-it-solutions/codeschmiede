@@ -62,7 +62,7 @@ import { aufLaufWarten, artefaktHolen, testlaufErgebnis, dokumentSeiten, eingabe
 import { repoGut, zweigGut } from "./lib/anbindungen.mjs";
 import { vorschauEinrichten } from "./lib/vorschauEinrichten.mjs";
 // Regelwerk erzwingen (0.19.0): Phasen, Doku-Pflicht, Kernpflichten, kritische Prüfung, Prüf-Checkliste
-import { phasenStand, BAU_GESPERRT, dokuLampe, dokuImDiff, namenStatus, neueZeilen, nurDoku, nachrichtenBisFreigabe, nacharbeitBefund, kritikZuGross, zuGrossEinwand, kritikAnhangBlock, KRITIK_ANHANG_TYPEN, kernpflichtKonflikte, kernpflichtLampe, kernpflichtBlock, kritikPrompt, kritikAntwort, checklisteText, checklisteAuswerten,
+import { phasenStand, BAU_GESPERRT, dokuLampe, dokuImDiff, namenStatus, neueZeilen, nurDoku, nachrichtenBisFreigabe, nacharbeitBefund, kritikZuGross, kritikAnhangBlock, KRITIK_ANHANG_TYPEN, kernpflichtKonflikte, kernpflichtLampe, kernpflichtBlock, kritikPrompt, kritikAntwort, checklisteText, checklisteAuswerten,
   PRUEF_CHECKLISTE, regelStempel, NICHT_GETESTET_PFLICHT, mitNichtGetestet, dokuAuftragBlock, PHASE_FRAGE, phaseAusAntwort, ohnePhaseZeile, phaseName } from "./lib/regelwerk.mjs";
 
 const HIER = path.dirname(fileURLToPath(import.meta.url));
@@ -678,17 +678,21 @@ async function fuehreAus(auftrag, { fortsetzen = false, nacharbeit = false } = {
     // Nachprüfung N2: nur mit echter Freigabe (Prüfsumme des Textes bis zur Freigabe-Nachricht) – sonst kein Start
     if (!auftrag.hand && !(await freigabeOk(auftrag.id))) {   // auch Altbestand ohne kritik (N5): nicht bauen
       await log(auftrag.id, "fehler", FREIGABE_FEHLT);
+      // vierte Prüfung, Punkt 2: in „frage“/„nacharbeit“ wird ein Auftrag mit ungültiger Freigabe zum Entwurf (neue Kritik), statt ewig zu warten
+      if (fortsetzen || nacharbeit) await db.rpc("ws_freigabe_pruefen", { p_auftrag: auftrag.id }).then(() => {}, () => {});
       if (!fortsetzen && !nacharbeit) await db.from("ws_auftraege").update({ stand: "wartet", werkstatt_pc: null, wartet_auf: FREIGABE_FEHLT }).eq("id", auftrag.id).eq("stand", "laeuft").then(() => {}, () => {});
       melde("status", FREIGABE_FEHLT, auftrag.id); return;
     }
     // nur Nachrichten bis zur Freigabe (danach nur Antworten auf Rückfragen der Werkstatt)
     nachrichten = nachrichtenBisFreigabe(nachrichten || [], auftrag.kritik?.freigabe_nachricht);
     // Phase-9-Sperre (0.19.0): die Datenbank lehnt „laeuft“ ohne freigegebene Phase 9 ab – dann wird hier auch nichts gebaut (kein stilles Weiterlaufen)
-    const { error: eLauf } = await db.from("ws_auftraege").update({ stand: "laeuft", werkstatt_pc: pcId, modell, zweig }).eq("id", auftrag.id);
+    const { data: lauf0, error: eLauf } = await db.from("ws_auftraege").update({ stand: "laeuft", werkstatt_pc: pcId, modell, zweig }).eq("id", auftrag.id).select("stand").maybeSingle();
     if (eLauf) {
       if (/Phase 9/.test(eLauf.message || "")) { await log(auftrag.id, "info", BAU_GESPERRT); melde("status", BAU_GESPERRT, auftrag.id); return; }
       throw new Error(`Auftrag nicht übernommen: ${eLauf.message}`);
     }
+    // vierte Prüfung: die Datenbank macht aus „frage“/„nacharbeit“ mit ungültiger Freigabe einen Entwurf – dann wird nichts gebaut
+    if (lauf0 && lauf0.stand !== "laeuft") { await log(auftrag.id, "info", `Nicht gebaut – Auftrag ist jetzt „${lauf0.stand}“ (${FREIGABE_FEHLT})`); melde("status", FREIGABE_FEHLT, auftrag.id); return; }
     // Doku-Pflicht (0.19.0): offene Einträge aus Entscheidungsprotokoll und Ideensammlung gehen mit diesem Auftrag ins Repository (nie direkt auf main)
     const doku = auftrag.hand ? { block: "", entscheidungen: [], ideen: [] } : await dokuFuerAuftrag(auftrag, projekt);
     await log(auftrag.id, "info", fremd ? `Werkstatt-PC ${cfg.pc_name || os.hostname()} programmiert mit ${werkzeugName(werkzeug)} (${modell}) auf ${zweig}`
@@ -1760,7 +1764,7 @@ async function auftragNehmen(a, werkzeug) {
   if (error && /werkzeug|wartet_auf/.test(error.message) && /column|schema cache/i.test(error.message)) {
     if (werkzeug !== "claude-code") return null;   // fremdes Werkzeug ohne 0057 gibt es nicht
     ({ data } = await db.from("ws_auftraege").update({ stand: "laeuft", werkstatt_pc: pcId }).eq("id", a.id).eq("stand", "wartet").select().maybeSingle());
-  }
+  } else if (error && /aktualisieren/.test(error.message || "")) melde("fehler", kuerzen(error.message, 200), a.id);   // Mindestversion (vierte Prüfung)
   return data || null;
 }
 /** Werkzeug-Stand dieses PCs an die Datenbank melden (Lampen). Nur Zustände, keine Inhalte, keine Pfade. */
@@ -3477,10 +3481,8 @@ async function kritikArbeit() {
     // Dritte Prüfung, Punkt 5: zu große Entwürfe nicht gekürzt prüfen, sondern ablehnen
     const text = String(k.text || "");
     if (kritikZuGross(text)) {
-      const { reihe } = await kiReihe(projekt.id, "kritik");
-      const ki = reihe?.[0]?.anbieter;
-      const { error: eg } = ki ? await melden({ p_ergebnis: "einwaende", p_einwaende: zuGrossEinwand(text.length), p_ki: ki })
-        : await melden({ p_ergebnis: "wartet", p_einwaende: [], p_hinweis: "Entwurf zu groß für die Kritik" });
+      // vierte Prüfung (b): im Protokoll „nicht geprüft (zu groß)“ statt eines KI-Namens; die Datenbank prüft die Größe selbst
+      const { error: eg } = await melden({ p_ergebnis: "zu_gross", p_einwaende: [] });
       if (eg) throw eg;
       melde("status", "Entwurf zu groß für die Kritik – abgelehnt", k.auftrag_id); return true;
     }

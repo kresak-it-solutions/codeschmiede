@@ -163,6 +163,37 @@ Jeder Bau-Auftrag bekommt `docs/stand.md` und `docs/entscheidungen.md` als Anhan
   als 200.000 Zeichen, prüft die Werkstatt ihn nicht gekürzt, sondern meldet einen Einwand „hoch“ („Entwurf zu groß für die Kritik“). Bauen ist dann nur mit
   Gerhards ausdrücklicher Entscheidung möglich.
 
+## 7e. Vierte Prüfung (GELB, 03.11.2026) – behoben
+
+- **Werkstatt-Übergänge (Punkt 1 – H1, H3, S1, P1):** Umgesetzt als Trigger-Prüfung mit `old.stand` und `old.werkstatt_pc` (die erlaubte Ausweichlösung).
+  Der Umbau aller Dienst-Wege auf Funktionen wäre zu groß gewesen. Der neue Trigger `ws_auftraege_a_werkstatt` läuft ohne `security definer`. So erkennt er an
+  `current_user`, ob jemand direkt schreibt; Funktionen der Codeschmiede und der Admin sind davon nicht betroffen. Für direktes Schreiben gilt:
+  - **Übernehmen:** nach „laeuft“ nur aus „wartet“, „frage“ oder „nacharbeit“, nur wenn `werkstatt_pc` leer ist oder einem eigenen PC gehört, und nur auf einen
+    eigenen, eingeschalteten PC.
+  - **Andere Stand-Wechsel:** nur aus „laeuft“, nur durch den haltenden PC, nur nach frage, freigabe, nacharbeit, wartet, abgebrochen oder erledigt.
+    „freigabe“ geht also nur aus „laeuft“.
+  - **Werkstatt-PC:** setzen nur beim Übernehmen (Wechsel NACH „laeuft“, auch für den Admin), freigeben nur durch den haltenden PC beim Verlassen von „laeuft“.
+  - **Zweig, Pull Request, Commit, Modell und `pruefung.lokal`:** nur der haltende PC im Lauf oder beim Übernehmen. Den lokalen Befund schreibt damit nur der PC, der
+    den Auftrag gebaut hat (P1).
+- **Mindestversion (Punkt 2, N9):** Der Dienst meldet seine Version seit 0040 in `ws_werkstatt_pcs.faehigkeiten.dienst`. Übernehmen und Fortsetzen nach „laeuft“
+  gehen nur ab 0.19.0 (`ws_dienst_version_ok`), sonst kommt „Bitte Codeschmiede aktualisieren“. Die Meldung ist selbst gemeldet. Sie schützt vor veralteten
+  Programmen, gegen Angreifer wirken die Regeln für den haltenden PC und die Hauptsperre. Ein Auftrag mit ungültiger Freigabe in „frage“ oder „nacharbeit“
+  wird automatisch Entwurf, und zwar in drei Fällen: beim Fortsetzen, beim Wechsel in diese Stände und über `ws_freigabe_pruefen`, die der Dienst statt des Wartens aufruft.
+  Baut ein alter Dienst trotzdem lokal, kommt das Ergebnis nicht weiter, denn „freigabe“ geht nur aus „laeuft“.
+- **Nur geprüfter Text im Bau (Punkt 3):**
+  - **(a)** Bis zur Freigabe nur Nachrichten von Personen und die Systemtexte. Werkstatt-Texte früherer Runden gehen nicht mehr in den Bau (die einfachere,
+    sicherere Wahl). Daten, Anhänge, Baustein und Bilder stehen in der Prüfsumme.
+  - **(b)** Danach nur Paare aus Werkstatt-Rückfrage und genau einer Antwort. `frageOffen` wird nach jeder Antwort zurückgesetzt. Die Antworten haben zusammen
+    höchstens 500 Zeichen (Datenbank), die Rückfragen zusammen höchstens 2.000 Zeichen (Dienst, danach abgeschnitten).
+  - **(c)** Den Befund der Nacharbeit schreiben nur die Stationen (Admin-PC) oder der haltende PC (`pruefung.lokal`). Der neueste rote Befund gilt, Zeiten in der
+    Zukunft zählen nicht.
+  - **D1:** Eine Antwort mit Daten (z. B. einer Fehler-Kennung) macht den Auftrag zum Entwurf. Der Dienst nimmt Daten nur aus Nachrichten vor der Freigabe.
+  - **M1:** Nachrichten von Personen in sicherheit, zusammen und feature setzen auf Entwurf zurück, wie bei wartet, nacharbeit und freigabe.
+- **V1:** `ws_fehler.version` steht nicht mehr im Text und in der Prüfsumme. Ein neues Deploy macht Freigaben nicht mehr ungültig.
+- **W1:** Ein Wechsel aus freigabe, sicherheit, zusammen, feature oder wissen zurück nach wartet, frage oder laeuft gilt als Wiedereröffnung: neuer Entwurf, neue Kritik.
+- **Abweichung (b):** Bei „zu groß“ meldet die Werkstatt `zu_gross`. Die Datenbank prüft selbst, ob der Text über 200.000 Zeichen hat, und trägt „nicht geprüft
+  (zu groß)“ statt eines KI-Namens ein, mit einem Einwand „hoch“.
+
 ## 8. Bewusst nicht in 0.19.0 (offen)
 
 - Live-Tor: Datenschutzerklärung, Impressum und aktiver Fehler-Melder als Vorbedingung für Live (§14).
@@ -187,6 +218,9 @@ Die zweite KI (auf dem PC einer anderen Person oder dem Admin-PC) prüft ihn. Da
 bestätigte Abweichung auf oder globale Regeln nicht bestätigt, gelb = bestätigte Abweichung).
 
 **KI-Anbieter (Globale Einstellungen):** neue Zuständigkeit **„Kritische Prüfung der Entwürfe“** – am besten ein anderer Anbieter als fürs Programmieren.
+
+**„Bitte Codeschmiede aktualisieren“:** Eine Werkstatt mit einer Programmversion vor 0.19.0 übernimmt keine Aufträge mehr. Programm aktualisieren, die Werkstatt
+meldet die neue Version beim Start selbst. Aufträge, deren Freigabe nicht mehr passt (z. B. Anhang gelöscht), stehen danach wieder als Entwurf in der Zentrale.
 
 **Einspielen:** Datenbank 0063 spielt Gerhard selbst ein (steht bewusst nicht in `supabase/einspielen.txt`). Bis dahin arbeitet der Dienst wie bisher
 (ohne Phasen, ohne Entwürfe); die Doku-Prüfung im Diff gilt schon.

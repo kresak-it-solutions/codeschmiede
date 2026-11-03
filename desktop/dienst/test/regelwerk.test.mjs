@@ -6,7 +6,7 @@ import { readFile } from "node:fs/promises";
 import {
   PHASEN, phasenStand, BAU_GESPERRT, DOKU_GERUEST, dokuGeruest, dokuLampe, dokuImDiff, KERNPFLICHTEN, kernpflichtKonflikte, kernpflichtLampe, kernpflichtBlock,
   namenStatus, neueZeilen, nurDoku, nachrichtenBisFreigabe, steckbriefOk, kritikPrompt, kritikAntwort, PRUEF_CHECKLISTE, checklisteText, checklisteAuswerten, regelStempel, mitNichtGetestet, dokuAuftragBlock,
-  phaseAusAntwort, ohnePhaseZeile, PHASE_FRAGE, nacharbeitBefund, kritikZuGross, zuGrossEinwand, kritikAnhangBlock, KRITIK_MAX, ZU_GROSS,
+  phaseAusAntwort, ohnePhaseZeile, PHASE_FRAGE, nacharbeitBefund, kritikZuGross, zuGrossEinwand, FRAGEN_NACH_FREIGABE_MAX, kritikAnhangBlock, KRITIK_MAX, ZU_GROSS,
 } from "../lib/regelwerk.mjs";
 import { regelBlock, regelBlockText } from "../lib/regeln.mjs";
 import { gruppenPrompt, gruppenAntwort } from "../lib/einlesen.mjs";
@@ -35,7 +35,7 @@ test("Phasensperre: erst ab 9 freigegebenen Phasen wird gebaut", () => {
 
 test("Phasensperre im Dienst: nichts läuft, wenn die Datenbank „laeuft“ ablehnt; neue Aufträge warten vor dem Nehmen", async () => {
   const s = await quelle();
-  assert.match(s, /const \{ error: eLauf \} = await db\.from\("ws_auftraege"\)\.update\(\{ stand: "laeuft"/);
+  assert.match(s, /const \{ data: lauf0, error: eLauf \} = await db\.from\("ws_auftraege"\)\.update\(\{ stand: "laeuft"/);
   assert.match(s, /if \(\/Phase 9\/\.test\(eLauf\.message \|\| ""\)\) \{ await log\(auftrag\.id, "info", BAU_GESPERRT\);[^\n]*return; \}/);
   assert.match(s, /!\(await bauErlaubt\(pidNeu\)\)\) \{ await wartetAufMelden\(a, BAU_GESPERRT\); continue; \}/);
   // Stationen: ohne Phase 9 bzw. ohne kritische Prüfung und „Bauen“ rot
@@ -324,4 +324,31 @@ test("Dritte Prüfung: Kritik sieht Text-Anhänge, lehnt zu große Entwürfe ab 
   assert.match(s, /const anhaenge = await kritikAnhaengeLesen\(k\.auftrag_id, projekt\.id\);/);
   assert.match(s, /`Rückfrage-Antwort \(nach Freigabe\): \$\{n\.text\}`/);
   assert.match(s, /await auftragsTextVon\(a\.id, a\.kritik\?\.freigabe_nachricht\)/);
+});
+
+test("Vierte Prüfung (Punkt 3): nur geprüfter Text – keine Werkstatt-Texte früherer Runden, je Rückfrage eine Antwort, Fragen höchstens 2.000 Zeichen, keine Daten nach der Freigabe", () => {
+  const n = [{ id: 1, von: "g", text: "Auftrag", daten: { fehler: 3 } }, { id: 2, von: null, art: "frage", text: "alte Rückfrage, nie geprüft" }, { id: 3, von: null, art: "text", text: "alte Station" },
+    { id: 4, von: null, art: "system", text: "Entwurf freigegeben" },
+    { id: 5, von: null, art: "frage", text: "F".repeat(1500) }, { id: 6, von: "g", text: "Antwort", daten: { fehler: 99 } }, { id: 7, von: "g", text: "nachgeschoben ohne Frage" },
+    { id: 8, von: null, art: "frage", text: "G".repeat(1500) }, { id: 9, von: "g", text: "Antwort 2" }, { id: 10, von: null, art: "frage", text: "dritte" }, { id: 11, von: "g", text: "Antwort 3" }];
+  const r = nachrichtenBisFreigabe(n, 4);
+  assert.deepEqual(r.map((x) => x.id), [1, 4, 5, 6, 8, 9]);   // 10/11: Fragen-Grenze erreicht, 11 ohne offene Frage
+  assert.deepEqual(r[0].daten, { fehler: 3 });                // vor der Freigabe (geprüft, in der Prüfsumme)
+  assert.equal(r.find((x) => x.id === 6).daten, null);        // D1: Daten nach der Freigabe zählen nicht
+  assert.equal(r.filter((x) => !x.von && x.art === "frage").reduce((s, x) => s + x.text.length, 0), FRAGEN_NACH_FREIGABE_MAX);
+});
+
+test("Vierte Prüfung: Nacharbeits-Befund – Zeiten in der Zukunft zählen nicht, sonst der neueste rote Befund", () => {
+  const jetzt = Date.parse("2026-11-03T12:00:00Z");
+  assert.equal(nacharbeitBefund({ sicherheit: { ergebnis: "rot", befund: "Station", zeit: "2026-11-03T11:00:00Z" }, lokal: { ergebnis: "rot", befund: "Angriff", zeit: "9999-01-01" } }, jetzt), "Station");
+  assert.equal(nacharbeitBefund({ sicherheit: { ergebnis: "rot", befund: "Station alt", zeit: "2026-11-03T10:00:00Z" }, lokal: { ergebnis: "rot", befund: "Build rot", zeit: "2026-11-03T11:30:00Z" } }, jetzt), "Build rot");
+});
+
+test("Vierte Prüfung: Dienst – Entwurf statt Bau bei ungültiger Freigabe, Mindestversion gemeldet, „zu groß“ ohne KI-Namen", async () => {
+  const s = await quelle();
+  assert.match(s, /if \(fortsetzen \|\| nacharbeit\) await db\.rpc\("ws_freigabe_pruefen", \{ p_auftrag: auftrag\.id \}\)/);
+  assert.match(s, /if \(lauf0 && lauf0\.stand !== "laeuft"\) \{/);
+  assert.match(s, /\/aktualisieren\/\.test\(error\.message/);
+  assert.match(s, /await melden\(\{ p_ergebnis: "zu_gross", p_einwaende: \[\] \}\)/);
+  assert.match(s, /if \(\/\^\\d\{1,3\}\\\.\\d\{1,3\}\\\.\\d\{1,3\}\$\/\.test\(String\(dienst \|\| ""\)\)\) f\.dienst = dienst;/);   // Version für ws_dienst_version_ok
 });
