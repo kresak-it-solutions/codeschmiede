@@ -52,6 +52,8 @@ Zusammengeführt wird nur auf Gerhards Wort (in der Codeschmiede: Knopf „Freig
 - Werkstatt arbeitet nur im Arbeitsordner des Auftrags (eigener Zweig), nie direkt auf `main`; heikle Befehle brauchen Erlaubnis im Programm.
 
 ## Neue Anweisungen
+- **2026-11-07 – Updates & Freigabe, Abgleich mit main (0.20.0, Anweisung Gerhard 21:07, Antworten 21:12, Entwurf freigegeben 21:16, `docs/KONZEPT-UPDATES-ABGLEICH.md`):**
+  Hat ein Projekt einen Freigabe-Ablauf (`.github/workflows/freigabe.yml`), schaltet die Codeschmiede nie selbst live, sondern startet diesen Ablauf – gleicher Weg wie die Plattform der App (jetzt / heute 22:00 / zurücknehmen / zurück). Die Codeschmiede zieht Aufbau, Features und Konzepte nach jedem neuen Stand von main automatisch nach (die App ist die Quelle, Entferntes nur markieren, Aufbau-Datei nie ausführen). Bau-Aufträge für Trainer to go tragen „Was ist neu?“ je Rolle in `src/lib/neuigkeiten.json` ein (Regel der App).
 - **2026-11-03 – Regelwerk erzwingen (0.19.0, Entscheidungen und Freigabe Gerhard 03.11.2026, Grundlage `docs/ABGLEICH-REGELWERK-2026-11-03.md`):**
   (1) Phasen erzwingen: Phase 1–12 je Projekt, Freigabe nur Admin per Knopf mit Protokoll und optionaler Begründung; Bau-Aufträge aller Wege werden ohne
   freigegebene Phase 9 in der Datenbank abgelehnt bzw. warten („Bauen erst nach Freigabe von Phase 9 (Bauplan)“); danach gilt die Pauschalfreigabe.

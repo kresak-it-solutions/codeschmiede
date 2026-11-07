@@ -21,7 +21,7 @@ export function aufgabenListe(d, darf) {
 export const AUFGABE = { frage: ["Rückfrage", "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-200"], erlaubnis: ["Erlaubnis", "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-200"],
   freigabe: ["Freigabe", "bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-200"], zusammen: ["Zusammenführen", "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"] };
 
-export function ZuErledigen({ d, ich, toast, onOeffne }) {
+export function ZuErledigen({ d, ich, toast, onOeffne, onUpdates }) {
   const darf = useRechte(d, ich);
   const projekt = d.projekte.find((p) => p.id === d.projektId);
   const liste = aufgabenListe(d, darf);
@@ -40,7 +40,12 @@ export function ZuErledigen({ d, ich, toast, onOeffne }) {
   const gezeigt = liste.filter((x) => filter === "alle" || x.art === filter);
   return (
     <div className="flex flex-col gap-5">
-      <LiveWeg d={d} ich={ich} projekt={projekt} toast={toast} />
+      {projekt?.freigabe_ablauf
+        ? <section className={`${card} p-4 flex flex-wrap gap-3 items-center justify-between`} aria-label="Weg bis live">
+            <div className="min-w-0 flex flex-col gap-0.5"><h2 className="font-display font-bold text-xl">Weg bis live</h2>
+              <span className="text-sm text-slate-600 dark:text-slate-300">Live geht für dieses Projekt über den Freigabe-Ablauf des Projekts – derselbe Weg wie in der Plattform der App.</span></div>
+            <button type="button" className={btn} onClick={onUpdates}><Rocket className="w-4 h-4" />Updates & Freigabe</button></section>
+        : <LiveWeg d={d} ich={ich} projekt={projekt} toast={toast} />}
       <div className="grid gap-5 grid-cols-[minmax(0,1fr)] xl:grid-cols-[minmax(0,1fr)_380px] items-start">
         <section className={`${card} p-4 flex flex-col gap-3`} aria-label="Wartet auf dich">
           <div className="flex items-center gap-2 flex-wrap"><h2 className="font-display font-bold text-xl">Wartet auf dich</h2>
