@@ -1,6 +1,6 @@
 -- Rechte-Test Datenbank 0064 (Updates & Freigabe, Abgleich mit main, 0.20.0) – Claude, Anweisung Gerhard 07.11.2026, Entwurf freigegeben 21:16
 -- Voraussetzung: frische Datenbank mit mock2.sql, alle Migrationen bis 0064 (0064 zweimal). Läuft für sich allein. Nur erfundene Test-Konten.
--- Variable :aufbau = Aufbau von Trainer to go (aus tools/aufbau-json.mjs bzw. desktop/dienst/lib/aufbau.mjs), per psql -v übergeben.
+-- Variable :aufbau = Aufbau von Trainer to go: psql -v aufbau="$(cat supabase/tests/daten/aufbau-trainer-to-go-2026-11-07.json)" -f …
 \set QUIET 1
 \pset footer off
 set role authenticated;
