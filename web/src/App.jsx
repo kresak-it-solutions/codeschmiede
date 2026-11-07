@@ -1,5 +1,5 @@
 import React, { Suspense, lazy, useCallback, useEffect, useState } from "react";
-import { AlertTriangle, Bell, BookOpen, ChevronDown, ClipboardList, Code2, Cpu, Download, Eye, Gauge, GitBranch, Globe, History, Inbox, KeyRound, Layers, ListChecks, Menu, MessageSquare, Palette, Plug, Plus, Scale, Search, Settings, ShieldCheck, Wrench } from "lucide-react";
+import { AlertTriangle, Bell, BookOpen, ChevronDown, ClipboardList, Code2, Cpu, Download, Eye, Gauge, GitBranch, Globe, History, Inbox, KeyRound, Layers, ListChecks, Menu, MessageSquare, Palette, Plug, Plus, Scale, Search, Settings, ShieldCheck, Wrench, Rocket } from "lucide-react";
 import { Aenderungsprotokoll, Dokumentation, Pruefstand, Wissensdatenbank, ZweigeVersionen } from "./Ablauf";
 import Anbindungen, { NeuesProjektAssistent } from "./ProjektArten";
 import ProjektEinlesen from "./seiten/ProjektEinlesen";
@@ -25,6 +25,7 @@ import { Verbrauch, VerbrauchKurz } from "./seiten/Verbrauch";
 import { WS_ICON } from "./config";
 import { Zentrale } from "./seiten/Zentrale";
 import { ZuErledigen, aufgabenListe } from "./seiten/ZuErledigen";
+import { Updates } from "./seiten/Updates";
 import { rechteVon, useWerkstattDaten } from "./daten/werkstattDaten";
 import { supabase } from "./supabase";
 const AboLimits = lazy(() => import("./AboLimits"));
@@ -80,7 +81,7 @@ export default function App() {
   const NAV = [
     ["Arbeiten", [["chat", "Chat", MessageSquare], ["zentrale", "Zentrale", Inbox], ["erledigen", "Zu erledigen", ListChecks], ["aufgaben", "Aufgaben", ClipboardList]]],
     ["Gestalten & Bauen", [["designer", "App-Designer", Palette], ["vorschau", "Live-Vorschau", Eye], ["code", "Code", Code2], ["fehler", "Fehler", AlertTriangle], ["global", "Globale Einstellungen", Globe]]],
-    ["Ablauf", [["zweige", "Zweige & Versionen", GitBranch], ["pruef", "Prüfstand", ShieldCheck], ["wissen", "Wissensdatenbank", BookOpen]]],
+    ["Ablauf", [["updates", "Updates & Freigabe", Rocket], ["zweige", "Zweige & Versionen", GitBranch], ["pruef", "Prüfstand", ShieldCheck], ["wissen", "Wissensdatenbank", BookOpen]]],
     ["Dokumentation", [["log", "Änderungsprotokoll", History], ["doku", "Dokumentation", Download], ["regelwerk", "Regelwerk", Scale]]],
   ];
   const VERWALTUNG = [["benutzer", "Benutzer & Rechte", KeyRound], ["ki", "KI-Anbieter", Cpu], ["anbindungen", "Anbindungen", Plug], ["einrichtung", "Einrichtung", Wrench], ["verbrauch", "Verbrauch & Limits", Gauge]];
@@ -156,7 +157,8 @@ export default function App() {
                 aktion={ich.rolle === "admin" ? { text: "Neues Projekt", Symbol: Plus, onClick: () => setNeuesProjekt(true) } : null} /></div>
             : ansicht === "chat" ? <Chat key={daten.projektId} d={daten} ich={ich} toast={setToast} start={chatStart} onFeature={(f) => { setOeffne({ f: f.id, g: f.gruppe_id, n: Date.now() }); geh("zentrale"); }} />
             : ansicht === "zentrale" ? <><Kennzahlen d={daten} onChat={() => geh("chat")} onErledigen={() => geh("erledigen")} /><Zentrale key={daten.projektId} d={daten} ich={ich} toast={setToast} onDesigner={() => geh("designer")} start={oeffne} onCode={() => geh("code")} /></>
-            : ansicht === "erledigen" ? <ZuErledigen key={daten.projektId} d={daten} ich={ich} toast={setToast} onOeffne={(a) => { setOeffne({ f: a.feature_id, g: a.gruppe_id, n: Date.now() }); geh("zentrale"); }} />
+            : ansicht === "erledigen" ? <ZuErledigen key={daten.projektId} d={daten} ich={ich} toast={setToast} onUpdates={() => geh("updates")} onOeffne={(a) => { setOeffne({ f: a.feature_id, g: a.gruppe_id, n: Date.now() }); geh("zentrale"); }} />
+            : ansicht === "updates" ? <Updates key={daten.projektId} d={daten} ich={ich} toast={setToast} />
             : ansicht === "aufgaben" ? <Aufgaben key={daten.projektId} d={daten} ich={ich} toast={setToast} onOeffneChat={(z) => { setOeffne({ f: z.f, g: z.g, n: Date.now() }); geh("zentrale"); }} />
             : ansicht === "global" ? <Zentrale key={daten.projektId + "-global"} d={daten} ich={ich} toast={setToast} nurGlobal onKi={() => geh("ki")} />
             : ansicht === "regelwerk" ? <Regelwerk key={daten.projektId} d={daten} ich={ich} toast={setToast} />

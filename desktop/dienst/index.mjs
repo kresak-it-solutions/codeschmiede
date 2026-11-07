@@ -57,6 +57,8 @@ import { ordnerLesen, zipLesen, pruefen as einlesenPruefen, auswahlPruefen, kopi
 import { einsortieren, geheimnisseImOrdner, repoKennungenLesen, repoKennungMerken } from "./lib/einlesenKopie.mjs";
 import { repoEinlesen } from "./lib/repo.mjs";
 import { pfadOk } from "./lib/projektordner.mjs";
+import { freigabeStand, ablaufStarten, featuresAm, vonText, prsAus } from "./lib/freigabe.mjs";
+import { aufbauAus } from "./lib/aufbau.mjs";
 import { diffSammeln, fingerabdruck, GitVerdaechtig, codeLiveUmgebung } from "./lib/codeLive.mjs";
 import { bildschirmfotoNehmen } from "./lib/bildschirmfoto.mjs";
 import { aufLaufWarten, artefaktHolen, testlaufErgebnis, dokumentSeiten, eingabenFehler, ablaufUnveraendert, laufArgs, standFesthalten } from "./lib/cloudLauf.mjs";
@@ -2683,9 +2685,46 @@ async function projektAbgleich() {
         }
         const { error } = await db.rpc("ws_abgleich_schreiben", { p_pc: pcId, p_projekt: p.id, p_main: main, p_zweige: zweige, p_dokumente: dokumente });
         if (error && !/function .* does not exist|schema cache/i.test(error.message)) melde("fehler", `Abgleich ${p.name}: ${ohneGeheimnisse(error.message)}`);
+        if (cfg.admin && p.aufbau_datei) await aufbauAbgleich(p, repo, main).catch((e) => melde("fehler", `Aufbau-Abgleich ${p.name}: ${kuerzen(ohneGeheimnisse(e?.message || String(e)), 300)}`));
       } catch (e) { melde("fehler", `Abgleich ${p.name}: ${kuerzen(ohneGeheimnisse(e?.message || String(e)), 300)}`); }
     }
   } finally { abgleichLaeuft = false; }
+}
+
+// ---------- Abgleich mit main: Aufbau der App (0.20.0, Anweisung Gerhard 2026-11-07 „Automatisch nachziehen“) ----------
+// Liest Aufbau-Datei und Features-Datei aus dem Git-Klon (nichts wird ausgeführt, lib/aufbau.mjs), dazu die Pull Requests auf main der letzten
+// 30 Tage, die nicht aus der Codeschmiede kommen (Zweige feature/cs-…), mit den Feature-Nummern, die sie in der Features-Datei neu eintragen.
+const aufbauGemeldet = {};
+async function aufbauAbgleich(p, repo, main) {
+  if (aufbauGemeldet[p.id] === main) return;
+  const pfad = p.aufbau_datei; const fpfad = pfad.replace(/\.js$/, ".features.json");
+  if (!/^[A-Za-z0-9._/-]+\.js$/.test(pfad) || pfad.includes("..")) throw new Error("Ungültige Aufbau-Datei");
+  const blob = async (ref, f) => { const sha = await git(repo, "rev-parse", `${ref}:${f}`); if ((await git(repo, "cat-file", "-t", sha)) !== "blob") throw new Error(`${f} ist keine Datei`); if (Number(await git(repo, "cat-file", "-s", sha)) > 1048576) throw new Error(`${f} zu groß`); return git(repo, "cat-file", "blob", sha); };
+  const aufbau = aufbauAus(await blob(main, pfad), await blob(main, fpfad));
+  let liveIds = [];
+  try { const l = JSON.parse(await blob("refs/heads/live", fpfad)); for (const t of ["app", "erp"]) for (const x of Object.values(l?.[t] || {})) if (Array.isArray(x)) for (const f of x) if (/^F-[0-9]{3,5}$/.test(f?.id || "")) liveIds.push(f.id); }
+  catch { liveIds = []; }
+  // Pull Requests der letzten 30 Tage (Merge- und Squash-Commits auf main)
+  const roh = await git(repo, "log", "--first-parent", "--since=30.days", "--format=%H%x1f%P%x1f%cI%x1f%B%x1e", "-n", "400", main);
+  const prs = [];
+  for (const block of roh.split("\x1e").map((b) => b.trim()).filter(Boolean)) {
+    const [sha, eltern, am, ...rest] = block.split("\x1f");
+    const pr = prsAus([{ message: rest.join("\x1f"), am }])[0];
+    if (!pr || /^feature\/cs-\d+/.test(pr.zweig)) continue;
+    const erster = (eltern || "").split(" ")[0];
+    let features = [];
+    if (/^[0-9a-f]{40}$/.test(erster || "")) {
+      const d = await git(repo, "diff", "--unified=0", erster, sha, "--", fpfad).catch(() => "");
+      features = [...new Set([...d.matchAll(/^\+\s*"id":\s*"(F-[0-9]{3,5})"/gm)].map((m) => m[1]))].slice(0, 50);
+    }
+    prs.push({ nr: pr.nr, titel: pr.titel || `Pull Request #${pr.nr}`, zweig: pr.zweig, am: /^\d{4}-/.test(am || "") ? am : new Date().toISOString(), features });
+    if (prs.length >= 400) break;
+  }
+  const { data, error } = await db.rpc("ws_aufbau_abgleichen", { p_pc: pcId, p_projekt: p.id, p_main: main, p_aufbau: aufbau, p_live_ids: [...new Set(liveIds)], p_prs: prs.slice(0, 500) });
+  if (error) { if (!/function .* does not exist|schema cache/i.test(error.message)) throw new Error(error.message); return; }
+  aufbauGemeldet[p.id] = main;
+  const n = (data?.neue_gruppen?.length || 0) + (data?.neue_features?.length || 0) + (data?.verschoben || 0);
+  if (n) melde("status", `Aufbau ${p.name} nachgezogen: ${data.neue_gruppen.length} neue Gruppe(n), ${data.neue_features.length} neue Feature(s), ${data.verschoben} verschoben`);
 }
 
 // ---------- GitHub-Repository anlegen / Sichtbarkeit (Datenbank 0021, nur Werkstatt des Admins) ----------
@@ -3323,7 +3362,8 @@ async function liveArbeit() {
   const a = data?.[0]; if (!a) return false;
   melde("status", a.art === "einrichten" ? "Test & Live wird eingerichtet" : a.art === "live" ? "Live schalten" : "Live zurücksetzen");
   try {
-    const { data: projekt } = await db.from("ws_projekte").select("id, name, repo, vorschau_domain, db_live_ref, technik_art").eq("id", a.projekt_id).single();
+    const { data: projekt } = await db.from("ws_projekte").select("id, name, repo, vorschau_domain, db_live_ref, technik_art, aufbau_datei").eq("id", a.projekt_id).single();
+    if (a.ablauf) { await liveUeberAblauf(a, projekt); melde("status", "Werkstatt bereit"); return true; }
     const r = await liveAusfuehren({ sh: ghGrenze, auftrag: a, mussLaufen: !!projekt?.vorschau_domain, melde: (t) => melde("status", t) });
     // Datenbank-Station: Live-Datenbank nach dem Live-Schalten aktualisieren und das Ergebnis melden
     const dbLauf = {};
@@ -3363,6 +3403,61 @@ async function liveArbeit() {
   }
   melde("status", "Werkstatt bereit");
   return true;
+}
+
+// ---------- Updates & Freigabe über den Ablauf des Projekts (0.20.0, „Gleicher Weg in beiden“) ----------
+// Projekte mit .github/workflows/freigabe.yml: die Codeschmiede startet genau diesen Ablauf (wie die Plattform der App) statt den Zweig live
+// selbst zu setzen. Seite bauen und Datenbank-Dateien einspielen macht der Ablauf des Projekts.
+async function liveUeberAblauf(a, projekt) {
+  const art = a.art === "live" ? "freigabe" : a.art;
+  const ziel = a.art === "zurueck" ? a.ziel_version : a.art === "zuruecknehmen" ? "-" : a.commit_sha;
+  melde("status", { freigabe: "Freigabe: Ablauf „Freigabe live“ startet", planen: "Freigabe für 22:00 wird gemerkt", zuruecknehmen: "Geplante Freigabe wird zurückgenommen", zurueck: "Live geht auf eine frühere Version zurück" }[art] || "Freigabe");
+  const r = await ablaufStarten(ghGrenze, a.repo, { art, ziel, von: vonText(a.von_name) });
+  if (!r.ok) {
+    const t = r.ergebnis === "nicht_gestartet" ? "Der Ablauf „Freigabe live“ ist nicht gestartet – GitHub-Anmeldung des Admin-PCs prüfen"
+      : r.ergebnis === "zeit" ? "Der Ablauf „Freigabe live“ läuft noch nach 9 Minuten – bitte bei GitHub nachsehen" : `Der Ablauf „Freigabe live“ ist fehlgeschlagen (${r.ergebnis})`;
+    await db.rpc("ws_live_ergebnis", { p_pc: pcId, p_id: a.id, p_commit: null, p_bezeichnung: null, p_migrationen: null, p_fehler: `${t}${r.url ? ` – ${r.url}` : ""}` });
+    melde("fehler", `Freigabe (${a.projekt_id}): ${t}`);
+    return;
+  }
+  if (art === "planen" || art === "zuruecknehmen") {
+    const { error } = await db.rpc("ws_live_ergebnis", { p_pc: pcId, p_id: a.id, p_commit: null, p_bezeichnung: null, p_migrationen: null });
+    if (error) throw error;
+  } else {
+    const st = await freigabeStand(ghGrenze, a.repo);
+    const [liveIds, mainIds] = await Promise.all([featuresAm(ghGrenze, a.repo, projekt?.aufbau_datei, st.live_sha), featuresAm(ghGrenze, a.repo, projekt?.aufbau_datei, st.main_sha)]);
+    const liveF = liveIds ? [...liveIds] : []; const testF = liveIds && mainIds ? [...mainIds].filter((i) => !liveIds.has(i)) : [];
+    const { error } = await db.rpc("ws_live_ergebnis", { p_pc: pcId, p_id: a.id, p_commit: st.live_sha, p_bezeichnung: st.live_bez, p_migrationen: [],
+      p_live_features: liveF, p_test_features: testF, p_hinweis: art === "freigabe" ? "Seite wird gebaut, Datenbank-Dateien gehen in die Live-Datenbank (Ablauf des Projekts)" : null });
+    if (error) throw error;
+  }
+  freigabeZuletzt[a.projekt_id] = 0;
+  await freigabeStandArbeit(true).catch(() => {});
+}
+
+// Stand für die Seite „Updates & Freigabe“ (alle 3 Minuten, nur Werkstatt des Admins, nur Projekte mit Test & Live)
+const freigabeZuletzt = {}; let freigabeLaeuft = false;
+async function freigabeStandArbeit(sofort = false) {
+  if (!cfg.admin || stopp || freigabeLaeuft) return;
+  freigabeLaeuft = true;
+  try {
+    const { data: projekte } = await db.from("ws_projekte").select("id, name, repo, live_zweig, archiviert, aufbau_datei").eq("live_zweig", true);
+    for (const p of projekte || []) {
+      if (!p.repo || p.archiviert) continue;
+      if (!sofort && Date.now() - (freigabeZuletzt[p.id] || 0) < 3 * 60 * 1000) continue;
+      freigabeZuletzt[p.id] = Date.now();
+      try {
+        const st = await freigabeStand(ghGrenze, p.repo);
+        let liveF = []; let testF = [];
+        if (p.aufbau_datei) {
+          const [l, m] = await Promise.all([featuresAm(ghGrenze, p.repo, p.aufbau_datei, st.live_sha), featuresAm(ghGrenze, p.repo, p.aufbau_datei, st.main_sha)]);
+          if (l) { liveF = [...l]; if (m) testF = [...m].filter((i) => !l.has(i)); }
+        }
+        const { error } = await db.rpc("ws_freigabe_stand_melden", { p_pc: pcId, p_projekt: p.id, p_stand: st, p_live_features: liveF, p_test_features: testF });
+        if (error && !/function .* does not exist|schema cache/i.test(error.message)) melde("fehler", `Freigabe-Stand ${p.name}: ${ohneGeheimnisse(error.message)}`);
+      } catch (e) { melde("fehler", `Freigabe-Stand ${p.name}: ${kuerzen(ohneGeheimnisse(e?.stderr || e?.message || String(e)), 300)}`); }
+    }
+  } finally { freigabeLaeuft = false; }
 }
 
 async function pruefArbeit() {
@@ -3690,6 +3785,9 @@ async function start() {
   // Abgleich im Hintergrund (alle 10 Min.), unabhängig von laufenden Aufträgen
   const abgleich = () => projektAbgleich().catch((e) => melde("fehler", ohneGeheimnisse(e?.message || String(e))));
   setTimeout(abgleich, 15 * 1000); setInterval(abgleich, 60 * 1000);
+  // Updates & Freigabe (0.20.0): Stand je Projekt mit Test & Live alle 3 Minuten
+  const freigabe = () => freigabeStandArbeit().catch(() => {});
+  setTimeout(freigabe, 25 * 1000); setInterval(freigabe, 60 * 1000);
   const kopplung = () => kopplungAbgleich().catch(() => {});
   // Programmier-Werkzeuge (0.14.0): Lampen und Knöpfe (Installieren, Anmeldung öffnen, Sperren-Test, Prüfen)
   setTimeout(() => werkzeugAbgleich(true).catch(() => {}), 6 * 1000); setInterval(() => werkzeugAbgleich().catch(() => {}), 30 * 1000);
